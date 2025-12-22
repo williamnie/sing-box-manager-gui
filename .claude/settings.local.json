@@ -26,7 +26,10 @@
       "Bash(tree:*)",
       "WebFetch(domain:github.com)",
       "Bash(find:*)",
-      "Bash(./sbm:*)"
+      "Bash(./sbm:*)",
+      "Bash(git stash:*)",
+      "Bash(mkdir:*)",
+      "Bash(git tag:*)"
     ],
     "deny": [],
     "ask": []

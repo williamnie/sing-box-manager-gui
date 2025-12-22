@@ -3,7 +3,7 @@ import { Card, CardBody, CardHeader, Input, Button, Switch, Chip, Modal, ModalCo
 import { Save, Download, Upload, Terminal, CheckCircle, AlertCircle, Plus, Pencil, Trash2, Server } from 'lucide-react';
 import { useStore } from '../store';
 import type { Settings as SettingsType, HostEntry } from '../store';
-import { launchdApi, kernelApi, settingsApi } from '../api';
+import { daemonApi, kernelApi, settingsApi } from '../api';
 import { toast } from '../components/Toast';
 
 // 内核信息类型
@@ -33,7 +33,7 @@ interface GithubRelease {
 export default function Settings() {
   const { settings, fetchSettings, updateSettings } = useStore();
   const [formData, setFormData] = useState<SettingsType | null>(null);
-  const [launchdStatus, setLaunchdStatus] = useState<{ installed: boolean; running: boolean } | null>(null);
+  const [daemonStatus, setDaemonStatus] = useState<{ installed: boolean; running: boolean; supported: boolean } | null>(null);
 
   // 内核相关状态
   const [kernelInfo, setKernelInfo] = useState<KernelInfo | null>(null);
@@ -53,7 +53,7 @@ export default function Settings() {
 
   useEffect(() => {
     fetchSettings();
-    fetchLaunchdStatus();
+    fetchDaemonStatus();
     fetchKernelInfo();
     fetchSystemHosts();
   }, []);
@@ -174,12 +174,12 @@ export default function Settings() {
     onHostModalClose();
   };
 
-  const fetchLaunchdStatus = async () => {
+  const fetchDaemonStatus = async () => {
     try {
-      const res = await launchdApi.status();
-      setLaunchdStatus(res.data.data);
+      const res = await daemonApi.status();
+      setDaemonStatus(res.data.data);
     } catch (error) {
-      console.error('获取 launchd 状态失败:', error);
+      console.error('获取守护进程状态失败:', error);
     }
   };
 
@@ -206,9 +206,9 @@ export default function Settings() {
     }
   };
 
-  const handleInstallLaunchd = async () => {
+  const handleInstallDaemon = async () => {
     try {
-      const res = await launchdApi.install();
+      const res = await daemonApi.install();
       const data = res.data;
       if (data.action === 'exit') {
         toast.success(data.message);
@@ -217,33 +217,33 @@ export default function Settings() {
       } else {
         toast.success(data.message || '服务已安装');
       }
-      await fetchLaunchdStatus();
+      await fetchDaemonStatus();
     } catch (error: any) {
-      console.error('安装 launchd 服务失败:', error);
+      console.error('安装守护进程服务失败:', error);
       toast.error(error.response?.data?.error || '安装服务失败');
     }
   };
 
-  const handleUninstallLaunchd = async () => {
-    if (confirm('确定要卸载 launchd 服务吗？卸载后 sbm 将不再开机自启。')) {
+  const handleUninstallDaemon = async () => {
+    if (confirm('确定要卸载后台服务吗？卸载后 sbm 将不再开机自启。')) {
       try {
-        await launchdApi.uninstall();
+        await daemonApi.uninstall();
         toast.success('服务已卸载');
-        await fetchLaunchdStatus();
+        await fetchDaemonStatus();
       } catch (error: any) {
-        console.error('卸载 launchd 服务失败:', error);
+        console.error('卸载守护进程服务失败:', error);
         toast.error(error.response?.data?.error || '卸载服务失败');
       }
     }
   };
 
-  const handleRestartLaunchd = async () => {
+  const handleRestartDaemon = async () => {
     try {
-      await launchdApi.restart();
+      await daemonApi.restart();
       toast.success('服务已重启');
-      await fetchLaunchdStatus();
+      await fetchDaemonStatus();
     } catch (error: any) {
-      console.error('重启 launchd 服务失败:', error);
+      console.error('重启守护进程服务失败:', error);
       toast.error(error.response?.data?.error || '重启服务失败');
     }
   };
@@ -520,6 +520,7 @@ export default function Settings() {
             type="number"
             label="Web 管理端口"
             placeholder="9090"
+            disabled
             value={String(formData.web_port)}
             onChange={(e) => setFormData({ ...formData, web_port: parseInt(e.target.value) || 9090 })}
           />
@@ -566,53 +567,55 @@ export default function Settings() {
         </CardBody>
       </Card>
 
-      {/* launchd 服务管理 */}
-      <Card>
-        <CardHeader className="flex justify-between items-center">
-          <h2 className="text-lg font-semibold">后台服务 (launchd)</h2>
-          {launchdStatus && (
-            <Chip
-              color={launchdStatus.installed ? 'success' : 'default'}
-              variant="flat"
-              size="sm"
-            >
-              {launchdStatus.installed ? '已安装' : '未安装'}
-            </Chip>
-          )}
-        </CardHeader>
-        <CardBody>
-          <p className="text-sm text-gray-500 mb-4">
-            安装后台服务可让 sbm 管理程序在后台运行，关闭终端后仍可访问 Web 管理界面。服务会开机自启并在崩溃后自动重启。
-          </p>
-          <div className="flex gap-2">
-            {launchdStatus?.installed ? (
-              <>
+      {/* 后台服务管理 */}
+      {daemonStatus?.supported && (
+        <Card>
+          <CardHeader className="flex justify-between items-center">
+            <h2 className="text-lg font-semibold">后台服务</h2>
+            {daemonStatus && (
+              <Chip
+                color={daemonStatus.installed ? 'success' : 'default'}
+                variant="flat"
+                size="sm"
+              >
+                {daemonStatus.installed ? '已安装' : '未安装'}
+              </Chip>
+            )}
+          </CardHeader>
+          <CardBody>
+            <p className="text-sm text-gray-500 mb-4">
+              安装后台服务可让 sbm 管理程序在后台运行，关闭终端后仍可访问 Web 管理界面。服务会开机自启并在崩溃后自动重启。
+            </p>
+            <div className="flex gap-2">
+              {daemonStatus?.installed ? (
+                <>
+                  <Button
+                    color="primary"
+                    variant="flat"
+                    onPress={handleRestartDaemon}
+                  >
+                    重启服务
+                  </Button>
+                  <Button
+                    color="danger"
+                    variant="flat"
+                    onPress={handleUninstallDaemon}
+                  >
+                    卸载服务
+                  </Button>
+                </>
+              ) : (
                 <Button
                   color="primary"
-                  variant="flat"
-                  onPress={handleRestartLaunchd}
+                  onPress={handleInstallDaemon}
                 >
-                  重启服务
+                  安装后台服务
                 </Button>
-                <Button
-                  color="danger"
-                  variant="flat"
-                  onPress={handleUninstallLaunchd}
-                >
-                  卸载服务
-                </Button>
-              </>
-            ) : (
-              <Button
-                color="primary"
-                onPress={handleInstallLaunchd}
-              >
-                安装后台服务
-              </Button>
-            )}
-          </div>
-        </CardBody>
-      </Card>
+              )}
+            </div>
+          </CardBody>
+        </Card>
+      )}
 
       {/* 下载内核弹窗 */}
       <Modal isOpen={showDownloadModal} onClose={() => !downloading && setShowDownloadModal(false)}>

@@ -74,6 +74,14 @@ export const launchdApi = {
   restart: () => api.post('/launchd/restart'),
 };
 
+// 统一守护进程 API（自动判断系统）
+export const daemonApi = {
+  status: () => api.get('/daemon/status'),
+  install: () => api.post('/daemon/install'),
+  uninstall: () => api.post('/daemon/uninstall'),
+  restart: () => api.post('/daemon/restart'),
+};
+
 // 监控 API
 export const monitorApi = {
   system: () => api.get('/monitor/system'),

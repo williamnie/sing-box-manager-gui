@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"time"
 
@@ -29,6 +30,7 @@ type Server struct {
 	subService     *service.SubscriptionService
 	processManager *daemon.ProcessManager
 	launchdManager *daemon.LaunchdManager
+	systemdManager *daemon.SystemdManager
 	kernelManager  *kernel.Manager
 	scheduler      *service.Scheduler
 	router         *gin.Engine
@@ -38,7 +40,7 @@ type Server struct {
 }
 
 // NewServer 创建 API 服务器
-func NewServer(store *storage.JSONStore, processManager *daemon.ProcessManager, launchdManager *daemon.LaunchdManager, sbmPath string, port int, version string) *Server {
+func NewServer(store *storage.JSONStore, processManager *daemon.ProcessManager, launchdManager *daemon.LaunchdManager, systemdManager *daemon.SystemdManager, sbmPath string, port int, version string) *Server {
 	gin.SetMode(gin.ReleaseMode)
 
 	subService := service.NewSubscriptionService(store)
@@ -51,6 +53,7 @@ func NewServer(store *storage.JSONStore, processManager *daemon.ProcessManager, 
 		subService:     subService,
 		processManager: processManager,
 		launchdManager: launchdManager,
+		systemdManager: systemdManager,
 		kernelManager:  kernelManager,
 		scheduler:      service.NewScheduler(store, subService),
 		router:         gin.Default(),
@@ -142,6 +145,18 @@ func (s *Server) setupRoutes() {
 		api.POST("/launchd/install", s.installLaunchd)
 		api.POST("/launchd/uninstall", s.uninstallLaunchd)
 		api.POST("/launchd/restart", s.restartLaunchd)
+
+		// systemd 管理
+		api.GET("/systemd/status", s.getSystemdStatus)
+		api.POST("/systemd/install", s.installSystemd)
+		api.POST("/systemd/uninstall", s.uninstallSystemd)
+		api.POST("/systemd/restart", s.restartSystemd)
+
+		// 统一守护进程管理（自动判断系统）
+		api.GET("/daemon/status", s.getDaemonStatus)
+		api.POST("/daemon/install", s.installDaemon)
+		api.POST("/daemon/uninstall", s.uninstallDaemon)
+		api.POST("/daemon/restart", s.restartDaemon)
 
 		// 系统监控
 		api.GET("/monitor/system", s.getSystemInfo)
@@ -546,6 +561,7 @@ func (s *Server) validateRuleSet(c *gin.Context) {
 
 func (s *Server) getSettings(c *gin.Context) {
 	settings := s.store.GetSettings()
+	settings.WebPort = s.port
 	c.JSON(http.StatusOK, gin.H{"data": settings})
 }
 
@@ -849,6 +865,262 @@ func (s *Server) restartLaunchd(c *gin.Context) {
 	}
 
 	if err := s.launchdManager.Restart(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "服务已重启"})
+}
+
+// ==================== systemd API ====================
+
+func (s *Server) getSystemdStatus(c *gin.Context) {
+	if s.systemdManager == nil {
+		c.JSON(http.StatusOK, gin.H{
+			"data": gin.H{
+				"installed":   false,
+				"running":     false,
+				"servicePath": "",
+				"supported":   false,
+			},
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": gin.H{
+			"installed":   s.systemdManager.IsInstalled(),
+			"running":     s.systemdManager.IsRunning(),
+			"servicePath": s.systemdManager.GetServicePath(),
+			"supported":   true,
+		},
+	})
+}
+
+func (s *Server) installSystemd(c *gin.Context) {
+	if s.systemdManager == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "当前系统不支持 systemd 服务"})
+		return
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil || homeDir == "" {
+		if u, err := user.Current(); err == nil && u.HomeDir != "" {
+			homeDir = u.HomeDir
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取用户目录失败"})
+			return
+		}
+	}
+
+	logsDir := s.store.GetDataDir() + "/logs"
+
+	config := daemon.SystemdConfig{
+		SbmPath:    s.sbmPath,
+		DataDir:    s.store.GetDataDir(),
+		Port:       strconv.Itoa(s.port),
+		LogPath:    logsDir,
+		WorkingDir: s.store.GetDataDir(),
+		HomeDir:    homeDir,
+		RunAtLoad:  true,
+		KeepAlive:  true,
+	}
+
+	if err := s.systemdManager.Install(config); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := s.systemdManager.Start(); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "服务已安装，但启动失败: " + err.Error() + "。请执行 systemctl --user start singbox-manager",
+			"action":  "manual",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "服务已安装并启动，您可以关闭此终端窗口。sbm 将在后台运行并开机自启。",
+		"action":  "exit",
+	})
+}
+
+func (s *Server) uninstallSystemd(c *gin.Context) {
+	if s.systemdManager == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "当前系统不支持 systemd 服务"})
+		return
+	}
+
+	if err := s.systemdManager.Uninstall(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "服务已卸载"})
+}
+
+func (s *Server) restartSystemd(c *gin.Context) {
+	if s.systemdManager == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "当前系统不支持 systemd 服务"})
+		return
+	}
+
+	if err := s.systemdManager.Restart(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "服务已重启"})
+}
+
+// ==================== 统一守护进程 API ====================
+
+func (s *Server) getDaemonStatus(c *gin.Context) {
+	platform := runtime.GOOS
+	var installed, running, supported bool
+	var configPath string
+
+	switch platform {
+	case "darwin":
+		if s.launchdManager != nil {
+			supported = true
+			installed = s.launchdManager.IsInstalled()
+			running = s.launchdManager.IsRunning()
+			configPath = s.launchdManager.GetPlistPath()
+		}
+	case "linux":
+		if s.systemdManager != nil {
+			supported = true
+			installed = s.systemdManager.IsInstalled()
+			running = s.systemdManager.IsRunning()
+			configPath = s.systemdManager.GetServicePath()
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": gin.H{
+			"installed":  installed,
+			"running":    running,
+			"configPath": configPath,
+			"supported":  supported,
+			"platform":   platform,
+		},
+	})
+}
+
+func (s *Server) installDaemon(c *gin.Context) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil || homeDir == "" {
+		if u, err := user.Current(); err == nil && u.HomeDir != "" {
+			homeDir = u.HomeDir
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取用户目录失败"})
+			return
+		}
+	}
+
+	logsDir := s.store.GetDataDir() + "/logs"
+
+	switch runtime.GOOS {
+	case "darwin":
+		if s.launchdManager == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "当前系统不支持守护进程服务"})
+			return
+		}
+		config := daemon.LaunchdConfig{
+			SbmPath:    s.sbmPath,
+			DataDir:    s.store.GetDataDir(),
+			Port:       strconv.Itoa(s.port),
+			LogPath:    logsDir,
+			WorkingDir: s.store.GetDataDir(),
+			HomeDir:    homeDir,
+			RunAtLoad:  true,
+			KeepAlive:  true,
+		}
+		if err := s.launchdManager.Install(config); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if err := s.launchdManager.Start(); err != nil {
+			c.JSON(http.StatusOK, gin.H{"message": "服务已安装，但启动失败: " + err.Error(), "action": "manual"})
+			return
+		}
+	case "linux":
+		if s.systemdManager == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "当前系统不支持守护进程服务"})
+			return
+		}
+		config := daemon.SystemdConfig{
+			SbmPath:    s.sbmPath,
+			DataDir:    s.store.GetDataDir(),
+			Port:       strconv.Itoa(s.port),
+			LogPath:    logsDir,
+			WorkingDir: s.store.GetDataDir(),
+			HomeDir:    homeDir,
+			RunAtLoad:  true,
+			KeepAlive:  true,
+		}
+		if err := s.systemdManager.Install(config); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if err := s.systemdManager.Start(); err != nil {
+			c.JSON(http.StatusOK, gin.H{"message": "服务已安装，但启动失败: " + err.Error(), "action": "manual"})
+			return
+		}
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "当前系统不支持守护进程服务"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "服务已安装并启动", "action": "exit"})
+}
+
+func (s *Server) uninstallDaemon(c *gin.Context) {
+	var err error
+	switch runtime.GOOS {
+	case "darwin":
+		if s.launchdManager == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "当前系统不支持守护进程服务"})
+			return
+		}
+		err = s.launchdManager.Uninstall()
+	case "linux":
+		if s.systemdManager == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "当前系统不支持守护进程服务"})
+			return
+		}
+		err = s.systemdManager.Uninstall()
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "当前系统不支持守护进程服务"})
+		return
+	}
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "服务已卸载"})
+}
+
+func (s *Server) restartDaemon(c *gin.Context) {
+	var err error
+	switch runtime.GOOS {
+	case "darwin":
+		if s.launchdManager == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "当前系统不支持守护进程服务"})
+			return
+		}
+		err = s.launchdManager.Restart()
+	case "linux":
+		if s.systemdManager == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "当前系统不支持守护进程服务"})
+			return
+		}
+		err = s.systemdManager.Restart()
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "当前系统不支持守护进程服务"})
+		return
+	}
+
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

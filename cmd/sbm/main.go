@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	version = "0.2.6"
+	version = "0.2.7"
 	dataDir string
 	port    int
 )
@@ -76,8 +76,14 @@ func main() {
 		logger.Printf("初始化 launchd 管理器失败: %v", err)
 	}
 
+	// 初始化 systemd 管理器
+	systemdManager, err := daemon.NewSystemdManager()
+	if err != nil {
+		logger.Printf("初始化 systemd 管理器失败: %v", err)
+	}
+
 	// 创建 API 服务器
-	server := api.NewServer(store, processManager, launchdManager, execPath, port, version)
+	server := api.NewServer(store, processManager, launchdManager, systemdManager, execPath, port, version)
 
 	// 启动定时任务调度器
 	server.StartScheduler()
