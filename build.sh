@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # sing-box manager 构建脚本
-# 支持 Linux/macOS 的 arm64/amd64 架构
+# 支持 Linux/macOS/Windows 的 arm64/amd64 架构
 # 前端代码会自动嵌入到二进制文件中
 
 set -e
@@ -121,6 +121,7 @@ show_help() {
     echo "  all          构建所有平台 (默认)"
     echo "  linux        仅构建 Linux 版本"
     echo "  darwin       仅构建 macOS 版本"
+    echo "  windows      仅构建 Windows 版本"
     echo "  current      仅构建当前平台"
     echo "  frontend     仅构建前端"
     echo "  clean        清理构建目录"
@@ -154,6 +155,10 @@ build_all() {
     build_target darwin amd64
     build_target darwin arm64
 
+    # Windows
+    build_target windows amd64
+    build_target windows arm64
+
     info "所有构建完成!"
     echo ""
     info "构建产物:"
@@ -180,6 +185,17 @@ build_darwin() {
     build_target darwin amd64
     build_target darwin arm64
     info "macOS 构建完成!"
+}
+
+# 仅构建 Windows
+build_windows() {
+    if [ "${SKIP_FRONTEND}" != "1" ]; then
+        ensure_frontend
+    fi
+    clean
+    build_target windows amd64
+    build_target windows arm64
+    info "Windows 构建完成!"
 }
 
 # 构建当前平台
@@ -215,6 +231,9 @@ main() {
             ;;
         darwin|macos)
             build_darwin
+            ;;
+        windows|win)
+            build_windows
             ;;
         current)
             build_current

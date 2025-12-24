@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, feature-windows]
   pull_request:
     branches: [main, master]
 
@@ -34,3 +34,7 @@ jobs:
       - name: Build backend
         run: |
           CGO_ENABLED=0 go build -o sbm ./cmd/sbm/
+
+      - name: Test Windows cross-compile
+        run: |
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o sbm.exe ./cmd/sbm/

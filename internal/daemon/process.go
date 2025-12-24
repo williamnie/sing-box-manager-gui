@@ -6,10 +6,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/shirou/gopsutil/v3/process"
@@ -131,20 +131,6 @@ func (pm *ProcessManager) isValidSingboxProcess(pid int) bool {
 	return pm.isSingboxProcess(proc)
 }
 
-// isProcessAlive 使用 kill -0 检查进程是否存活（更可靠）
-func (pm *ProcessManager) isProcessAlive(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	// kill -0 不发送信号，只检查进程是否存在
-	err = proc.Signal(syscall.Signal(0))
-	return err == nil
-}
-
 // readPidFile 只读取 PID 文件，不验证进程类型（轻量级）
 func (pm *ProcessManager) readPidFile() int {
 	data, err := os.ReadFile(pm.pidFile)
@@ -153,28 +139,6 @@ func (pm *ProcessManager) readPidFile() int {
 	}
 	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
 	if err != nil || pid <= 0 {
-		return 0
-	}
-	return pid
-}
-
-// findSingboxByPgrep 使用 pgrep 快速查找 sing-box 进程
-func (pm *ProcessManager) findSingboxByPgrep() int {
-	// pgrep -x 精确匹配进程名
-	cmd := exec.Command("pgrep", "-x", "sing-box")
-	output, err := cmd.Output()
-	if err != nil {
-		return 0
-	}
-
-	// pgrep 可能返回多行（多个进程），取第一个
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	if len(lines) == 0 || lines[0] == "" {
-		return 0
-	}
-
-	pid, err := strconv.Atoi(lines[0])
-	if err != nil {
 		return 0
 	}
 	return pid
@@ -341,9 +305,9 @@ func (pm *ProcessManager) Stop() error {
 	// 情况1：有 cmd 对象（正常启动的进程）
 	if pm.cmd != nil && pm.cmd.Process != nil {
 		pid = pm.cmd.Process.Pid
-		// 发送 SIGTERM 信号
-		if err := pm.cmd.Process.Signal(syscall.SIGTERM); err != nil {
-			// 如果 SIGTERM 失败，尝试 SIGKILL
+		// 发送终止信号（Unix: SIGTERM, Windows: Kill）
+		if err := pm.sendTermSignal(pm.cmd.Process); err != nil {
+			// 如果失败，强制 Kill
 			if err := pm.cmd.Process.Kill(); err != nil {
 				return fmt.Errorf("停止 sing-box 失败: %w", err)
 			}
@@ -353,7 +317,7 @@ func (pm *ProcessManager) Stop() error {
 		pid = pm.pid
 		proc, err := os.FindProcess(pid)
 		if err == nil {
-			if err := proc.Signal(syscall.SIGTERM); err != nil {
+			if err := pm.sendTermSignal(proc); err != nil {
 				proc.Kill()
 			}
 		}
@@ -377,14 +341,26 @@ func (pm *ProcessManager) Restart() error {
 // Reload 热重载配置
 func (pm *ProcessManager) Reload() error {
 	pm.mu.RLock()
-	defer pm.mu.RUnlock()
+	running := pm.running
+	cmd := pm.cmd
+	pm.mu.RUnlock()
 
-	if !pm.running || pm.cmd == nil || pm.cmd.Process == nil {
+	if !running {
 		return fmt.Errorf("sing-box 未运行")
 	}
 
-	// sing-box 支持 SIGHUP 热重载
-	if err := pm.cmd.Process.Signal(syscall.SIGHUP); err != nil {
+	// Windows 不支持 SIGHUP，需要重启进程
+	if runtime.GOOS == "windows" {
+		logger.Printf("Windows 不支持热重载，将重启进程")
+		return pm.Restart()
+	}
+
+	// Unix 系统：使用 SIGHUP 热重载
+	if cmd == nil || cmd.Process == nil {
+		return fmt.Errorf("sing-box 进程对象不可用")
+	}
+
+	if err := pm.sendReloadSignal(cmd.Process); err != nil {
 		return fmt.Errorf("重载配置失败: %w", err)
 	}
 

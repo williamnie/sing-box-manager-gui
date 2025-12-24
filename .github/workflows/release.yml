@@ -38,6 +38,7 @@ jobs:
           VERSION=${GITHUB_REF#refs/tags/v}
           mkdir -p dist
 
+          # Build for Linux and macOS
           for os in linux darwin; do
             for arch in amd64 arm64; do
               output="dist/sbm-${os}-${arch}"
@@ -48,8 +49,18 @@ jobs:
             done
           done
 
+          # Build for Windows
+          for arch in amd64 arm64; do
+            output="dist/sbm-windows-${arch}.exe"
+            echo "Building windows/${arch}..."
+            CGO_ENABLED=0 GOOS=windows GOARCH=$arch go build \
+              -ldflags "-s -w -X main.Version=${VERSION}" \
+              -o "$output" ./cmd/sbm/
+          done
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
           generate_release_notes: true
+          prerelease: ${{ contains(github.ref, '-alpha') || contains(github.ref, '-beta') || contains(github.ref, '-rc') || contains(github.ref, '-windows') }}
