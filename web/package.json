@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@nextui-org/react": "^2.6.11",
+    "@nextui-org/theme": "^2.4.5",
     "axios": "^1.13.2",
     "framer-motion": "^12.23.24",
     "lucide-react": "^0.555.0",
