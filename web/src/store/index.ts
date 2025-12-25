@@ -154,6 +154,7 @@ interface AppState {
   updateSubscription: (id: string, name: string, url: string) => Promise<void>;
   deleteSubscription: (id: string) => Promise<void>;
   refreshSubscription: (id: string) => Promise<void>;
+  toggleSubscription: (id: string, enabled: boolean) => Promise<void>;
 
   // 手动节点操作
   addManualNode: (node: Omit<ManualNode, 'id'>) => Promise<void>;
@@ -327,6 +328,25 @@ export const useStore = create<AppState>((set, get) => ({
       toast.error(error.response?.data?.error || '刷新订阅失败');
     } finally {
       set({ loading: false });
+    }
+  },
+
+  toggleSubscription: async (id: string, enabled: boolean) => {
+    const subscription = get().subscriptions.find(s => s.id === id);
+    if (subscription) {
+      try {
+        const res = await subscriptionApi.update(id, { ...subscription, enabled });
+        await get().fetchSubscriptions();
+        await get().fetchCountryGroups();
+        if (res.data.warning) {
+          toast.info(res.data.warning);
+        } else {
+          toast.success(`订阅已${enabled ? '启用' : '禁用'}`);
+        }
+      } catch (error: any) {
+        console.error('切换订阅状态失败:', error);
+        toast.error(error.response?.data?.error || '切换订阅状态失败');
+      }
     }
   },
 

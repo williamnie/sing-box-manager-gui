@@ -84,6 +84,7 @@ export default function Subscriptions() {
     updateSubscription,
     deleteSubscription,
     refreshSubscription,
+    toggleSubscription,
     addManualNode,
     updateManualNode,
     deleteManualNode,
@@ -179,6 +180,10 @@ export default function Subscriptions() {
     if (confirm('确定要删除这个订阅吗？')) {
       await deleteSubscription(id);
     }
+  };
+
+  const handleToggleSubscription = async (sub: Subscription) => {
+    await toggleSubscription(sub.id, !sub.enabled);
   };
 
   // 手动节点操作
@@ -358,6 +363,7 @@ export default function Subscriptions() {
                   onRefresh={() => handleRefresh(sub.id)}
                   onEdit={() => handleOpenEditSubscription(sub)}
                   onDelete={() => handleDeleteSubscription(sub.id)}
+                  onToggle={() => handleToggleSubscription(sub)}
                   loading={loading}
                 />
               ))}
@@ -874,14 +880,18 @@ interface SubscriptionCardProps {
   onRefresh: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  onToggle: () => void;
   loading: boolean;
 }
 
-function SubscriptionCard({ subscription: sub, onRefresh, onEdit, onDelete, loading }: SubscriptionCardProps) {
+function SubscriptionCard({ subscription: sub, onRefresh, onEdit, onDelete, onToggle, loading }: SubscriptionCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
+  // 确保 nodes 是数组，处理 null 或 undefined 情况
+  const nodes = sub.nodes || [];
+
   // 按国家分组节点
-  const nodesByCountry = sub.nodes.reduce((acc, node) => {
+  const nodesByCountry = nodes.reduce((acc, node) => {
     const country = node.country || 'OTHER';
     if (!acc[country]) {
       acc[country] = {
@@ -891,7 +901,7 @@ function SubscriptionCard({ subscription: sub, onRefresh, onEdit, onDelete, load
     }
     acc[country].nodes.push(node);
     return acc;
-  }, {} as Record<string, { emoji: string; nodes: typeof sub.nodes }>);
+  }, {} as Record<string, { emoji: string; nodes: Node[] }>);
 
   return (
     <Card>
@@ -918,7 +928,7 @@ function SubscriptionCard({ subscription: sub, onRefresh, onEdit, onDelete, load
             </p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
           <Button
             size="sm"
             variant="flat"
@@ -953,6 +963,10 @@ function SubscriptionCard({ subscription: sub, onRefresh, onEdit, onDelete, load
           >
             {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           </Button>
+          <Switch
+            isSelected={sub.enabled}
+            onValueChange={onToggle}
+          />
         </div>
       </CardHeader>
 
