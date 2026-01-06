@@ -6,7 +6,7 @@
 
 set -e
 
-VERSION=${VERSION:-"0.2.9"}
+VERSION=${VERSION:-"0.2.12-test"}
 BUILD_TIME=$(date -u '+%Y-%m-%d %H:%M:%S')
 GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 

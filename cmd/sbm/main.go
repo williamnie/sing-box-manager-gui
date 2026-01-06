@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	version = "0.2.9"
+	version = "0.2.12-test"
 	dataDir string
 	port    int
 )
