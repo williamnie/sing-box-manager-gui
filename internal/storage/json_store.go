@@ -1,12 +1,20 @@
 package storage
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 )
+
+// jsonBufferPool 用于复用 JSON 序列化的 buffer
+var jsonBufferPool = sync.Pool{
+	New: func() interface{} {
+		return bytes.NewBuffer(make([]byte, 0, 64*1024)) // 预分配 64KB
+	},
+}
 
 // JSONStore JSON 文件存储实现
 type JSONStore struct {
@@ -102,12 +110,19 @@ func (s *JSONStore) load() error {
 func (s *JSONStore) saveInternal() error {
 	dataFile := filepath.Join(s.dataDir, "data.json")
 
-	data, err := json.MarshalIndent(s.data, "", "  ")
-	if err != nil {
+	// 从池中获取 buffer
+	buf := jsonBufferPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer jsonBufferPool.Put(buf)
+
+	// 使用 Encoder 写入 buffer（比 MarshalIndent 更高效）
+	encoder := json.NewEncoder(buf)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(s.data); err != nil {
 		return fmt.Errorf("序列化数据失败: %w", err)
 	}
 
-	if err := os.WriteFile(dataFile, data, 0644); err != nil {
+	if err := os.WriteFile(dataFile, buf.Bytes(), 0644); err != nil {
 		return fmt.Errorf("写入数据文件失败: %w", err)
 	}
 
@@ -173,7 +188,11 @@ func (s *JSONStore) DeleteSubscription(id string) error {
 
 	for i := range s.data.Subscriptions {
 		if s.data.Subscriptions[i].ID == id {
-			s.data.Subscriptions = append(s.data.Subscriptions[:i], s.data.Subscriptions[i+1:]...)
+			// 清零被删除元素，释放内存引用
+			last := len(s.data.Subscriptions) - 1
+			copy(s.data.Subscriptions[i:], s.data.Subscriptions[i+1:])
+			s.data.Subscriptions[last] = Subscription{} // 清零
+			s.data.Subscriptions = s.data.Subscriptions[:last]
 			return s.saveInternal()
 		}
 	}
@@ -232,7 +251,11 @@ func (s *JSONStore) DeleteFilter(id string) error {
 
 	for i := range s.data.Filters {
 		if s.data.Filters[i].ID == id {
-			s.data.Filters = append(s.data.Filters[:i], s.data.Filters[i+1:]...)
+			// 清零被删除元素，释放内存引用
+			last := len(s.data.Filters) - 1
+			copy(s.data.Filters[i:], s.data.Filters[i+1:])
+			s.data.Filters[last] = Filter{} // 清零
+			s.data.Filters = s.data.Filters[:last]
 			return s.saveInternal()
 		}
 	}
@@ -278,7 +301,11 @@ func (s *JSONStore) DeleteRule(id string) error {
 
 	for i := range s.data.Rules {
 		if s.data.Rules[i].ID == id {
-			s.data.Rules = append(s.data.Rules[:i], s.data.Rules[i+1:]...)
+			// 清零被删除元素，释放内存引用
+			last := len(s.data.Rules) - 1
+			copy(s.data.Rules[i:], s.data.Rules[i+1:])
+			s.data.Rules[last] = Rule{} // 清零
+			s.data.Rules = s.data.Rules[:last]
 			return s.saveInternal()
 		}
 	}
@@ -365,7 +392,11 @@ func (s *JSONStore) DeleteManualNode(id string) error {
 
 	for i := range s.data.ManualNodes {
 		if s.data.ManualNodes[i].ID == id {
-			s.data.ManualNodes = append(s.data.ManualNodes[:i], s.data.ManualNodes[i+1:]...)
+			// 清零被删除元素，释放内存引用
+			last := len(s.data.ManualNodes) - 1
+			copy(s.data.ManualNodes[i:], s.data.ManualNodes[i+1:])
+			s.data.ManualNodes[last] = ManualNode{} // 清零
+			s.data.ManualNodes = s.data.ManualNodes[:last]
 			return s.saveInternal()
 		}
 	}

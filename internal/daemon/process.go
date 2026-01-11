@@ -26,19 +26,26 @@ type ProcessManager struct {
 	mu          sync.RWMutex
 	running     bool
 	pid         int // 保存 PID（支持恢复的进程，即使 cmd 为空）
-	logs        []string
-	maxLogs     int
+
+	// Ring buffer 日志存储（固定内存，避免频繁分配）
+	logs     []string
+	logHead  int // 下一个写入位置
+	logCount int // 当前日志数量
+	maxLogs  int
 }
 
 // NewProcessManager 创建进程管理器
 func NewProcessManager(singboxPath, configPath, dataDir string) *ProcessManager {
+	maxLogs := 1000
 	pm := &ProcessManager{
 		singboxPath: singboxPath,
 		configPath:  configPath,
 		dataDir:     dataDir,
 		pidFile:     filepath.Join(dataDir, "singbox.pid"),
-		maxLogs:     1000,
-		logs:        make([]string, 0),
+		maxLogs:     maxLogs,
+		logs:        make([]string, maxLogs), // 预分配固定大小
+		logHead:     0,
+		logCount:    0,
 	}
 
 	// 启动时尝试恢复已有的 sing-box 进程
@@ -453,33 +460,51 @@ func (pm *ProcessManager) GetPID() int {
 	return 0
 }
 
-// GetLogs 获取日志
+// GetLogs 获取日志（从 ring buffer 按时间顺序返回）
 func (pm *ProcessManager) GetLogs() []string {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
-	logs := make([]string, len(pm.logs))
-	copy(logs, pm.logs)
-	return logs
+	if pm.logCount == 0 {
+		return []string{}
+	}
+
+	result := make([]string, pm.logCount)
+	if pm.logCount < pm.maxLogs {
+		// 未满，直接从头开始复制
+		copy(result, pm.logs[:pm.logCount])
+	} else {
+		// 已满，从 logHead 位置开始是最旧的日志
+		copy(result, pm.logs[pm.logHead:])
+		copy(result[pm.maxLogs-pm.logHead:], pm.logs[:pm.logHead])
+	}
+	return result
 }
 
 // ClearLogs 清除日志
 func (pm *ProcessManager) ClearLogs() {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
-	pm.logs = make([]string, 0)
+
+	// 清零所有槽位，释放字符串引用
+	for i := range pm.logs {
+		pm.logs[i] = ""
+	}
+	pm.logHead = 0
+	pm.logCount = 0
 }
 
-// addLog 添加日志
+// addLog 添加日志（ring buffer 实现）
 func (pm *ProcessManager) addLog(line string) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
-	pm.logs = append(pm.logs, line)
+	// 写入当前位置
+	pm.logs[pm.logHead] = line
+	pm.logHead = (pm.logHead + 1) % pm.maxLogs
 
-	// 限制日志数量
-	if len(pm.logs) > pm.maxLogs {
-		pm.logs = pm.logs[len(pm.logs)-pm.maxLogs:]
+	if pm.logCount < pm.maxLogs {
+		pm.logCount++
 	}
 }
 
