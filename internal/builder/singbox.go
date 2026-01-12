@@ -500,7 +500,8 @@ func (b *ConfigBuilder) buildOutbounds() []Outbound {
 	}
 
 	// 创建自动选择组（所有节点）
-	if len(allNodeTags) > 0 {
+	hasAuto := len(allNodeTags) > 0
+	if hasAuto {
 		outbounds = append(outbounds, Outbound{
 			"tag":       "Auto",
 			"type":      "urltest",
@@ -512,15 +513,21 @@ func (b *ConfigBuilder) buildOutbounds() []Outbound {
 	}
 
 	// 创建主选择器（精简版：只包含分组，不包含单节点）
-	proxyOutbounds := []string{"Auto"}
+	var proxyOutbounds []string
+	proxyDefault := "DIRECT"
+	if hasAuto {
+		proxyOutbounds = append(proxyOutbounds, "Auto")
+		proxyDefault = "Auto"
+	}
 	proxyOutbounds = append(proxyOutbounds, countryGroupTags...) // 添加国家分组
 	proxyOutbounds = append(proxyOutbounds, filterGroupTags...)
+	proxyOutbounds = append(proxyOutbounds, "DIRECT", "REJECT")
 
 	outbounds = append(outbounds, Outbound{
 		"tag":       "Proxy",
 		"type":      "selector",
 		"outbounds": proxyOutbounds,
-		"default":   "Auto",
+		"default":   proxyDefault,
 	})
 
 	// 为启用的规则组创建选择器
@@ -537,7 +544,10 @@ func (b *ConfigBuilder) buildOutbounds() []Outbound {
 			selectorOutbounds = []string{"DIRECT", "REJECT", "Proxy"}
 		} else {
 			// 代理规则组：提供完整选项（但不包含单节点）
-			selectorOutbounds = []string{"Proxy", "Auto", "DIRECT", "REJECT"}
+			selectorOutbounds = []string{"Proxy", "DIRECT", "REJECT"}
+			if hasAuto {
+				selectorOutbounds = append([]string{"Proxy", "Auto"}, "DIRECT", "REJECT")
+			}
 			selectorOutbounds = append(selectorOutbounds, countryGroupTags...) // 添加国家分组
 			selectorOutbounds = append(selectorOutbounds, filterGroupTags...)
 		}
