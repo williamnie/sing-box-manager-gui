@@ -2,29 +2,64 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 基础样式 */
 body {
   margin: 0;
   min-height: 100vh;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 #root {
   min-height: 100vh;
 }
 
-/* 优化阴影效果 - 极简设计，几乎去除所有阴影 */
-/* 覆盖 Card 组件的阴影 - 使用边框代替 */
+/* 深色模式基础色调 */
+:root {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f9fafb;
+  --bg-tertiary: #f3f4f6;
+  --text-primary: #111827;
+  --text-secondary: #4b5563;
+  --text-muted: #9ca3af;
+  --border-color: #e5e7eb;
+  --card-bg: #ffffff;
+}
+
+.dark {
+  --bg-primary: #111827;
+  --bg-secondary: #1f2937;
+  --bg-tertiary: #374151;
+  --text-primary: #f9fafb;
+  --text-secondary: #d1d5db;
+  --text-muted: #6b7280;
+  --border-color: #374151;
+  --card-bg: #1f2937;
+}
+
+/* 优化阴影效果 - 极简设计 */
 .nextui-card,
 [data-slot="base"] {
   box-shadow: none !important;
-  border: 1px solid rgba(0, 0, 0, 0.06) !important;
 }
 
-/* 优化 Modal 和 Dropdown 的阴影 - 极轻的阴影 */
+/* 深色模式下的 Modal 和 Dropdown */
+.dark [role="dialog"] {
+}
+
+.dark [data-slot="backdrop"] {
+  background-color: rgba(0, 0, 0, 0.7) !important;
+}
+
+/* 优化 Modal 和 Dropdown 的阴影 */
 [data-slot="backdrop"],
 [role="dialog"],
 .nextui-dropdown-menu {
   box-shadow: 0 2px 4px 0 rgba(0, 0, 0, 0.03) !important;
-  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+}
+
+.dark [role="dialog"],
+.dark .nextui-dropdown-menu {
+  box-shadow: 0 4px 16px 0 rgba(0, 0, 0, 0.4) !important;
 }
 
 /* 优化 Button 的阴影 */
@@ -36,6 +71,68 @@ body {
 .nextui-input-wrapper,
 [data-slot="input-wrapper"] {
   box-shadow: none !important;
+}
+
+/* 深色模式下的 Input 边框 */
+.dark [data-slot="input-wrapper"] {
+  border-color: var(--border-color) !important;
+  background-color: var(--bg-tertiary) !important;
+}
+
+/* 深色模式下的表格 */
+.dark table {
+  border-color: var(--border-color);
+}
+
+.dark thead {
+  background-color: var(--bg-tertiary);
+}
+
+.dark tbody tr {
+  border-color: var(--border-color);
+}
+
+.dark tbody tr:hover {
+  background-color: var(--bg-tertiary);
+}
+
+/* 深色模式下的滚动条 */
+.dark ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: var(--text-muted);
+  border-radius: 4px;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
+
+/* 深色模式下的 Chip */
+.dark [data-slot="chip"] {
+  background-color: var(--bg-tertiary);
+}
+
+/* 深色模式下的 Tabs */
+.dark [data-slot="tabList"] {
+  background-color: var(--bg-tertiary);
+}
+
+/* 主题切换过渡效果 */
+* {
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+/* 避免文字颜色过渡造成的闪烁 */
+h1, h2, h3, h4, h5, h6, p, span, a, li {
+  transition: color 0.15s ease;
 }
 
 /* Toast 动画 */
@@ -52,4 +149,24 @@ body {
 
 .animate-slide-in {
   animation: slide-in 0.3s ease-out;
+}
+
+/* 深色模式下的 Toast */
+.dark .toast-container {
+  --toast-bg: var(--bg-secondary);
+  --toast-border: var(--border-color);
+}
+
+/* 抽屉从右侧滑入动画 */
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.25s ease-out;
 }
