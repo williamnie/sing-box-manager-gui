@@ -241,22 +241,22 @@ export default function Dashboard() {
         </CardHeader>
         <CardBody>
           <div className="grid grid-cols-3 gap-4">
-            <div>
+            <div className="overflow-hidden">
               <p className="text-sm text-gray-500">版本</p>
               <div className="flex items-center gap-1">
-                <p className="font-medium">
-                  {serviceStatus?.version?.match(/version\s+([\d.]+)/)?.[1] || serviceStatus?.version || '-'}
+                <p className="font-medium truncate">
+                  {serviceStatus?.version?.match(/version\s+([\d.]+)/)?.[1] || '-'}
                 </p>
                 {serviceStatus?.version && (
                   <Tooltip
                     content={
-                      <div className="max-w-xs whitespace-pre-wrap text-xs p-1">
+                      <pre className="max-w-sm text-xs p-1 whitespace-pre-wrap break-all">
                         {serviceStatus.version}
-                      </div>
+                      </pre>
                     }
                     placement="bottom"
                   >
-                    <Info className="w-3.5 h-3.5 text-gray-400 cursor-help" />
+                    <Info className="w-3.5 h-3.5 text-gray-400 cursor-help flex-shrink-0" />
                   </Tooltip>
                 )}
               </div>
