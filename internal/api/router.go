@@ -652,7 +652,8 @@ func (s *Server) validateRuleSet(c *gin.Context) {
 
 func (s *Server) getSettings(c *gin.Context) {
 	settings := s.store.GetSettings()
-	settings.WebPort = s.port
+	// 不再覆盖 WebPort，使用 data.json 中存储的值
+	// settings.WebPort = s.port
 	c.JSON(http.StatusOK, gin.H{"data": settings})
 }
 
