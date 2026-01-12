@@ -40,6 +40,8 @@ interface UseClashConnectionsReturn {
   reconnect: () => void;
 }
 
+const MAX_RECONNECT_ATTEMPTS = 10;
+
 export function useClashConnections(): UseClashConnectionsReturn {
   const settings = useStore(state => state.settings);
   const [connections, setConnections] = useState<Connection[]>([]);
@@ -50,14 +52,15 @@ export function useClashConnections(): UseClashConnectionsReturn {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttempts = useRef(0);
+  const mountedRef = useRef(true);
 
   const connect = useCallback(() => {
-    if (!settings) return;
+    if (!settings || !mountedRef.current) return;
+    if (reconnectAttempts.current >= MAX_RECONNECT_ATTEMPTS) return;
 
     const port = settings.clash_api_port || 9091;
     const secret = settings.clash_api_secret || '';
     
-    // 构建 WebSocket URL
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.hostname;
     let wsUrl = `${protocol}//${host}:${port}/connections`;
@@ -66,8 +69,9 @@ export function useClashConnections(): UseClashConnectionsReturn {
       wsUrl += `?token=${encodeURIComponent(secret)}`;
     }
 
-    // 关闭现有连接
+    // 清理旧连接
     if (wsRef.current) {
+      wsRef.current.onclose = null;
       wsRef.current.close();
     }
 
@@ -76,43 +80,48 @@ export function useClashConnections(): UseClashConnectionsReturn {
       wsRef.current = ws;
 
       ws.onopen = () => {
+        if (!mountedRef.current) return;
         setIsConnected(true);
         setError(null);
-        reconnectAttempts.current = 0; // 重置重连计数
+        reconnectAttempts.current = 0;
       };
 
       ws.onmessage = (event) => {
+        if (!mountedRef.current) return;
         try {
           const data: ConnectionsMessage = JSON.parse(event.data);
           setConnections(data.connections || []);
           setDownloadTotal(data.downloadTotal || 0);
           setUploadTotal(data.uploadTotal || 0);
-        } catch (e) {
-          console.error('Failed to parse connections data:', e);
-        }
+        } catch {}
       };
 
-      ws.onerror = (event) => {
-        console.error('WebSocket error:', event);
-        setError('连接 Clash API 失败');
+      ws.onerror = () => {
+        if (ws.readyState === WebSocket.OPEN) ws.close();
       };
 
       ws.onclose = () => {
+        if (!mountedRef.current) return;
         setIsConnected(false);
         wsRef.current = null;
         
-        // 指数退避重连：1s, 2s, 4s, 最大 10s
-        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 10000);
         reconnectAttempts.current++;
-        reconnectTimeoutRef.current = setTimeout(connect, delay);
+        if (reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS) {
+          const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
+          reconnectTimeoutRef.current = setTimeout(connect, delay);
+        } else {
+          setError('连接失败，已达最大重试次数');
+        }
       };
-    } catch (e) {
-      setError('无法建立 WebSocket 连接');
-      console.error('WebSocket connection error:', e);
+    } catch {
+      if (mountedRef.current) {
+        setError('无法建立 WebSocket 连接');
+      }
     }
   }, [settings]);
 
   const reconnect = useCallback(() => {
+    reconnectAttempts.current = 0;
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
     }
@@ -120,19 +129,24 @@ export function useClashConnections(): UseClashConnectionsReturn {
   }, [connect]);
 
   useEffect(() => {
+    mountedRef.current = true;
+    
     if (settings) {
       connect();
     }
 
     return () => {
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
+      mountedRef.current = false;
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
+      if (wsRef.current) {
+        wsRef.current.onclose = null;
+        wsRef.current.close();
+        wsRef.current = null;
+      }
     };
-  }, [settings, connect]);
+  }, [settings?.clash_api_port, settings?.clash_api_secret]);
 
   return {
     connections,
