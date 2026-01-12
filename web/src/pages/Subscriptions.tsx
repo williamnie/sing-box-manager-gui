@@ -95,6 +95,16 @@ export default function Subscriptions() {
     fetchSubscriptions(); fetchManualNodes(); fetchCountryGroups(); fetchFilters(); fetchSettings();
   }, []);
 
+  // 同步 selectedSub 与 subscriptions
+  useEffect(() => {
+    if (selectedSub) {
+      const updated = subscriptions.find(s => s.id === selectedSub.id);
+      if (updated && JSON.stringify(updated) !== JSON.stringify(selectedSub)) {
+        setSelectedSub(updated);
+      }
+    }
+  }, [subscriptions]);
+
   // 测速功能
   const handleTestNodes = useCallback(async (sub: Subscription) => {
     if (!settings || !sub.nodes?.length) return;
@@ -634,7 +644,7 @@ export default function Subscriptions() {
                     const handleToggleNode = async (nodeIndex: number) => {
                       try {
                         await subscriptionApi.toggleNodeDisabled(selectedSub.id, nodeIndex);
-                        fetchSubscriptions();
+                        fetchSubscriptions(); // useEffect 会自动同步 selectedSub
                       } catch (e) {
                         toast.error('切换失败');
                       }
