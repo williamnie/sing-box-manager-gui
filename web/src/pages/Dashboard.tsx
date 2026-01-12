@@ -1,19 +1,20 @@
 import { useEffect, useState } from 'react';
 import { Card, CardBody, CardHeader, Button, Chip, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Tooltip } from '@nextui-org/react';
-import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Info, Activity, ChevronDown } from 'lucide-react';
+import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Info, Activity, ChevronDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { useStore } from '../store';
 import { serviceApi, configApi } from '../api';
 import { toast } from '../components/Toast';
 import NetworkTopology from '../components/NetworkTopology';
+import DataUsage from '../components/DataUsage';
+import { useClashTraffic, useClashMemory, formatSpeed, formatMemory } from '../hooks/useClashTraffic';
 
 export default function Dashboard() {
   // 使用选择器优化渲染性能
   const serviceStatus = useStore(state => state.serviceStatus);
   const subscriptions = useStore(state => state.subscriptions);
-  const systemInfo = useStore(state => state.systemInfo);
+  const settings = useStore(state => state.settings);
   const fetchServiceStatus = useStore(state => state.fetchServiceStatus);
   const fetchSubscriptions = useStore(state => state.fetchSubscriptions);
-  const fetchSystemInfo = useStore(state => state.fetchSystemInfo);
   const fetchSettings = useStore(state => state.fetchSettings);
 
   // 错误模态框状态
@@ -30,6 +31,13 @@ export default function Dashboard() {
   // 网络拓扑展开状态
   const [showTopology, setShowTopology] = useState(true);
 
+  // 操作中状态（防止连续点击）
+  const [isOperating, setIsOperating] = useState(false);
+
+  // 实时流量和内存监控
+  const traffic = useClashTraffic();
+  const memory = useClashMemory();
+
   // 显示错误的辅助函数
   const showError = (title: string, error: any) => {
     const message = error.response?.data?.error || error.message || '操作失败';
@@ -44,14 +52,12 @@ export default function Dashboard() {
     // 初始加载
     fetchServiceStatus();
     fetchSubscriptions();
-    fetchSystemInfo();
     fetchSettings();
 
     // 轮询函数 - 仅在页面可见时执行
     const poll = () => {
       if (!document.hidden) {
         fetchServiceStatus();
-        fetchSystemInfo();
       }
     };
 
@@ -71,45 +77,96 @@ export default function Dashboard() {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [fetchServiceStatus, fetchSubscriptions, fetchSystemInfo, fetchSettings]);
+  }, [fetchServiceStatus, fetchSubscriptions, fetchSettings]);
+
+  // 等待 Clash API 就绪
+  const waitForClashApi = async (maxWait = 15000) => {
+    const port = settings?.clash_api_port || 9091;
+    const startTime = Date.now();
+    
+    while (Date.now() - startTime < maxWait) {
+      try {
+        const res = await fetch(`http://${window.location.hostname}:${port}/version`, { 
+          signal: AbortSignal.timeout(2000) 
+        });
+        if (res.ok) return true;
+      } catch {}
+      await new Promise(r => setTimeout(r, 500));
+    }
+    return false;
+  };
+
+  // 最少等待时间
+  const minDelay = (ms: number) => new Promise(r => setTimeout(r, ms));
 
   const handleStart = async () => {
+    if (isOperating) return;
+    setIsOperating(true);
     try {
-      await serviceApi.start();
+      const [,] = await Promise.all([
+        serviceApi.start(),
+        minDelay(2000), // 最少 2 秒动画
+      ]);
+      await waitForClashApi();
       await fetchServiceStatus();
       toast.success('服务已启动');
     } catch (error) {
       showError('启动失败', error);
+    } finally {
+      setIsOperating(false);
     }
   };
 
   const handleStop = async () => {
+    if (isOperating) return;
+    setIsOperating(true);
     try {
-      await serviceApi.stop();
+      const [,] = await Promise.all([
+        serviceApi.stop(),
+        minDelay(2000),
+      ]);
       await fetchServiceStatus();
       toast.success('服务已停止');
     } catch (error) {
       showError('停止失败', error);
+    } finally {
+      setIsOperating(false);
     }
   };
 
   const handleRestart = async () => {
+    if (isOperating) return;
+    setIsOperating(true);
     try {
-      await serviceApi.restart();
+      const [,] = await Promise.all([
+        serviceApi.restart(),
+        minDelay(2000),
+      ]);
+      await waitForClashApi();
       await fetchServiceStatus();
       toast.success('服务已重启');
     } catch (error) {
       showError('重启失败', error);
+    } finally {
+      setIsOperating(false);
     }
   };
 
   const handleApplyConfig = async () => {
+    if (isOperating) return;
+    setIsOperating(true);
     try {
-      await configApi.apply();
+      const [,] = await Promise.all([
+        configApi.apply(),
+        minDelay(2000),
+      ]);
+      await waitForClashApi();
       await fetchServiceStatus();
       toast.success('配置已应用');
     } catch (error) {
       showError('应用配置失败', error);
+    } finally {
+      setIsOperating(false);
     }
   };
 
@@ -140,8 +197,10 @@ export default function Dashboard() {
                   size="sm"
                   color="danger"
                   variant="flat"
-                  startContent={<Square className="w-4 h-4" />}
+                  startContent={!isOperating && <Square className="w-4 h-4" />}
                   onPress={handleStop}
+                  isLoading={isOperating}
+                  isDisabled={isOperating}
                 >
                   停止
                 </Button>
@@ -149,8 +208,10 @@ export default function Dashboard() {
                   size="sm"
                   color="primary"
                   variant="flat"
-                  startContent={<RefreshCw className="w-4 h-4" />}
+                  startContent={!isOperating && <RefreshCw className="w-4 h-4" />}
                   onPress={handleRestart}
+                  isLoading={isOperating}
+                  isDisabled={isOperating}
                 >
                   重启
                 </Button>
@@ -159,8 +220,10 @@ export default function Dashboard() {
               <Button
                 size="sm"
                 color="success"
-                startContent={<Play className="w-4 h-4" />}
+                startContent={!isOperating && <Play className="w-4 h-4" />}
                 onPress={handleStart}
+                isLoading={isOperating}
+                isDisabled={isOperating}
               >
                 启动
               </Button>
@@ -169,6 +232,8 @@ export default function Dashboard() {
               size="sm"
               color="primary"
               onPress={handleApplyConfig}
+              isLoading={isOperating}
+              isDisabled={isOperating}
             >
               应用配置
             </Button>
@@ -242,17 +307,12 @@ export default function Dashboard() {
               <Cpu className="w-6 h-6 text-purple-600 dark:text-purple-300" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">sbm 资源</p>
-              <p className="text-lg font-bold">
-                {systemInfo?.sbm ? (
-                  <>
-                    <span className="text-sm font-normal text-gray-500">CPU </span>
-                    {systemInfo.sbm.cpu_percent.toFixed(1)}%
-                    <span className="text-sm font-normal text-gray-500 ml-2">内存 </span>
-                    {systemInfo.sbm.memory_mb.toFixed(1)}MB
-                  </>
-                ) : '-'}
-              </p>
+              <p className="text-sm text-gray-500">内存占用</p>
+              {memory.connected ? (
+                <p className="text-2xl font-bold">{formatMemory(memory.inuse)}</p>
+              ) : (
+                <p className="text-2xl font-bold text-gray-400">-</p>
+              )}
             </div>
           </CardBody>
         </Card>
@@ -263,19 +323,21 @@ export default function Dashboard() {
               <Activity className="w-6 h-6 text-orange-600 dark:text-orange-300" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">sing-box 资源</p>
-              <p className="text-lg font-bold">
-                {serviceStatus?.running && systemInfo?.singbox ? (
-                  <>
-                    <span className="text-sm font-normal text-gray-500">CPU </span>
-                    {systemInfo.singbox.cpu_percent.toFixed(1)}%
-                    <span className="text-sm font-normal text-gray-500 ml-2">内存 </span>
-                    {systemInfo.singbox.memory_mb.toFixed(1)}MB
-                  </>
-                ) : (
-                  <span className="text-gray-400">未运行</span>
-                )}
-              </p>
+              <p className="text-sm text-gray-500">实时流量</p>
+              {traffic.connected ? (
+                <div className="flex items-center gap-3 text-lg font-bold">
+                  <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
+                    <ArrowUp className="w-4 h-4" />
+                    {formatSpeed(traffic.up)}
+                  </span>
+                  <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400">
+                    <ArrowDown className="w-4 h-4" />
+                    {formatSpeed(traffic.down)}
+                  </span>
+                </div>
+              ) : (
+                <p className="text-lg font-bold text-gray-400">未连接</p>
+              )}
             </div>
           </CardBody>
         </Card>
@@ -302,6 +364,9 @@ export default function Dashboard() {
           )}
         </Card>
       )}
+
+      {/* 数据用量 */}
+      {serviceStatus?.running && <DataUsage />}
 
       {/* 订阅列表预览 */}
       <Card>
