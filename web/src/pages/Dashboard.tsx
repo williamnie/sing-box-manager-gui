@@ -276,72 +276,60 @@ export default function Dashboard() {
       </Card>
 
       {/* 统计卡片 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
-          <CardBody className="flex flex-row items-center gap-3">
-            <div className="p-2.5 bg-blue-100 dark:bg-blue-900 rounded-lg flex-shrink-0">
-              <Wifi className="w-5 h-5 text-blue-600 dark:text-blue-300" />
+      <Card>
+        <CardBody className="flex flex-row items-center justify-between gap-4 py-3">
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
+              <Wifi className="w-4 h-4 text-blue-600 dark:text-blue-300" />
             </div>
-            <div className="min-w-0">
+            <div>
               <p className="text-xs text-gray-500">订阅数量</p>
-              <p className="text-xl font-bold">{enabledSubs} / {subscriptions.length}</p>
+              <p className="text-base font-bold">{enabledSubs}/{subscriptions.length}</p>
             </div>
-          </CardBody>
-        </Card>
+          </div>
 
-        <Card>
-          <CardBody className="flex flex-row items-center gap-3">
-            <div className="p-2.5 bg-green-100 dark:bg-green-900 rounded-lg flex-shrink-0">
-              <HardDrive className="w-5 h-5 text-green-600 dark:text-green-300" />
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-green-100 dark:bg-green-900 rounded-lg">
+              <HardDrive className="w-4 h-4 text-green-600 dark:text-green-300" />
             </div>
-            <div className="min-w-0">
+            <div>
               <p className="text-xs text-gray-500">节点总数</p>
-              <p className="text-xl font-bold">{totalNodes}</p>
+              <p className="text-base font-bold">{totalNodes}</p>
             </div>
-          </CardBody>
-        </Card>
+          </div>
 
-        <Card>
-          <CardBody className="flex flex-row items-center gap-3">
-            <div className="p-2.5 bg-purple-100 dark:bg-purple-900 rounded-lg flex-shrink-0">
-              <Cpu className="w-5 h-5 text-purple-600 dark:text-purple-300" />
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-purple-100 dark:bg-purple-900 rounded-lg">
+              <Cpu className="w-4 h-4 text-purple-600 dark:text-purple-300" />
             </div>
-            <div className="min-w-0">
+            <div>
               <p className="text-xs text-gray-500">内存占用</p>
-              {memory.connected ? (
-                <p className="text-xl font-bold">{formatMemory(memory.inuse)}</p>
-              ) : (
-                <p className="text-xl font-bold text-gray-400">-</p>
-              )}
+              <p className="text-base font-bold">{memory.connected ? formatMemory(memory.inuse) : '-'}</p>
             </div>
-          </CardBody>
-        </Card>
+          </div>
 
-        <Card>
-          <CardBody className="flex flex-row items-center gap-3">
-            <div className="p-2.5 bg-orange-100 dark:bg-orange-900 rounded-lg flex-shrink-0">
-              <Activity className="w-5 h-5 text-orange-600 dark:text-orange-300" />
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-orange-100 dark:bg-orange-900 rounded-lg">
+              <Activity className="w-4 h-4 text-orange-600 dark:text-orange-300" />
             </div>
-            <div className="min-w-0">
+            <div>
               <p className="text-xs text-gray-500">实时流量</p>
               {traffic.connected ? (
-                <div className="flex items-center gap-2 text-base font-bold">
+                <div className="flex items-center gap-2 text-sm font-bold">
                   <span className="flex items-center gap-0.5 text-green-600 dark:text-green-400">
-                    <ArrowUp className="w-3.5 h-3.5" />
-                    {formatSpeed(traffic.up)}
+                    <ArrowUp className="w-3 h-3" />{formatSpeed(traffic.up)}
                   </span>
                   <span className="flex items-center gap-0.5 text-blue-600 dark:text-blue-400">
-                    <ArrowDown className="w-3.5 h-3.5" />
-                    {formatSpeed(traffic.down)}
+                    <ArrowDown className="w-3 h-3" />{formatSpeed(traffic.down)}
                   </span>
                 </div>
               ) : (
-                <p className="text-base font-bold text-gray-400">未连接</p>
+                <p className="text-sm font-bold text-gray-400">-</p>
               )}
             </div>
-          </CardBody>
-        </Card>
-      </div>
+          </div>
+        </CardBody>
+      </Card>
 
       {/* 网络拓扑 */}
       {serviceStatus?.running && (
