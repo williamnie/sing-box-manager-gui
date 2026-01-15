@@ -142,6 +142,103 @@ After starting, open `http://localhost:9090` in your browser.
 - **Frontend:** React 19, TypeScript, NextUI, Tailwind CSS
 - **Build:** Single binary with embedded frontend
 
+### Project Structure
+
+```text
+singbox-manager/
+├── cmd/                    # Application entry point
+│   └── sbm/               # Main program entry
+│       └── main.go        # Application startup logic
+├── internal/              # Core business logic (private packages)
+│   ├── api/              # HTTP API routes and handlers
+│   │   └── router.go     # Gin router configuration and all API endpoints
+│   ├── parser/           # Subscription format parsers
+│   │   ├── parser.go     # Parser interface and common logic
+│   │   ├── shadowsocks.go    # Shadowsocks protocol parser
+│   │   ├── vmess.go          # VMess protocol parser
+│   │   ├── vless.go          # VLESS protocol parser
+│   │   ├── trojan.go         # Trojan protocol parser
+│   │   ├── hysteria2.go      # Hysteria2 protocol parser
+│   │   ├── tuic.go           # TUIC protocol parser
+│   │   ├── socks.go          # SOCKS protocol parser
+│   │   └── clash_yaml.go     # Clash YAML format parser
+│   ├── storage/          # Data storage layer
+│   │   ├── models.go     # Data model definitions
+│   │   └── json_store.go # JSON file storage implementation
+│   ├── daemon/           # sing-box process lifecycle management
+│   │   ├── process.go    # Process start, stop, restart
+│   │   ├── launchd.go    # macOS launchd integration
+│   │   └── systemd.go    # Linux systemd integration
+│   ├── service/          # Business service layer
+│   │   ├── subscription.go   # Subscription management service
+│   │   └── scheduler.go      # Scheduled task scheduler
+│   ├── kernel/           # sing-box kernel management
+│   │   └── (kernel download and version management)
+│   ├── builder/          # sing-box configuration generator
+│   │   └── singbox.go    # Generate sing-box config.json from user settings
+│   └── logger/           # Logging system
+│       └── logger.go     # Log management and file rotation
+├── pkg/                   # Reusable public packages
+│   └── utils/            # Utility functions
+├── web/                   # Frontend application
+│   ├── src/
+│   │   ├── pages/        # Page components
+│   │   │   ├── Dashboard.tsx      # Dashboard (system monitoring)
+│   │   │   ├── Subscriptions.tsx  # Subscription management
+│   │   │   ├── Rules.tsx          # Rule configuration
+│   │   │   ├── Settings.tsx       # System settings
+│   │   │   └── Logs.tsx           # Log viewer
+│   │   ├── components/   # Shared components
+│   │   │   ├── Layout.tsx    # Application layout
+│   │   │   └── Toast.tsx     # Toast notifications
+│   │   ├── api/          # API client
+│   │   │   └── index.ts      # HTTP request wrapper
+│   │   └── store/        # State management
+│   │       └── index.ts      # Zustand store definition
+│   ├── embed.go          # Go embed configuration (embed frontend assets)
+│   └── package.json      # Frontend dependencies
+├── docs/                  # Documentation and screenshots
+├── build.sh              # Build script
+├── go.mod                # Go module definition
+└── README.md             # Project documentation
+```
+
+#### Backend Architecture
+
+**Layered Design:**
+
+- **API Layer** (`internal/api`): Handle HTTP requests and routing
+- **Service Layer** (`internal/service`): Business logic implementation
+- **Storage Layer** (`internal/storage`): Data persistence
+
+**Core Modules:**
+
+- **Parsers** (`internal/parser`): Strategy pattern implementation, each protocol has independent parsing logic, supporting 8 mainstream proxy protocols
+- **Process Management** (`internal/daemon`): Cross-platform process management, supporting macOS launchd and Linux systemd
+- **Configuration Builder** (`internal/builder`): Convert user configuration to sing-box JSON format
+
+**Architecture Principles:**
+
+- **Single Responsibility**: Each package focuses on a specific functional area
+- **Dependency Injection**: Decoupling through interfaces for better testability
+- **Protocol Decoupling**: Adding new protocol support only requires adding a new parser file
+
+#### Frontend Architecture
+
+**Tech Stack:**
+
+- **UI Framework**: React 19 + NextUI (modern component library)
+- **Routing**: React Router v7
+- **State Management**: Zustand (lightweight and clean state management)
+- **HTTP Client**: Axios
+- **Charts**: Recharts (system monitoring visualization)
+
+**Page Organization:**
+
+- Each functional module corresponds to an independent page component
+- Shared Layout provides unified navigation and layout
+- Toast component provides global message notifications
+
 ### Requirements
 
 - Go 1.21+ (for building)
@@ -291,6 +388,103 @@ cd singbox-manager
 - **后端：** Go、Gin、gopsutil
 - **前端：** React 19、TypeScript、NextUI、Tailwind CSS
 - **构建：** 单一二进制文件，内嵌前端
+
+### 项目结构
+
+```text
+singbox-manager/
+├── cmd/                    # 应用程序入口
+│   └── sbm/               # 主程序入口点
+│       └── main.go        # 应用启动逻辑
+├── internal/              # 核心业务逻辑（私有包）
+│   ├── api/              # HTTP API 路由和处理器
+│   │   └── router.go     # Gin 路由配置和所有 API 端点
+│   ├── parser/           # 订阅格式解析器
+│   │   ├── parser.go     # 解析器接口和通用逻辑
+│   │   ├── shadowsocks.go    # Shadowsocks 协议解析
+│   │   ├── vmess.go          # VMess 协议解析
+│   │   ├── vless.go          # VLESS 协议解析
+│   │   ├── trojan.go         # Trojan 协议解析
+│   │   ├── hysteria2.go      # Hysteria2 协议解析
+│   │   ├── tuic.go           # TUIC 协议解析
+│   │   ├── socks.go          # SOCKS 协议解析
+│   │   └── clash_yaml.go     # Clash YAML 格式解析
+│   ├── storage/          # 数据存储层
+│   │   ├── models.go     # 数据模型定义
+│   │   └── json_store.go # JSON 文件存储实现
+│   ├── daemon/           # sing-box 进程生命周期管理
+│   │   ├── process.go    # 进程启动、停止、重启
+│   │   ├── launchd.go    # macOS launchd 集成
+│   │   └── systemd.go    # Linux systemd 集成
+│   ├── service/          # 业务服务层
+│   │   ├── subscription.go   # 订阅管理服务
+│   │   └── scheduler.go      # 定时任务调度
+│   ├── kernel/           # sing-box 内核管理
+│   │   └── (内核下载和版本管理)
+│   ├── builder/          # sing-box 配置文件生成器
+│   │   └── singbox.go    # 根据用户配置生成 sing-box config.json
+│   └── logger/           # 日志系统
+│       └── logger.go     # 日志管理和文件轮转
+├── pkg/                   # 可复用的公共包
+│   └── utils/            # 工具函数
+├── web/                   # 前端应用
+│   ├── src/
+│   │   ├── pages/        # 页面组件
+│   │   │   ├── Dashboard.tsx      # 仪表盘（系统监控）
+│   │   │   ├── Subscriptions.tsx  # 订阅管理
+│   │   │   ├── Rules.tsx          # 规则配置
+│   │   │   ├── Settings.tsx       # 系统设置
+│   │   │   └── Logs.tsx           # 日志查看
+│   │   ├── components/   # 共享组件
+│   │   │   ├── Layout.tsx    # 应用布局
+│   │   │   └── Toast.tsx     # 提示消息
+│   │   ├── api/          # API 客户端
+│   │   │   └── index.ts      # HTTP 请求封装
+│   │   └── store/        # 状态管理
+│   │       └── index.ts      # Zustand store 定义
+│   ├── embed.go          # Go embed 配置（嵌入前端资源）
+│   └── package.json      # 前端依赖
+├── docs/                  # 文档和截图
+├── build.sh              # 构建脚本
+├── go.mod                # Go 模块定义
+└── README.md             # 项目文档
+```
+
+#### 后端架构
+
+**分层设计:**
+
+- **API 层** (`internal/api`): 处理 HTTP 请求，路由分发
+- **服务层** (`internal/service`): 业务逻辑实现
+- **存储层** (`internal/storage`): 数据持久化
+
+**核心模块:**
+
+- **解析器** (`internal/parser`): 采用策略模式，每个协议独立实现解析逻辑，支持 8 种主流代理协议
+- **进程管理** (`internal/daemon`): 跨平台进程管理，支持 macOS launchd 和 Linux systemd
+- **配置生成器** (`internal/builder`): 将用户配置转换为 sing-box 所需的 JSON 格式
+
+**架构原则:**
+
+- **单一职责**: 每个包专注于特定功能领域
+- **依赖注入**: 通过接口解耦，便于测试
+- **协议解耦**: 新增协议支持只需添加新的解析器文件
+
+#### 前端架构
+
+**技术选型:**
+
+- **UI 框架**: React 19 + NextUI (现代化组件库)
+- **路由**: React Router v7
+- **状态管理**: Zustand (轻量级、简洁的状态管理)
+- **HTTP 客户端**: Axios
+- **图表**: Recharts (系统监控可视化)
+
+**页面组织:**
+
+- 每个功能模块对应一个独立页面组件
+- 共享 Layout 提供统一的导航和布局
+- 使用 Toast 组件提供全局消息提示
 
 ### 环境要求
 

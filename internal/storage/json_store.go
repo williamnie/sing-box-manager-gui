@@ -1,12 +1,20 @@
 package storage
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 )
+
+// jsonBufferPool 用于复用 JSON 序列化的 buffer
+var jsonBufferPool = sync.Pool{
+	New: func() interface{} {
+		return bytes.NewBuffer(make([]byte, 0, 64*1024)) // 预分配 64KB
+	},
+}
 
 // JSONStore JSON 文件存储实现
 type JSONStore struct {
@@ -102,12 +110,19 @@ func (s *JSONStore) load() error {
 func (s *JSONStore) saveInternal() error {
 	dataFile := filepath.Join(s.dataDir, "data.json")
 
-	data, err := json.MarshalIndent(s.data, "", "  ")
-	if err != nil {
+	// 从池中获取 buffer
+	buf := jsonBufferPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer jsonBufferPool.Put(buf)
+
+	// 使用 Encoder 写入 buffer（比 MarshalIndent 更高效）
+	encoder := json.NewEncoder(buf)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(s.data); err != nil {
 		return fmt.Errorf("序列化数据失败: %w", err)
 	}
 
-	if err := os.WriteFile(dataFile, data, 0644); err != nil {
+	if err := os.WriteFile(dataFile, buf.Bytes(), 0644); err != nil {
 		return fmt.Errorf("写入数据文件失败: %w", err)
 	}
 
@@ -166,6 +181,20 @@ func (s *JSONStore) UpdateSubscription(sub Subscription) error {
 	return fmt.Errorf("订阅不存在: %s", sub.ID)
 }
 
+// SaveSubscriptionNodes 更新订阅的节点列表
+func (s *JSONStore) SaveSubscriptionNodes(id string, nodes []Node) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i := range s.data.Subscriptions {
+		if s.data.Subscriptions[i].ID == id {
+			s.data.Subscriptions[i].Nodes = nodes
+			return s.saveInternal()
+		}
+	}
+	return fmt.Errorf("订阅不存在: %s", id)
+}
+
 // DeleteSubscription 删除订阅
 func (s *JSONStore) DeleteSubscription(id string) error {
 	s.mu.Lock()
@@ -173,7 +202,11 @@ func (s *JSONStore) DeleteSubscription(id string) error {
 
 	for i := range s.data.Subscriptions {
 		if s.data.Subscriptions[i].ID == id {
-			s.data.Subscriptions = append(s.data.Subscriptions[:i], s.data.Subscriptions[i+1:]...)
+			// 清零被删除元素，释放内存引用
+			last := len(s.data.Subscriptions) - 1
+			copy(s.data.Subscriptions[i:], s.data.Subscriptions[i+1:])
+			s.data.Subscriptions[last] = Subscription{} // 清零
+			s.data.Subscriptions = s.data.Subscriptions[:last]
 			return s.saveInternal()
 		}
 	}
@@ -232,7 +265,11 @@ func (s *JSONStore) DeleteFilter(id string) error {
 
 	for i := range s.data.Filters {
 		if s.data.Filters[i].ID == id {
-			s.data.Filters = append(s.data.Filters[:i], s.data.Filters[i+1:]...)
+			// 清零被删除元素，释放内存引用
+			last := len(s.data.Filters) - 1
+			copy(s.data.Filters[i:], s.data.Filters[i+1:])
+			s.data.Filters[last] = Filter{} // 清零
+			s.data.Filters = s.data.Filters[:last]
 			return s.saveInternal()
 		}
 	}
@@ -278,7 +315,11 @@ func (s *JSONStore) DeleteRule(id string) error {
 
 	for i := range s.data.Rules {
 		if s.data.Rules[i].ID == id {
-			s.data.Rules = append(s.data.Rules[:i], s.data.Rules[i+1:]...)
+			// 清零被删除元素，释放内存引用
+			last := len(s.data.Rules) - 1
+			copy(s.data.Rules[i:], s.data.Rules[i+1:])
+			s.data.Rules[last] = Rule{} // 清零
+			s.data.Rules = s.data.Rules[:last]
 			return s.saveInternal()
 		}
 	}
@@ -365,7 +406,11 @@ func (s *JSONStore) DeleteManualNode(id string) error {
 
 	for i := range s.data.ManualNodes {
 		if s.data.ManualNodes[i].ID == id {
-			s.data.ManualNodes = append(s.data.ManualNodes[:i], s.data.ManualNodes[i+1:]...)
+			// 清零被删除元素，释放内存引用
+			last := len(s.data.ManualNodes) - 1
+			copy(s.data.ManualNodes[i:], s.data.ManualNodes[i+1:])
+			s.data.ManualNodes[last] = ManualNode{} // 清零
+			s.data.ManualNodes = s.data.ManualNodes[:last]
 			return s.saveInternal()
 		}
 	}
@@ -379,7 +424,22 @@ func (s *JSONStore) GetAllNodes() []Node {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	var nodes []Node
+	// 预估容量以避免多次内存重分配
+	capacity := 0
+	for _, sub := range s.data.Subscriptions {
+		if sub.Enabled {
+			capacity += len(sub.Nodes)
+		}
+	}
+	for _, mn := range s.data.ManualNodes {
+		if mn.Enabled {
+			capacity++
+		}
+	}
+
+	// 预分配切片容量
+	nodes := make([]Node, 0, capacity)
+
 	// 添加订阅节点
 	for _, sub := range s.data.Subscriptions {
 		if sub.Enabled {
@@ -395,12 +455,72 @@ func (s *JSONStore) GetAllNodes() []Node {
 	return nodes
 }
 
+// GetAllNodesPtr 获取所有启用节点的指针切片（零拷贝优化）
+// 返回的指针直接引用内部数据，调用者不应修改节点内容
+func (s *JSONStore) GetAllNodesPtr() []*Node {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// 预估容量
+	capacity := 0
+	for _, sub := range s.data.Subscriptions {
+		if sub.Enabled {
+			capacity += len(sub.Nodes)
+		}
+	}
+	for _, mn := range s.data.ManualNodes {
+		if mn.Enabled {
+			capacity++
+		}
+	}
+
+	// 预分配指针切片
+	nodes := make([]*Node, 0, capacity)
+
+	// 添加订阅节点指针
+	for i := range s.data.Subscriptions {
+		if s.data.Subscriptions[i].Enabled {
+			for j := range s.data.Subscriptions[i].Nodes {
+				nodes = append(nodes, &s.data.Subscriptions[i].Nodes[j])
+			}
+		}
+	}
+
+	// 添加手动节点指针
+	for i := range s.data.ManualNodes {
+		if s.data.ManualNodes[i].Enabled {
+			nodes = append(nodes, &s.data.ManualNodes[i].Node)
+		}
+	}
+
+	return nodes
+}
+
 // GetNodesByCountry 按国家获取节点
 func (s *JSONStore) GetNodesByCountry(countryCode string) []Node {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	var nodes []Node
+	// 预估容量：先统计符合条件的节点数
+	capacity := 0
+	for _, sub := range s.data.Subscriptions {
+		if sub.Enabled {
+			for _, node := range sub.Nodes {
+				if node.Country == countryCode {
+					capacity++
+				}
+			}
+		}
+	}
+	for _, mn := range s.data.ManualNodes {
+		if mn.Enabled && mn.Node.Country == countryCode {
+			capacity++
+		}
+	}
+
+	// 预分配切片容量
+	nodes := make([]Node, 0, capacity)
+
 	// 订阅节点
 	for _, sub := range s.data.Subscriptions {
 		if sub.Enabled {

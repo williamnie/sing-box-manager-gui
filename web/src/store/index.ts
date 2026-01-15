@@ -27,6 +27,7 @@ export interface Node {
   country?: string;
   country_emoji?: string;
   extra?: Record<string, any>;
+  disabled?: boolean;
 }
 
 export interface ManualNode {
@@ -105,6 +106,9 @@ export interface Settings {
   ruleset_base_url: string;
   auto_apply: boolean;           // 配置变更后自动应用
   subscription_interval: number; // 订阅自动更新间隔 (分钟)
+  health_check_enabled: boolean; // 启用健康检查
+  health_check_interval: number; // 健康检查间隔 (秒)
+  auto_restart: boolean;         // 健康检查失败时自动重启
   github_proxy: string;          // GitHub 代理地址
 }
 

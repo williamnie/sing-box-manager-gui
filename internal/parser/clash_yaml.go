@@ -340,8 +340,8 @@ func convertClashProxy(proxy ClashProxy) (*storage.Node, error) {
 	// 解析国家信息
 	var country, countryEmoji string
 	if countryInfo := utils.ParseCountryFromNodeName(proxy.Name); countryInfo != nil {
-		country = countryInfo.Code
-		countryEmoji = countryInfo.Emoji
+		country = utils.InternCountry(countryInfo.Code)
+		countryEmoji = utils.InternEmoji(countryInfo.Emoji)
 	}
 
 	node := &storage.Node{

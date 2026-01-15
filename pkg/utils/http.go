@@ -20,9 +20,7 @@ type SubscriptionInfo struct {
 
 // FetchSubscription 拉取订阅内容
 func FetchSubscription(url string) (string, *SubscriptionInfo, error) {
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
+	client := GetHTTPClient()
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {

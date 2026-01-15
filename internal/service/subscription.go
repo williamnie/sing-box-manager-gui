@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -81,20 +82,38 @@ func (s *SubscriptionService) Refresh(id string) error {
 	return s.store.UpdateSubscription(*sub)
 }
 
-// RefreshAll 刷新所有订阅
+// RefreshAll 并发刷新所有订阅
 func (s *SubscriptionService) RefreshAll() error {
 	subs := s.store.GetSubscriptions()
+
+	var wg sync.WaitGroup
+	semaphore := make(chan struct{}, 5) // 限制并发数为 5
+
 	for _, sub := range subs {
-		if sub.Enabled {
-			if err := s.refresh(&sub); err != nil {
-				// 记录错误但继续处理其他订阅
-				continue
-			}
-			if err := s.store.UpdateSubscription(sub); err != nil {
-				continue
-			}
+		if !sub.Enabled {
+			continue
 		}
+
+		wg.Add(1)
+		go func(sub storage.Subscription) {
+			defer wg.Done()
+
+			// 获取信号量
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
+
+			// 刷新订阅
+			if err := s.refresh(&sub); err != nil {
+				// 记录错误但不传播,继续处理其他订阅
+				return
+			}
+
+			// 更新存储
+			_ = s.store.UpdateSubscription(sub)
+		}(sub)
 	}
+
+	wg.Wait()
 	return nil
 }
 

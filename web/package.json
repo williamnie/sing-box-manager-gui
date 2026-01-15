@@ -12,7 +12,11 @@
   "dependencies": {
     "@nextui-org/react": "^2.6.11",
     "@nextui-org/theme": "^2.4.5",
+    "@types/byte-size": "^8.1.2",
+    "@types/d3": "^7.4.3",
     "axios": "^1.13.2",
+    "byte-size": "^9.0.1",
+    "d3": "^7.9.0",
     "framer-motion": "^12.23.24",
     "lucide-react": "^0.555.0",
     "react": "^19.2.0",
