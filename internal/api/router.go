@@ -843,15 +843,23 @@ func (s *Server) buildConfig() (string, error) {
 	missing, err := ruleSetService.EnsureRuleSets(ruleGroups, rules)
 	if err != nil {
 		// 下载失败时给出详细提示
-		logger.Printf("警告: 规则集下载失败，将使用远程规则集作为回退")
-		logger.Printf("  - 失败原因: %v", err)
-		logger.Printf("  - 缺失规则集: %v", missing)
-		logger.Printf("  - 提示: 请检查网络连接，或配置 GitHub 代理 (设置 -> GitHub 代理)")
+		logger.Printf("警告: %v", err)
+		logger.Printf("  - 缺失的规则集将使用远程 URL（需要网络直连 GitHub）")
+		if settings.GithubProxy == "" {
+			logger.Printf("  - 提示: 建议配置 GitHub 代理以加速下载 (设置 -> GitHub 代理)")
+		}
 		// 继续生成配置，缺失的规则集会使用远程 URL
 	}
 
 	// 获取已存在的本地规则集
 	available := ruleSetService.GetAvailableRuleSets()
+	
+	// 统计使用情况
+	localCount := len(available)
+	remoteCount := len(missing)
+	if localCount > 0 || remoteCount > 0 {
+		logger.Printf("配置生成: 本地规则集 %d 个，远程规则集 %d 个", localCount, remoteCount)
+	}
 	
 	// 构建配置（本地存在的用本地，不存在的用远程）
 	b := builder.NewConfigBuilder(settings, nodes, filters, rules, ruleGroups).
