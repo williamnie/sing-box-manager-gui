@@ -205,6 +205,26 @@ func (s *RuleSetService) GetLocalPath(tag string) string {
 	return filepath.Join(s.ruleSetDir, tag+".srs")
 }
 
+// GetAvailableRuleSets 获取已存在的本地规则集列表
+func (s *RuleSetService) GetAvailableRuleSets() map[string]bool {
+	available := make(map[string]bool)
+	entries, err := os.ReadDir(s.ruleSetDir)
+	if err != nil {
+		return available
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".srs" {
+			tag := entry.Name()[:len(entry.Name())-4] // 去掉 .srs 后缀
+			// 检查文件是否有效（非空）
+			path := filepath.Join(s.ruleSetDir, entry.Name())
+			if info, err := os.Stat(path); err == nil && info.Size() > 0 {
+				available[tag] = true
+			}
+		}
+	}
+	return available
+}
+
 // RefreshAll 刷新所有规则集
 func (s *RuleSetService) RefreshAll(ruleGroups []storage.RuleGroup, rules []storage.Rule) error {
 	s.downloadMu.Lock()

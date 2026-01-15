@@ -117,11 +117,17 @@ func TestBuildRuleSetLocal(t *testing.T) {
 	os.MkdirAll(ruleSetDir, 0755)
 	defer os.RemoveAll(ruleSetDir)
 
+	// 创建一个假的规则集文件
+	fakeRuleSetPath := filepath.Join(ruleSetDir, "geosite-google.srs")
+	os.WriteFile(fakeRuleSetPath, []byte("fake content"), 0644)
+
 	ruleGroups := []storage.RuleGroup{
 		{ID: "test", Name: "测试", SiteRules: []string{"google"}, Enabled: true, Outbound: "Proxy"},
 	}
 
-	b := NewConfigBuilder(settings, nil, nil, nil, ruleGroups).WithLocalRuleSet(ruleSetDir)
+	// 设置 available 表示该规则集存在
+	available := map[string]bool{"geosite-google": true}
+	b := NewConfigBuilder(settings, nil, nil, nil, ruleGroups).WithLocalRuleSet(ruleSetDir, available)
 	config, err := b.Build()
 	if err != nil {
 		t.Fatalf("Build failed: %v", err)
@@ -145,6 +151,42 @@ func TestBuildRuleSetLocal(t *testing.T) {
 	}
 	if rs.URL != "" {
 		t.Error("Local RuleSet should not have URL")
+	}
+}
+
+// TestBuildRuleSetFallbackToRemote 测试本地规则集不存在时回退到远程
+func TestBuildRuleSetFallbackToRemote(t *testing.T) {
+	settings := storage.DefaultSettings()
+	ruleSetDir := filepath.Join(os.TempDir(), "test-rulesets-fallback")
+	os.MkdirAll(ruleSetDir, 0755)
+	defer os.RemoveAll(ruleSetDir)
+
+	ruleGroups := []storage.RuleGroup{
+		{ID: "test", Name: "测试", SiteRules: []string{"google"}, Enabled: true, Outbound: "Proxy"},
+	}
+
+	// available 为空，表示没有本地规则集
+	available := map[string]bool{}
+	b := NewConfigBuilder(settings, nil, nil, nil, ruleGroups).WithLocalRuleSet(ruleSetDir, available)
+	config, err := b.Build()
+	if err != nil {
+		t.Fatalf("Build failed: %v", err)
+	}
+
+	// 检查规则集应该是远程的
+	if len(config.Route.RuleSet) == 0 {
+		t.Fatal("RuleSet is empty")
+	}
+
+	rs := config.Route.RuleSet[0]
+	if rs.Type != "remote" {
+		t.Errorf("RuleSet type = %q, want %q (should fallback to remote)", rs.Type, "remote")
+	}
+	if rs.URL == "" {
+		t.Error("Remote RuleSet should have URL")
+	}
+	if rs.Path != "" {
+		t.Error("Remote RuleSet should not have Path")
 	}
 }
 
@@ -238,7 +280,11 @@ func TestConfigJSONOutput(t *testing.T) {
 	os.MkdirAll(ruleSetDir, 0755)
 	defer os.RemoveAll(ruleSetDir)
 
-	b := NewConfigBuilder(settings, nodes, nil, nil, ruleGroups).WithLocalRuleSet(ruleSetDir)
+	// 创建假的规则集文件
+	os.WriteFile(filepath.Join(ruleSetDir, "geosite-google.srs"), []byte("fake"), 0644)
+	available := map[string]bool{"geosite-google": true}
+
+	b := NewConfigBuilder(settings, nodes, nil, nil, ruleGroups).WithLocalRuleSet(ruleSetDir, available)
 	jsonStr, err := b.BuildJSON()
 	if err != nil {
 		t.Fatalf("BuildJSON failed: %v", err)

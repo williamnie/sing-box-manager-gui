@@ -842,13 +842,20 @@ func (s *Server) buildConfig() (string, error) {
 	ruleSetService := service.NewRuleSetService(s.store, s.store.GetDataDir())
 	missing, err := ruleSetService.EnsureRuleSets(ruleGroups, rules)
 	if err != nil {
-		logger.Printf("规则集下载警告: %v (缺失: %v)", err, missing)
-		// 不中断，继续生成配置（使用本地已有的规则集）
+		// 下载失败时给出详细提示
+		logger.Printf("警告: 规则集下载失败，将使用远程规则集作为回退")
+		logger.Printf("  - 失败原因: %v", err)
+		logger.Printf("  - 缺失规则集: %v", missing)
+		logger.Printf("  - 提示: 请检查网络连接，或配置 GitHub 代理 (设置 -> GitHub 代理)")
+		// 继续生成配置，缺失的规则集会使用远程 URL
 	}
 
-	// 使用本地规则集构建配置
+	// 获取已存在的本地规则集
+	available := ruleSetService.GetAvailableRuleSets()
+	
+	// 构建配置（本地存在的用本地，不存在的用远程）
 	b := builder.NewConfigBuilder(settings, nodes, filters, rules, ruleGroups).
-		WithLocalRuleSet(ruleSetService.GetRuleSetDir())
+		WithLocalRuleSet(ruleSetService.GetRuleSetDir(), available)
 	return b.BuildJSON()
 }
 

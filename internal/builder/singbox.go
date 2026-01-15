@@ -136,12 +136,13 @@ type CacheFileConfig struct {
 
 // ConfigBuilder 配置生成器
 type ConfigBuilder struct {
-	settings    *storage.Settings
-	nodes       []*storage.Node
-	filters     []storage.Filter
-	rules       []storage.Rule
-	ruleGroups  []storage.RuleGroup
-	ruleSetDir  string // 本地规则集目录，如果为空则使用远程规则集
+	settings          *storage.Settings
+	nodes             []*storage.Node
+	filters           []storage.Filter
+	rules             []storage.Rule
+	ruleGroups        []storage.RuleGroup
+	ruleSetDir        string          // 本地规则集目录
+	availableRuleSets map[string]bool // 已存在的本地规则集
 }
 
 // NewConfigBuilder 创建配置生成器
@@ -156,15 +157,33 @@ func NewConfigBuilder(settings *storage.Settings, nodes []*storage.Node, filters
 }
 
 // WithLocalRuleSet 设置使用本地规则集
-func (b *ConfigBuilder) WithLocalRuleSet(dir string) *ConfigBuilder {
+// dir: 本地规则集目录
+// available: 已存在的本地规则集（可选，为 nil 时会检查文件是否存在）
+func (b *ConfigBuilder) WithLocalRuleSet(dir string, available map[string]bool) *ConfigBuilder {
 	b.ruleSetDir = dir
+	b.availableRuleSets = available
 	return b
 }
 
 // buildRuleSet 构建单个规则集配置
-// 如果配置了本地规则集目录，则使用本地文件；否则使用远程 URL
+// 如果本地规则集存在则使用本地文件，否则回退到远程 URL
 func (b *ConfigBuilder) buildRuleSet(tag string, isGeoIP bool) RuleSet {
+	// 检查是否可以使用本地规则集
+	useLocal := false
 	if b.ruleSetDir != "" {
+		if b.availableRuleSets != nil {
+			// 使用预先检查的结果
+			useLocal = b.availableRuleSets[tag]
+		} else {
+			// 实时检查文件是否存在
+			localPath := filepath.Join(b.ruleSetDir, tag+".srs")
+			if info, err := os.Stat(localPath); err == nil && info.Size() > 0 {
+				useLocal = true
+			}
+		}
+	}
+
+	if useLocal {
 		// 使用本地规则集
 		return RuleSet{
 			Tag:    tag,
@@ -174,7 +193,7 @@ func (b *ConfigBuilder) buildRuleSet(tag string, isGeoIP bool) RuleSet {
 		}
 	}
 
-	// 使用远程规则集
+	// 使用远程规则集（本地不存在时的回退方案）
 	var url string
 	if isGeoIP {
 		// geoip 规则使用不同的路径
