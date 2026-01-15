@@ -66,6 +66,12 @@ func (s *RuleSetService) EnsureRuleSets(ruleGroups []storage.RuleGroup, rules []
 	logger.Printf("  - 缺失: %v", missing)
 	logger.Printf("  - 目标目录: %s", s.ruleSetDir)
 
+	// 判断是否需要使用镜像（用户未配置代理时）
+	useMirror := settings.GithubProxy == ""
+	if useMirror {
+		logger.Printf("  - 未配置 GitHub 代理，将自动尝试镜像加速")
+	}
+
 	// 并发下载缺失的规则集
 	var wg sync.WaitGroup
 	errChan := make(chan error, len(missing))
@@ -79,13 +85,37 @@ func (s *RuleSetService) EnsureRuleSets(ruleGroups []storage.RuleGroup, rules []
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()
 
-			url := s.buildRuleSetURL(tag, settings)
 			localPath := filepath.Join(s.ruleSetDir, tag+".srs")
+			var lastErr error
 
-			if err := s.downloadRuleSet(url, localPath); err != nil {
-				errChan <- fmt.Errorf("%s: %w", tag, err)
+			if useMirror {
+				// 未配置代理时，依次尝试镜像
+				for _, mirror := range defaultGithubMirrors {
+					url := s.buildRuleSetURLWithMirror(tag, settings, mirror)
+					if err := s.downloadRuleSet(url, localPath); err == nil {
+						successChan <- tag
+						return
+					} else {
+						lastErr = err
+					}
+				}
+				// 所有镜像都失败，尝试直连
+				url := s.buildRuleSetURL(tag, settings)
+				if err := s.downloadRuleSet(url, localPath); err == nil {
+					successChan <- tag
+					return
+				} else {
+					lastErr = err
+				}
+				errChan <- fmt.Errorf("%s: %w (已尝试所有镜像)", tag, lastErr)
 			} else {
-				successChan <- tag
+				// 已配置代理，直接使用
+				url := s.buildRuleSetURL(tag, settings)
+				if err := s.downloadRuleSet(url, localPath); err != nil {
+					errChan <- fmt.Errorf("%s: %w", tag, err)
+				} else {
+					successChan <- tag
+				}
 			}
 		}(tag)
 	}
@@ -156,6 +186,13 @@ func (s *RuleSetService) collectNeededRuleSets(ruleGroups []storage.RuleGroup, r
 	return needed
 }
 
+// 默认 GitHub 加速服务列表（按优先级排序）
+var defaultGithubMirrors = []string{
+	"https://ghfast.top/",
+	"https://gh-proxy.com/",
+	"https://ghproxy.cc/",
+}
+
 // buildRuleSetURL 构建规则集下载 URL
 func (s *RuleSetService) buildRuleSetURL(tag string, settings *storage.Settings) string {
 	var url string
@@ -173,6 +210,17 @@ func (s *RuleSetService) buildRuleSetURL(tag string, settings *storage.Settings)
 	}
 
 	return url
+}
+
+// buildRuleSetURLWithMirror 构建带镜像的规则集下载 URL
+func (s *RuleSetService) buildRuleSetURLWithMirror(tag string, settings *storage.Settings, mirror string) string {
+	var url string
+	if len(tag) > 7 && tag[:7] == "geosite" {
+		url = fmt.Sprintf("%s/%s.srs", settings.RuleSetBaseURL, tag)
+	} else if len(tag) > 5 && tag[:5] == "geoip" {
+		url = fmt.Sprintf("%s/../rule-set-geoip/%s.srs", settings.RuleSetBaseURL, tag)
+	}
+	return mirror + url
 }
 
 // downloadRuleSet 下载规则集文件
