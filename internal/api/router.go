@@ -838,7 +838,17 @@ func (s *Server) buildConfig() (string, error) {
 	rules := s.store.GetRules()
 	ruleGroups := s.store.GetRuleGroups()
 
-	b := builder.NewConfigBuilder(settings, nodes, filters, rules, ruleGroups)
+	// 创建规则集服务并确保所有需要的规则集已下载
+	ruleSetService := service.NewRuleSetService(s.store, s.store.GetDataDir())
+	missing, err := ruleSetService.EnsureRuleSets(ruleGroups, rules)
+	if err != nil {
+		logger.Printf("规则集下载警告: %v (缺失: %v)", err, missing)
+		// 不中断，继续生成配置（使用本地已有的规则集）
+	}
+
+	// 使用本地规则集构建配置
+	b := builder.NewConfigBuilder(settings, nodes, filters, rules, ruleGroups).
+		WithLocalRuleSet(ruleSetService.GetRuleSetDir())
 	return b.BuildJSON()
 }
 

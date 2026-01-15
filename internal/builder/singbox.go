@@ -3,7 +3,9 @@ package builder
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -106,6 +108,7 @@ type RuleSet struct {
 	Type           string `json:"type"`
 	Format         string `json:"format"`
 	URL            string `json:"url,omitempty"`
+	Path           string `json:"path,omitempty"`           // 本地规则集路径
 	DownloadDetour string `json:"download_detour,omitempty"`
 }
 
@@ -133,11 +136,12 @@ type CacheFileConfig struct {
 
 // ConfigBuilder 配置生成器
 type ConfigBuilder struct {
-	settings   *storage.Settings
-	nodes      []*storage.Node
-	filters    []storage.Filter
-	rules      []storage.Rule
-	ruleGroups []storage.RuleGroup
+	settings    *storage.Settings
+	nodes       []*storage.Node
+	filters     []storage.Filter
+	rules       []storage.Rule
+	ruleGroups  []storage.RuleGroup
+	ruleSetDir  string // 本地规则集目录，如果为空则使用远程规则集
 }
 
 // NewConfigBuilder 创建配置生成器
@@ -151,7 +155,49 @@ func NewConfigBuilder(settings *storage.Settings, nodes []*storage.Node, filters
 	}
 }
 
+// WithLocalRuleSet 设置使用本地规则集
+func (b *ConfigBuilder) WithLocalRuleSet(dir string) *ConfigBuilder {
+	b.ruleSetDir = dir
+	return b
+}
+
+// buildRuleSet 构建单个规则集配置
+// 如果配置了本地规则集目录，则使用本地文件；否则使用远程 URL
+func (b *ConfigBuilder) buildRuleSet(tag string, isGeoIP bool) RuleSet {
+	if b.ruleSetDir != "" {
+		// 使用本地规则集
+		return RuleSet{
+			Tag:    tag,
+			Type:   "local",
+			Format: "binary",
+			Path:   filepath.Join(b.ruleSetDir, tag+".srs"),
+		}
+	}
+
+	// 使用远程规则集
+	var url string
+	if isGeoIP {
+		// geoip 规则使用不同的路径
+		name := tag[6:] // 去掉 "geoip-" 前缀
+		url = b.buildRuleSetURL(fmt.Sprintf("%s/../rule-set-geoip/geoip-%s.srs", b.settings.RuleSetBaseURL, name))
+	} else {
+		// geosite 规则
+		name := tag[8:] // 去掉 "geosite-" 前缀
+		url = b.buildRuleSetURL(fmt.Sprintf("%s/geosite-%s.srs", b.settings.RuleSetBaseURL, name))
+	}
+
+	return RuleSet{
+		Tag:            tag,
+		Type:           "remote",
+		Format:         "binary",
+		URL:            url,
+		DownloadDetour: "DIRECT",
+	}
+}
+
 // buildRuleSetURL 构建规则集 URL（支持 GitHub 代理）
+// 注意：规则集下载在 sing-box 启动时进行，此时代理尚未建立
+// 因此 download_detour 只能是 DIRECT，需要通过 GithubProxy 配置镜像站来解决被墙问题
 func (b *ConfigBuilder) buildRuleSetURL(originalURL string) string {
 	if b.settings.GithubProxy != "" {
 		return b.settings.GithubProxy + originalURL
@@ -588,7 +634,73 @@ func (b *ConfigBuilder) nodeToOutbound(node *storage.Node) Outbound {
 		outbound[k] = v
 	}
 
+	// 规范化 transport 配置（处理 WebSocket early data 等）
+	b.normalizeTransport(outbound)
+
 	return outbound
+}
+
+// normalizeTransport 规范化传输层配置
+// 处理各种格式不一致的情况，如 WebSocket path 中的 early data 参数
+func (b *ConfigBuilder) normalizeTransport(outbound Outbound) {
+	transportRaw, ok := outbound["transport"]
+	if !ok {
+		return
+	}
+
+	transport, ok := transportRaw.(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	// 只处理 WebSocket 传输
+	if transport["type"] != "ws" {
+		return
+	}
+
+	// 检查 path 中是否包含 early data 参数（如 /?ed=2048）
+	pathRaw, ok := transport["path"]
+	if !ok {
+		return
+	}
+
+	path, ok := pathRaw.(string)
+	if !ok {
+		return
+	}
+
+	// 解析 path 中的 query 参数
+	queryIdx := strings.Index(path, "?")
+	if queryIdx == -1 {
+		return
+	}
+
+	cleanPath := path[:queryIdx]
+	if cleanPath == "" {
+		cleanPath = "/"
+	}
+
+	queryStr := path[queryIdx+1:]
+	params, err := url.ParseQuery(queryStr)
+	if err != nil {
+		return
+	}
+
+	// 解析 ed 参数（early data）
+	if ed := params.Get("ed"); ed != "" {
+		if v, err := strconv.Atoi(ed); err == nil && v > 0 {
+			// 更新 path 为清理后的路径
+			transport["path"] = cleanPath
+			// 设置 max_early_data（如果未设置）
+			if _, exists := transport["max_early_data"]; !exists {
+				transport["max_early_data"] = v
+			}
+			// 设置 early_data_header_name（如果未设置且有 max_early_data）
+			if _, exists := transport["early_data_header_name"]; !exists {
+				transport["early_data_header_name"] = "Sec-WebSocket-Protocol"
+			}
+		}
+	}
 }
 
 // matchFilter 检查节点是否匹配过滤器
@@ -665,26 +777,14 @@ func (b *ConfigBuilder) buildRoute() *RouteConfig {
 			tag := fmt.Sprintf("geosite-%s", sr)
 			if !ruleSetMap[tag] {
 				ruleSetMap[tag] = true
-				ruleSets = append(ruleSets, RuleSet{
-					Tag:            tag,
-					Type:           "remote",
-					Format:         "binary",
-					URL:            b.buildRuleSetURL(fmt.Sprintf("%s/geosite-%s.srs", b.settings.RuleSetBaseURL, sr)),
-					DownloadDetour: "DIRECT",
-				})
+				ruleSets = append(ruleSets, b.buildRuleSet(tag, false))
 			}
 		}
 		for _, ir := range rg.IPRules {
 			tag := fmt.Sprintf("geoip-%s", ir)
 			if !ruleSetMap[tag] {
 				ruleSetMap[tag] = true
-				ruleSets = append(ruleSets, RuleSet{
-					Tag:            tag,
-					Type:           "remote",
-					Format:         "binary",
-					URL:            b.buildRuleSetURL(fmt.Sprintf("%s/../rule-set-geoip/geoip-%s.srs", b.settings.RuleSetBaseURL, ir)),
-					DownloadDetour: "DIRECT",
-				})
+				ruleSets = append(ruleSets, b.buildRuleSet(tag, true))
 			}
 		}
 	}
@@ -699,13 +799,7 @@ func (b *ConfigBuilder) buildRoute() *RouteConfig {
 				tag := fmt.Sprintf("geosite-%s", v)
 				if !ruleSetMap[tag] {
 					ruleSetMap[tag] = true
-					ruleSets = append(ruleSets, RuleSet{
-						Tag:            tag,
-						Type:           "remote",
-						Format:         "binary",
-						URL:            b.buildRuleSetURL(fmt.Sprintf("%s/geosite-%s.srs", b.settings.RuleSetBaseURL, v)),
-						DownloadDetour: "DIRECT",
-					})
+					ruleSets = append(ruleSets, b.buildRuleSet(tag, false))
 				}
 			}
 		} else if rule.RuleType == "geoip" {
@@ -713,13 +807,7 @@ func (b *ConfigBuilder) buildRoute() *RouteConfig {
 				tag := fmt.Sprintf("geoip-%s", v)
 				if !ruleSetMap[tag] {
 					ruleSetMap[tag] = true
-					ruleSets = append(ruleSets, RuleSet{
-						Tag:            tag,
-						Type:           "remote",
-						Format:         "binary",
-						URL:            b.buildRuleSetURL(fmt.Sprintf("%s/../rule-set-geoip/geoip-%s.srs", b.settings.RuleSetBaseURL, v)),
-						DownloadDetour: "DIRECT",
-					})
+					ruleSets = append(ruleSets, b.buildRuleSet(tag, true))
 				}
 			}
 		}
