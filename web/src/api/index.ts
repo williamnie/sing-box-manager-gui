@@ -13,6 +13,8 @@ export const subscriptionApi = {
   delete: (id: string) => api.delete(`/subscriptions/${id}`),
   refresh: (id: string) => api.post(`/subscriptions/${id}/refresh`),
   refreshAll: () => api.post('/subscriptions/refresh-all'),
+  toggleNodeDisabled: (subId: string, nodeIndex: number) => 
+    api.post(`/subscriptions/${subId}/nodes/${nodeIndex}/toggle`),
 };
 
 // 过滤器 API
@@ -112,6 +114,58 @@ export const kernelApi = {
   getReleases: () => api.get('/kernel/releases'),
   download: (version: string) => api.post('/kernel/download', { version }),
   getProgress: () => api.get('/kernel/progress'),
+};
+
+// Clash API 工具
+export const clashApi = {
+  // 获取 Clash API 基础 URL
+  getBaseUrl: (port: number) => {
+    const host = window.location.hostname;
+    return `http://${host}:${port}`;
+  },
+
+  // 获取所有代理
+  getProxies: async (port: number, secret?: string) => {
+    const headers: Record<string, string> = {};
+    if (secret) headers['Authorization'] = `Bearer ${secret}`;
+    const res = await fetch(`${clashApi.getBaseUrl(port)}/proxies`, { headers });
+    return res.json();
+  },
+
+  // 测试单个节点延迟
+  testDelay: async (port: number, nodeName: string, secret?: string, timeout = 3000) => {
+    const headers: Record<string, string> = {};
+    if (secret) headers['Authorization'] = `Bearer ${secret}`;
+    try {
+      const res = await fetch(
+        `${clashApi.getBaseUrl(port)}/proxies/${encodeURIComponent(nodeName)}/delay?timeout=${timeout}&url=https://www.gstatic.com/generate_204`,
+        { headers }
+      );
+      if (!res.ok) return { delay: 0, available: false };
+      const data = await res.json();
+      return { delay: data.delay || 0, available: data.delay > 0 };
+    } catch {
+      return { delay: 0, available: false };
+    }
+  },
+
+  // 批量测试节点延迟
+  testDelayBatch: async (port: number, nodeNames: string[], secret?: string, timeout = 5000, concurrency = 10) => {
+    const results: Record<string, { delay: number; available: boolean }> = {};
+    
+    // 分批并发测试
+    for (let i = 0; i < nodeNames.length; i += concurrency) {
+      const batch = nodeNames.slice(i, i + concurrency);
+      const batchResults = await Promise.all(
+        batch.map(name => clashApi.testDelay(port, name, secret, timeout).then(r => ({ name, ...r })))
+      );
+      batchResults.forEach(r => {
+        results[r.name] = { delay: r.delay, available: r.available };
+      });
+    }
+    
+    return results;
+  },
 };
 
 export default api;

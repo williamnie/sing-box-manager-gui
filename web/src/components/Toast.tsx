@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { CheckCircle, XCircle, AlertCircle, X } from 'lucide-react';
 import { create } from 'zustand';
 
@@ -42,28 +43,28 @@ const ToastItem = ({ toast, onClose }: { toast: Toast; onClose: () => void }) =>
   };
 
   const bgColors = {
-    success: 'bg-green-50 border-green-200',
-    error: 'bg-red-50 border-red-200',
-    info: 'bg-blue-50 border-blue-200',
+    success: 'bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-800',
+    error: 'bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-800',
+    info: 'bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800',
   };
 
   const textColors = {
-    success: 'text-green-800',
-    error: 'text-red-800',
-    info: 'text-blue-800',
+    success: 'text-green-800 dark:text-green-200',
+    error: 'text-red-800 dark:text-red-200',
+    info: 'text-blue-800 dark:text-blue-200',
   };
 
   return (
     <div
-      className={`flex items-center gap-3 px-4 py-3 rounded-lg border shadow-lg ${bgColors[toast.type]} animate-slide-in`}
+      className={`flex items-center gap-3 px-4 py-3 rounded-lg border ${bgColors[toast.type]} animate-slide-in-right`}
     >
       {icons[toast.type]}
       <span className={`flex-1 text-sm ${textColors[toast.type]}`}>{toast.message}</span>
       <button
         onClick={onClose}
-        className="p-1 hover:bg-black/10 rounded transition-colors"
+        className="p-1 rounded transition-colors hover:bg-black/10 dark:hover:bg-white/10"
       >
-        <X className="w-4 h-4 text-gray-500" />
+        <X className="w-4 h-4 text-gray-500 dark:text-gray-400" />
       </button>
     </div>
   );

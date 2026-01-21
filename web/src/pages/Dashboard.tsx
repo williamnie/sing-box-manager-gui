@@ -1,12 +1,21 @@
 import { useEffect, useState } from 'react';
 import { Card, CardBody, CardHeader, Button, Chip, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Tooltip } from '@nextui-org/react';
-import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Info, Activity } from 'lucide-react';
+import { Play, Square, RefreshCw, Cpu, HardDrive, Wifi, Info, Activity, ChevronDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { useStore } from '../store';
 import { serviceApi, configApi } from '../api';
 import { toast } from '../components/Toast';
+import NetworkTopology from '../components/NetworkTopology';
+import DataUsage from '../components/DataUsage';
+import { useClashTraffic, useClashMemory, formatSpeed, formatMemory } from '../hooks/useClashTraffic';
 
 export default function Dashboard() {
-  const { serviceStatus, subscriptions, systemInfo, fetchServiceStatus, fetchSubscriptions, fetchSystemInfo } = useStore();
+  // 使用选择器优化渲染性能
+  const serviceStatus = useStore(state => state.serviceStatus);
+  const subscriptions = useStore(state => state.subscriptions);
+  const settings = useStore(state => state.settings);
+  const fetchServiceStatus = useStore(state => state.fetchServiceStatus);
+  const fetchSubscriptions = useStore(state => state.fetchSubscriptions);
+  const fetchSettings = useStore(state => state.fetchSettings);
 
   // 错误模态框状态
   const [errorModal, setErrorModal] = useState<{
@@ -19,6 +28,16 @@ export default function Dashboard() {
     message: ''
   });
 
+  // 网络拓扑展开状态
+  const [showTopology, setShowTopology] = useState(true);
+
+  // 操作中状态（防止连续点击）
+  const [isOperating, setIsOperating] = useState(false);
+
+  // 实时流量和内存监控
+  const traffic = useClashTraffic();
+  const memory = useClashMemory();
+
   // 显示错误的辅助函数
   const showError = (title: string, error: any) => {
     const message = error.response?.data?.error || error.message || '操作失败';
@@ -30,55 +49,124 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
+    // 初始加载
     fetchServiceStatus();
     fetchSubscriptions();
-    fetchSystemInfo();
+    fetchSettings();
 
-    // 每 5 秒刷新状态和系统信息
-    const interval = setInterval(() => {
-      fetchServiceStatus();
-      fetchSystemInfo();
-    }, 5000);
-    return () => clearInterval(interval);
-  }, []);
+    // 轮询函数 - 仅在页面可见时执行
+    const poll = () => {
+      if (!document.hidden) {
+        fetchServiceStatus();
+      }
+    };
+
+    // 每 5 秒轮询
+    const interval = setInterval(poll, 5000);
+
+    // 页面可见性变化时立即刷新
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        poll();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [fetchServiceStatus, fetchSubscriptions, fetchSettings]);
+
+  // 等待 Clash API 就绪
+  const waitForClashApi = async (maxWait = 15000) => {
+    const port = settings?.clash_api_port || 9091;
+    const startTime = Date.now();
+    
+    while (Date.now() - startTime < maxWait) {
+      try {
+        const res = await fetch(`http://${window.location.hostname}:${port}/version`, { 
+          signal: AbortSignal.timeout(2000) 
+        });
+        if (res.ok) return true;
+      } catch {}
+      await new Promise(r => setTimeout(r, 500));
+    }
+    return false;
+  };
+
+  // 最少等待时间
+  const minDelay = (ms: number) => new Promise(r => setTimeout(r, ms));
 
   const handleStart = async () => {
+    if (isOperating) return;
+    setIsOperating(true);
     try {
-      await serviceApi.start();
+      const [,] = await Promise.all([
+        serviceApi.start(),
+        minDelay(2000), // 最少 2 秒动画
+      ]);
+      await waitForClashApi();
       await fetchServiceStatus();
       toast.success('服务已启动');
     } catch (error) {
       showError('启动失败', error);
+    } finally {
+      setIsOperating(false);
     }
   };
 
   const handleStop = async () => {
+    if (isOperating) return;
+    setIsOperating(true);
     try {
-      await serviceApi.stop();
+      const [,] = await Promise.all([
+        serviceApi.stop(),
+        minDelay(2000),
+      ]);
       await fetchServiceStatus();
       toast.success('服务已停止');
     } catch (error) {
       showError('停止失败', error);
+    } finally {
+      setIsOperating(false);
     }
   };
 
   const handleRestart = async () => {
+    if (isOperating) return;
+    setIsOperating(true);
     try {
-      await serviceApi.restart();
+      const [,] = await Promise.all([
+        serviceApi.restart(),
+        minDelay(2000),
+      ]);
+      await waitForClashApi();
       await fetchServiceStatus();
       toast.success('服务已重启');
     } catch (error) {
       showError('重启失败', error);
+    } finally {
+      setIsOperating(false);
     }
   };
 
   const handleApplyConfig = async () => {
+    if (isOperating) return;
+    setIsOperating(true);
     try {
-      await configApi.apply();
+      const [,] = await Promise.all([
+        configApi.apply(),
+        minDelay(2000),
+      ]);
+      await waitForClashApi();
       await fetchServiceStatus();
       toast.success('配置已应用');
     } catch (error) {
       showError('应用配置失败', error);
+    } finally {
+      setIsOperating(false);
     }
   };
 
@@ -109,8 +197,10 @@ export default function Dashboard() {
                   size="sm"
                   color="danger"
                   variant="flat"
-                  startContent={<Square className="w-4 h-4" />}
+                  startContent={!isOperating && <Square className="w-4 h-4" />}
                   onPress={handleStop}
+                  isLoading={isOperating}
+                  isDisabled={isOperating}
                 >
                   停止
                 </Button>
@@ -118,8 +208,10 @@ export default function Dashboard() {
                   size="sm"
                   color="primary"
                   variant="flat"
-                  startContent={<RefreshCw className="w-4 h-4" />}
+                  startContent={!isOperating && <RefreshCw className="w-4 h-4" />}
                   onPress={handleRestart}
+                  isLoading={isOperating}
+                  isDisabled={isOperating}
                 >
                   重启
                 </Button>
@@ -128,8 +220,10 @@ export default function Dashboard() {
               <Button
                 size="sm"
                 color="success"
-                startContent={<Play className="w-4 h-4" />}
+                startContent={!isOperating && <Play className="w-4 h-4" />}
                 onPress={handleStart}
+                isLoading={isOperating}
+                isDisabled={isOperating}
               >
                 启动
               </Button>
@@ -138,6 +232,8 @@ export default function Dashboard() {
               size="sm"
               color="primary"
               onPress={handleApplyConfig}
+              isLoading={isOperating}
+              isDisabled={isOperating}
             >
               应用配置
             </Button>
@@ -145,22 +241,22 @@ export default function Dashboard() {
         </CardHeader>
         <CardBody>
           <div className="grid grid-cols-3 gap-4">
-            <div>
+            <div className="overflow-hidden">
               <p className="text-sm text-gray-500">版本</p>
               <div className="flex items-center gap-1">
-                <p className="font-medium">
-                  {serviceStatus?.version?.match(/version\s+([\d.]+)/)?.[1] || serviceStatus?.version || '-'}
+                <p className="font-medium truncate">
+                  {serviceStatus?.version?.match(/version\s+([\d.]+)/)?.[1] || '-'}
                 </p>
                 {serviceStatus?.version && (
                   <Tooltip
                     content={
-                      <div className="max-w-xs whitespace-pre-wrap text-xs p-1">
+                      <pre className="max-w-sm text-xs p-1 whitespace-pre-wrap break-all">
                         {serviceStatus.version}
-                      </div>
+                      </pre>
                     }
                     placement="bottom"
                   >
-                    <Info className="w-3.5 h-3.5 text-gray-400 cursor-help" />
+                    <Info className="w-3.5 h-3.5 text-gray-400 cursor-help flex-shrink-0" />
                   </Tooltip>
                 )}
               </div>
@@ -180,75 +276,85 @@ export default function Dashboard() {
       </Card>
 
       {/* 统计卡片 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
-          <CardBody className="flex flex-row items-center gap-4">
-            <div className="p-3 bg-blue-100 dark:bg-blue-900 rounded-lg">
-              <Wifi className="w-6 h-6 text-blue-600 dark:text-blue-300" />
+      <Card>
+        <CardBody className="flex flex-row items-center justify-between gap-4 py-3">
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
+              <Wifi className="w-4 h-4 text-blue-600 dark:text-blue-300" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">订阅数量</p>
-              <p className="text-2xl font-bold">{enabledSubs} / {subscriptions.length}</p>
+              <p className="text-xs text-gray-500">订阅数量</p>
+              <p className="text-base font-bold">{enabledSubs}/{subscriptions.length}</p>
             </div>
-          </CardBody>
-        </Card>
+          </div>
 
-        <Card>
-          <CardBody className="flex flex-row items-center gap-4">
-            <div className="p-3 bg-green-100 dark:bg-green-900 rounded-lg">
-              <HardDrive className="w-6 h-6 text-green-600 dark:text-green-300" />
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-green-100 dark:bg-green-900 rounded-lg">
+              <HardDrive className="w-4 h-4 text-green-600 dark:text-green-300" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">节点总数</p>
-              <p className="text-2xl font-bold">{totalNodes}</p>
+              <p className="text-xs text-gray-500">节点总数</p>
+              <p className="text-base font-bold">{totalNodes}</p>
             </div>
-          </CardBody>
-        </Card>
+          </div>
 
-        <Card>
-          <CardBody className="flex flex-row items-center gap-4">
-            <div className="p-3 bg-purple-100 dark:bg-purple-900 rounded-lg">
-              <Cpu className="w-6 h-6 text-purple-600 dark:text-purple-300" />
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-purple-100 dark:bg-purple-900 rounded-lg">
+              <Cpu className="w-4 h-4 text-purple-600 dark:text-purple-300" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">sbm 资源</p>
-              <p className="text-lg font-bold">
-                {systemInfo?.sbm ? (
-                  <>
-                    <span className="text-sm font-normal text-gray-500">CPU </span>
-                    {systemInfo.sbm.cpu_percent.toFixed(1)}%
-                    <span className="text-sm font-normal text-gray-500 ml-2">内存 </span>
-                    {systemInfo.sbm.memory_mb.toFixed(1)}MB
-                  </>
-                ) : '-'}
-              </p>
+              <p className="text-xs text-gray-500">内存占用</p>
+              <p className="text-base font-bold">{memory.connected ? formatMemory(memory.inuse) : '-'}</p>
             </div>
-          </CardBody>
-        </Card>
+          </div>
 
-        <Card>
-          <CardBody className="flex flex-row items-center gap-4">
-            <div className="p-3 bg-orange-100 dark:bg-orange-900 rounded-lg">
-              <Activity className="w-6 h-6 text-orange-600 dark:text-orange-300" />
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-orange-100 dark:bg-orange-900 rounded-lg">
+              <Activity className="w-4 h-4 text-orange-600 dark:text-orange-300" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">sing-box 资源</p>
-              <p className="text-lg font-bold">
-                {serviceStatus?.running && systemInfo?.singbox ? (
-                  <>
-                    <span className="text-sm font-normal text-gray-500">CPU </span>
-                    {systemInfo.singbox.cpu_percent.toFixed(1)}%
-                    <span className="text-sm font-normal text-gray-500 ml-2">内存 </span>
-                    {systemInfo.singbox.memory_mb.toFixed(1)}MB
-                  </>
-                ) : (
-                  <span className="text-gray-400">未运行</span>
-                )}
-              </p>
+              <p className="text-xs text-gray-500">实时流量</p>
+              {traffic.connected ? (
+                <div className="flex items-center gap-2 text-sm font-bold">
+                  <span className="flex items-center gap-0.5 text-green-600 dark:text-green-400">
+                    <ArrowUp className="w-3 h-3" />{formatSpeed(traffic.up)}
+                  </span>
+                  <span className="flex items-center gap-0.5 text-blue-600 dark:text-blue-400">
+                    <ArrowDown className="w-3 h-3" />{formatSpeed(traffic.down)}
+                  </span>
+                </div>
+              ) : (
+                <p className="text-sm font-bold text-gray-400">-</p>
+              )}
             </div>
-          </CardBody>
+          </div>
+        </CardBody>
+      </Card>
+
+      {/* 网络拓扑 */}
+      {serviceStatus?.running && (
+        <Card>
+          <CardHeader
+            className="flex justify-between items-center cursor-pointer"
+            onClick={() => setShowTopology(!showTopology)}
+          >
+            <h2 className="text-lg font-semibold">网络拓扑</h2>
+            <Button isIconOnly size="sm" variant="light">
+              <ChevronDown
+                className={`w-5 h-5 transition-transform ${showTopology ? 'rotate-180' : ''}`}
+              />
+            </Button>
+          </CardHeader>
+          {showTopology && (
+            <CardBody>
+              <NetworkTopology />
+            </CardBody>
+          )}
         </Card>
-      </div>
+      )}
+
+      {/* 数据用量 */}
+      {serviceStatus?.running && <DataUsage />}
 
       {/* 订阅列表预览 */}
       <Card>

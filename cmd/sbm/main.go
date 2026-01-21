@@ -1,10 +1,15 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
+	"time"
 
 	"github.com/xiaobei/singbox-manager/internal/api"
 	"github.com/xiaobei/singbox-manager/internal/daemon"
@@ -92,8 +97,32 @@ func main() {
 	addr := fmt.Sprintf(":%d", port)
 	logger.Printf("启动 Web 服务: http://0.0.0.0%s", addr)
 
-	if err := server.Run(addr); err != nil {
-		logger.Printf("启动服务失败: %v", err)
-		os.Exit(1)
+	httpServer := server.RunServer(addr)
+
+	// 启动 HTTP 服务（非阻塞）
+	go func() {
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Printf("启动服务失败: %v", err)
+			os.Exit(1)
+		}
+	}()
+
+	// 等待中断信号
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	logger.Printf("正在关闭服务...")
+
+	// 优雅关闭 API 服务器（停止 worker 和调度器）
+	server.Shutdown()
+
+	// 优雅关闭 HTTP 服务器
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := httpServer.Shutdown(ctx); err != nil {
+		logger.Printf("服务关闭出错: %v", err)
 	}
+
+	logger.Printf("服务已关闭")
 }

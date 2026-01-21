@@ -31,6 +31,7 @@ type Node struct {
 	Extra        map[string]interface{} `json:"extra,omitempty"`         // 协议特定字段
 	Country      string                 `json:"country,omitempty"`       // 国家代码
 	CountryEmoji string                 `json:"country_emoji,omitempty"` // 国家 emoji
+	Disabled     bool                   `json:"disabled,omitempty"`      // 是否禁用
 }
 
 // ManualNode 手动添加的节点
@@ -131,6 +132,11 @@ type Settings struct {
 	AutoApply            bool `json:"auto_apply"`            // 配置变更后自动应用
 	SubscriptionInterval int  `json:"subscription_interval"` // 订阅自动更新间隔 (分钟)，0 表示禁用
 
+	// 健康检查设置
+	HealthCheckEnabled  bool `json:"health_check_enabled"`  // 启用健康检查
+	HealthCheckInterval int  `json:"health_check_interval"` // 健康检查间隔 (秒)，默认 30
+	AutoRestart         bool `json:"auto_restart"`          // 健康检查失败时自动重启
+
 	// GitHub 代理设置
 	GithubProxy string `json:"github_proxy"` // GitHub 代理地址，如 https://ghproxy.com/
 }
@@ -153,6 +159,9 @@ func DefaultSettings() *Settings {
 		RuleSetBaseURL:       "https://github.com/lyc8503/sing-box-rules/raw/rule-set-geosite",
 		AutoApply:            true, // 默认开启自动应用
 		SubscriptionInterval: 60,   // 默认 60 分钟更新一次
+		HealthCheckEnabled:   true, // 默认开启健康检查
+		HealthCheckInterval:  30,   // 默认 30 秒检查一次
+		AutoRestart:          true, // 默认开启自动重启
 		GithubProxy:          "",   // 默认不使用代理
 	}
 }
