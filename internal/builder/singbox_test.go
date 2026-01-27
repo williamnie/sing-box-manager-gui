@@ -48,7 +48,7 @@ func TestNormalizeTransportWSEarlyData(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			nodes := []*storage.Node{
+			nodes := []storage.Node{
 				{
 					Tag:        "test-node",
 					Type:       "vmess",
@@ -246,7 +246,7 @@ func TestBuildRuleSetRemote(t *testing.T) {
 func TestConfigJSONOutput(t *testing.T) {
 	settings := storage.DefaultSettings()
 	
-	nodes := []*storage.Node{
+	nodes := []storage.Node{
 		{
 			Tag:        "test-vmess",
 			Type:       "vmess",

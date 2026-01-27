@@ -13,7 +13,7 @@ export const subscriptionApi = {
   delete: (id: string) => api.delete(`/subscriptions/${id}`),
   refresh: (id: string) => api.post(`/subscriptions/${id}/refresh`),
   refreshAll: () => api.post('/subscriptions/refresh-all'),
-  toggleNodeDisabled: (subId: string, nodeIndex: number) => 
+  toggleNodeDisabled: (subId: string, nodeIndex: number) =>
     api.post(`/subscriptions/${subId}/nodes/${nodeIndex}/toggle`),
 };
 
@@ -152,7 +152,7 @@ export const clashApi = {
   // 批量测试节点延迟
   testDelayBatch: async (port: number, nodeNames: string[], secret?: string, timeout = 5000, concurrency = 10) => {
     const results: Record<string, { delay: number; available: boolean }> = {};
-    
+
     // 分批并发测试
     for (let i = 0; i < nodeNames.length; i += concurrency) {
       const batch = nodeNames.slice(i, i + concurrency);
@@ -163,9 +163,16 @@ export const clashApi = {
         results[r.name] = { delay: r.delay, available: r.available };
       });
     }
-    
+
     return results;
   },
+};
+// 订阅下发 API
+export const subscribeApi = {
+  getInfo: () => api.get('/subscribe/info'),
+  generateToken: () => api.post('/subscribe/token'),
+  export: (format: 'singbox' | 'clash', path?: string) =>
+    api.post('/subscribe/export', { format, path }),
 };
 
 export default api;

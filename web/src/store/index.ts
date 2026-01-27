@@ -110,6 +110,8 @@ export interface Settings {
   health_check_interval: number; // 健康检查间隔 (秒)
   auto_restart: boolean;         // 健康检查失败时自动重启
   github_proxy: string;          // GitHub 代理地址
+  subscribe_enabled: boolean;    // 订阅下发开关
+  subscribe_token: string;       // 订阅令牌
 }
 
 export interface ServiceStatus {

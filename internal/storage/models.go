@@ -139,6 +139,10 @@ type Settings struct {
 
 	// GitHub 代理设置
 	GithubProxy string `json:"github_proxy"` // GitHub 代理地址，如 https://ghproxy.com/
+
+	// 订阅下发配置
+	SubscribeEnabled bool   `json:"subscribe_enabled"` // 是否启用订阅下发
+	SubscribeToken   string `json:"subscribe_token"`   // 订阅访问令牌
 }
 
 // DefaultSettings 默认设置
@@ -163,6 +167,8 @@ func DefaultSettings() *Settings {
 		HealthCheckInterval:  30,   // 默认 30 秒检查一次
 		AutoRestart:          true, // 默认开启自动重启
 		GithubProxy:          "",   // 默认不使用代理
+		SubscribeEnabled:     false, // 默认不启用订阅下发
+		SubscribeToken:       "",   // 默认无令牌
 	}
 }
 

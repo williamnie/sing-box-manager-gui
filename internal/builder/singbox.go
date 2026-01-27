@@ -137,7 +137,7 @@ type CacheFileConfig struct {
 // ConfigBuilder 配置生成器
 type ConfigBuilder struct {
 	settings          *storage.Settings
-	nodes             []*storage.Node
+	nodes             []storage.Node
 	filters           []storage.Filter
 	rules             []storage.Rule
 	ruleGroups        []storage.RuleGroup
@@ -145,8 +145,13 @@ type ConfigBuilder struct {
 	availableRuleSets map[string]bool // 已存在的本地规则集
 }
 
+// BuildOptions 配置生成选项
+type BuildOptions struct {
+	MobileMode bool // 移动端模式（阉割 hosts）
+}
+
 // NewConfigBuilder 创建配置生成器
-func NewConfigBuilder(settings *storage.Settings, nodes []*storage.Node, filters []storage.Filter, rules []storage.Rule, ruleGroups []storage.RuleGroup) *ConfigBuilder {
+func NewConfigBuilder(settings *storage.Settings, nodes []storage.Node, filters []storage.Filter, rules []storage.Rule, ruleGroups []storage.RuleGroup) *ConfigBuilder {
 	return &ConfigBuilder{
 		settings:   settings,
 		nodes:      nodes,
@@ -246,6 +251,39 @@ func (b *ConfigBuilder) Build() (*SingBoxConfig, error) {
 // BuildJSON 构建 JSON 字符串
 func (b *ConfigBuilder) BuildJSON() (string, error) {
 	config, err := b.Build()
+	if err != nil {
+		return "", err
+	}
+
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("序列化配置失败: %w", err)
+	}
+
+	return string(data), nil
+}
+
+// BuildWithOptions 带选项的配置生成
+func (b *ConfigBuilder) BuildWithOptions(opts BuildOptions) (*SingBoxConfig, error) {
+	config := &SingBoxConfig{
+		Log:       b.buildLog(),
+		DNS:       b.buildDNSWithOptions(opts),
+		NTP:       b.buildNTP(),
+		Inbounds:  b.buildInbounds(),
+		Outbounds: b.buildOutbounds(),
+		Route:     b.buildRouteWithOptions(opts),
+	}
+
+	if b.settings.ClashAPIPort > 0 {
+		config.Experimental = b.buildExperimental()
+	}
+
+	return config, nil
+}
+
+// BuildJSONWithOptions 带选项的 JSON 构建
+func (b *ConfigBuilder) BuildJSONWithOptions(opts BuildOptions) (string, error) {
+	config, err := b.BuildWithOptions(opts)
 	if err != nil {
 		return "", err
 	}
@@ -406,6 +444,64 @@ func (b *ConfigBuilder) buildDNS() *DNSConfig {
 	}
 }
 
+// buildDNSWithOptions 带选项的 DNS 配置构建
+func (b *ConfigBuilder) buildDNSWithOptions(opts BuildOptions) *DNSConfig {
+	// 基础 DNS 服务器
+	servers := []DNSServer{
+		{Tag: "dns_proxy", Type: "https", Server: "8.8.8.8", Detour: "Proxy"},
+		{Tag: "dns_direct", Type: "udp", Server: "223.5.5.5"},
+		{Tag: "dns_fakeip", Type: "fakeip", Inet4Range: "198.18.0.0/15", Inet6Range: "fc00::/18"},
+	}
+
+	// 基础 DNS 规则
+	rules := []DNSRule{
+		{RuleSet: []string{"geosite-category-ads-all"}, Action: "reject"},
+		{RuleSet: []string{"geosite-geolocation-cn"}, Server: "dns_direct", Action: "route"},
+		{QueryType: []string{"A", "AAAA"}, Server: "dns_fakeip", Action: "route"},
+	}
+
+	// 移动端模式：跳过 hosts 配置
+	if !opts.MobileMode {
+		systemHosts := ParseSystemHosts()
+		predefined := make(map[string]any)
+		var domains []string
+
+		for domain, ips := range systemHosts {
+			if len(ips) == 1 {
+				predefined[domain] = ips[0]
+			} else {
+				predefined[domain] = ips
+			}
+			domains = append(domains, domain)
+		}
+
+		for _, host := range b.settings.Hosts {
+			if host.Enabled && host.Domain != "" && len(host.IPs) > 0 {
+				if len(host.IPs) == 1 {
+					predefined[host.Domain] = host.IPs[0]
+				} else {
+					predefined[host.Domain] = host.IPs
+				}
+				if _, exists := systemHosts[host.Domain]; !exists {
+					domains = append(domains, host.Domain)
+				}
+			}
+		}
+
+		if len(predefined) > 0 {
+			hostsServer := DNSServer{Tag: "dns_hosts", Type: "hosts", Predefined: predefined}
+			servers = append([]DNSServer{hostsServer}, servers...)
+			hostsRule := DNSRule{Domain: domains, Server: "dns_hosts", Action: "route"}
+			rules = append([]DNSRule{hostsRule}, rules...)
+		}
+	}
+
+	return &DNSConfig{
+		Strategy: "prefer_ipv4", Servers: servers, Rules: rules,
+		Final: "dns_proxy", IndependentCache: true,
+	}
+}
+
 // buildNTP 构建 NTP 配置
 // 不启用 NTP，系统自带时间同步服务
 func (b *ConfigBuilder) buildNTP() *NTPConfig {
@@ -461,7 +557,8 @@ func (b *ConfigBuilder) buildOutbounds() []Outbound {
 	countryNodes := make(map[string][]string) // 国家代码 -> 节点标签列表
 
 	// 添加所有节点（跳过禁用的）
-	for _, node := range b.nodes {
+	for i := range b.nodes {
+		node := &b.nodes[i]
 		if node.Disabled {
 			continue // 跳过禁用的节点
 		}
@@ -493,7 +590,8 @@ func (b *ConfigBuilder) buildOutbounds() []Outbound {
 
 		// 根据过滤器筛选节点（跳过禁用的）
 		var filteredTags []string
-		for _, node := range b.nodes {
+		for i := range b.nodes {
+			node := &b.nodes[i]
 			if node.Disabled {
 				continue
 			}
@@ -948,6 +1046,220 @@ func (b *ConfigBuilder) buildRoute() *RouteConfig {
 		}
 
 		// IP 规则
+		if len(rg.IPRules) > 0 {
+			var tags []string
+			for _, ir := range rg.IPRules {
+				tags = append(tags, fmt.Sprintf("geoip-%s", ir))
+			}
+			rules = append(rules, RouteRule{
+				"rule_set": tags,
+				"outbound": rg.Name,
+			})
+		}
+	}
+
+	route.Rules = rules
+
+	return route
+}
+
+// buildRouteWithOptions 带选项的路由配置构建
+func (b *ConfigBuilder) buildRouteWithOptions(opts BuildOptions) *RouteConfig {
+	route := &RouteConfig{
+		AutoDetectInterface: true,
+		Final:               "Final",
+		DefaultDomainResolver: &DomainResolver{
+			Server:     "dns_direct",
+			RewriteTTL: 60,
+		},
+	}
+
+	// 构建规则集
+	ruleSetMap := make(map[string]bool)
+	var ruleSets []RuleSet
+
+	// 从规则组收集需要的规则集
+	for _, rg := range b.ruleGroups {
+		if !rg.Enabled {
+			continue
+		}
+		for _, sr := range rg.SiteRules {
+			tag := fmt.Sprintf("geosite-%s", sr)
+			if !ruleSetMap[tag] {
+				ruleSetMap[tag] = true
+				ruleSets = append(ruleSets, RuleSet{
+					Tag:            tag,
+					Type:           "remote",
+					Format:         "binary",
+					URL:            b.buildRuleSetURL(fmt.Sprintf("%s/geosite-%s.srs", b.settings.RuleSetBaseURL, sr)),
+					DownloadDetour: "DIRECT",
+				})
+			}
+		}
+		for _, ir := range rg.IPRules {
+			tag := fmt.Sprintf("geoip-%s", ir)
+			if !ruleSetMap[tag] {
+				ruleSetMap[tag] = true
+				ruleSets = append(ruleSets, RuleSet{
+					Tag:            tag,
+					Type:           "remote",
+					Format:         "binary",
+					URL:            b.buildRuleSetURL(fmt.Sprintf("%s/../rule-set-geoip/geoip-%s.srs", b.settings.RuleSetBaseURL, ir)),
+					DownloadDetour: "DIRECT",
+				})
+			}
+		}
+	}
+
+	// 从自定义规则收集需要的规则集
+	for _, rule := range b.rules {
+		if !rule.Enabled {
+			continue
+		}
+		if rule.RuleType == "geosite" {
+			for _, v := range rule.Values {
+				tag := fmt.Sprintf("geosite-%s", v)
+				if !ruleSetMap[tag] {
+					ruleSetMap[tag] = true
+					ruleSets = append(ruleSets, RuleSet{
+						Tag:            tag,
+						Type:           "remote",
+						Format:         "binary",
+						URL:            b.buildRuleSetURL(fmt.Sprintf("%s/geosite-%s.srs", b.settings.RuleSetBaseURL, v)),
+						DownloadDetour: "DIRECT",
+					})
+				}
+			}
+		} else if rule.RuleType == "geoip" {
+			for _, v := range rule.Values {
+				tag := fmt.Sprintf("geoip-%s", v)
+				if !ruleSetMap[tag] {
+					ruleSetMap[tag] = true
+					ruleSets = append(ruleSets, RuleSet{
+						Tag:            tag,
+						Type:           "remote",
+						Format:         "binary",
+						URL:            b.buildRuleSetURL(fmt.Sprintf("%s/../rule-set-geoip/geoip-%s.srs", b.settings.RuleSetBaseURL, v)),
+						DownloadDetour: "DIRECT",
+					})
+				}
+			}
+		}
+	}
+
+	route.RuleSet = ruleSets
+
+	// 构建路由规则
+	var rules []RouteRule
+
+	// 1. 添加 sniff action
+	rules = append(rules, RouteRule{
+		"action":  "sniff",
+		"sniffer": []string{"dns", "http", "tls", "quic"},
+		"timeout": "500ms",
+	})
+
+	// 2. DNS 劫持
+	rules = append(rules, RouteRule{
+		"protocol": "dns",
+		"action":   "hijack-dns",
+	})
+
+	// 3. 添加 hosts 域名的路由规则（移动端模式跳过）
+	if !opts.MobileMode {
+		systemHosts := ParseSystemHosts()
+		for domain, ips := range systemHosts {
+			if len(ips) > 0 {
+				rules = append(rules, RouteRule{
+					"domain":           []string{domain},
+					"outbound":         "DIRECT",
+					"override_address": ips[0],
+				})
+			}
+		}
+		for _, host := range b.settings.Hosts {
+			if host.Enabled && host.Domain != "" && len(host.IPs) > 0 {
+				rules = append(rules, RouteRule{
+					"domain":           []string{host.Domain},
+					"outbound":         "DIRECT",
+					"override_address": host.IPs[0],
+				})
+			}
+		}
+	}
+
+	// 按优先级排序自定义规则
+	sortedRules := make([]storage.Rule, len(b.rules))
+	copy(sortedRules, b.rules)
+	sort.Slice(sortedRules, func(i, j int) bool {
+		return sortedRules[i].Priority < sortedRules[j].Priority
+	})
+
+	// 添加自定义规则
+	for _, rule := range sortedRules {
+		if !rule.Enabled {
+			continue
+		}
+
+		routeRule := RouteRule{
+			"outbound": rule.Outbound,
+		}
+
+		switch rule.RuleType {
+		case "domain_suffix":
+			routeRule["domain_suffix"] = rule.Values
+		case "domain_keyword":
+			routeRule["domain_keyword"] = rule.Values
+		case "domain":
+			routeRule["domain"] = rule.Values
+		case "ip_cidr":
+			routeRule["ip_cidr"] = rule.Values
+		case "port":
+			var ports []uint16
+			for _, v := range rule.Values {
+				if port, err := strconv.ParseUint(v, 10, 16); err == nil {
+					ports = append(ports, uint16(port))
+				}
+			}
+			if len(ports) == 1 {
+				routeRule["port"] = ports[0]
+			} else if len(ports) > 1 {
+				routeRule["port"] = ports
+			}
+		case "geosite":
+			var tags []string
+			for _, v := range rule.Values {
+				tags = append(tags, fmt.Sprintf("geosite-%s", v))
+			}
+			routeRule["rule_set"] = tags
+		case "geoip":
+			var tags []string
+			for _, v := range rule.Values {
+				tags = append(tags, fmt.Sprintf("geoip-%s", v))
+			}
+			routeRule["rule_set"] = tags
+		}
+
+		rules = append(rules, routeRule)
+	}
+
+	// 添加规则组的路由规则
+	for _, rg := range b.ruleGroups {
+		if !rg.Enabled {
+			continue
+		}
+
+		if len(rg.SiteRules) > 0 {
+			var tags []string
+			for _, sr := range rg.SiteRules {
+				tags = append(tags, fmt.Sprintf("geosite-%s", sr))
+			}
+			rules = append(rules, RouteRule{
+				"rule_set": tags,
+				"outbound": rg.Name,
+			})
+		}
+
 		if len(rg.IPRules) > 0 {
 			var tags []string
 			for _, ir := range rg.IPRules {

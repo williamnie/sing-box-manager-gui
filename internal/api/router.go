@@ -226,6 +226,13 @@ func (s *Server) setupRoutes() {
 		api.GET("/kernel/releases", s.getKernelReleases)
 		api.POST("/kernel/download", s.startKernelDownload)
 		api.GET("/kernel/progress", s.getKernelProgress)
+
+		// 订阅下发
+		api.GET("/subscribe/info", s.getSubscribeInfo)
+		api.POST("/subscribe/token", s.generateSubscribeToken)
+		api.GET("/subscribe/singbox", s.getSingboxSubscribe)
+		api.GET("/subscribe/clash", s.getClashSubscribe)
+		api.POST("/subscribe/export", s.exportSubscribe)
 	}
 
 	// 静态文件服务（前端，使用嵌入的文件系统）
@@ -833,7 +840,7 @@ func (s *Server) needHardRestart(oldConfig, newConfig []byte) bool {
 
 func (s *Server) buildConfig() (string, error) {
 	settings := s.store.GetSettings()
-	nodes := s.store.GetAllNodesPtr()
+	nodes := s.store.GetAllNodes()
 	filters := s.store.GetFilters()
 	rules := s.store.GetRules()
 	ruleGroups := s.store.GetRuleGroups()

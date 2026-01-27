@@ -1,12 +1,12 @@
 import { useEffect, useState, useRef } from 'react';
-import { 
-  Card, CardBody, Input, Button, Switch, Chip, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, 
-  Select, SelectItem, Progress, Textarea, useDisclosure, Tabs, Tab, Divider
+import {
+  Card, CardHeader, CardBody, Input, Button, Switch, Chip, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter,
+  Select, SelectItem, Progress, Textarea, useDisclosure, Tabs, Tab, Divider,
 } from '@nextui-org/react';
-import { Save, Download, CheckCircle, AlertCircle, Plus, Pencil, Trash2, Eye, EyeOff, Copy, RefreshCw } from 'lucide-react';
+import { Save, Download, CheckCircle, AlertCircle, Plus, Pencil, Trash2, Eye, EyeOff, Copy, RefreshCw, Server } from 'lucide-react';
 import { useStore } from '../store';
 import type { Settings as SettingsType, HostEntry } from '../store';
-import { daemonApi, kernelApi, settingsApi } from '../api';
+import { daemonApi, kernelApi, settingsApi, subscribeApi } from '../api';
 import { toast } from '../components/Toast';
 
 interface KernelInfo {
@@ -48,11 +48,16 @@ export default function Settings() {
   const [ipsText, setIpsText] = useState('');
   const [showSecret, setShowSecret] = useState(false);
 
+  // 订阅下发状态
+  const [subscribeInfo, setSubscribeInfo] = useState<{ enabled: boolean; token: string; links: { singbox?: string; clash?: string } } | null>(null);
+  const [showSubscribeToken, setShowSubscribeToken] = useState(false);
+
   useEffect(() => {
     fetchSettings();
     fetchDaemonStatus();
     fetchKernelInfo();
     fetchSystemHosts();
+    fetchSubscribeInfo();
   }, []);
 
   useEffect(() => {
@@ -77,6 +82,64 @@ export default function Settings() {
     } catch (e) { console.error(e); }
   };
 
+  const fetchSubscribeInfo = async () => {
+    try {
+      const res = await subscribeApi.getInfo();
+      setSubscribeInfo(res.data);
+    } catch (error) {
+      console.error('获取订阅信息失败:', error);
+    }
+  };
+
+  const handleGenerateSubscribeToken = async () => {
+    try {
+      await subscribeApi.generateToken();
+      await fetchSubscribeInfo();
+      toast.success('已生成新令牌');
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || '生成令牌失败');
+    }
+  };
+
+  const fallbackCopy = (text: string) => {
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+
+    // Avoid scrolling to bottom
+    textArea.style.top = "0";
+    textArea.style.left = "0";
+    textArea.style.position = "fixed";
+
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+
+    try {
+      const successful = document.execCommand('copy');
+      if (successful) {
+        toast.success('链接已复制');
+      } else {
+        toast.error('复制失败，请手动复制');
+      }
+    } catch (err) {
+      console.error('Fallback: Unable to copy', err);
+      toast.error('复制失败，请手动复制');
+    }
+
+    document.body.removeChild(textArea);
+  };
+
+  const handleCopySubscribeLink = (link: string) => {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(link).then(() => {
+        toast.success('链接已复制');
+      }).catch(() => fallbackCopy(link));
+    } else {
+      fallbackCopy(link);
+    }
+  };
+
+  // Hosts 处理函数
   const handleAddHost = () => {
     setEditingHost(null);
     setHostFormData({ domain: '', enabled: true });
@@ -246,7 +309,7 @@ export default function Settings() {
             <div>
               <p className="font-medium">{kernelInfo?.installed ? 'sing-box 已安装' : 'sing-box 未安装'}</p>
               <p className="text-sm text-gray-500">
-                {kernelInfo?.installed 
+                {kernelInfo?.installed
                   ? `${kernelInfo.version} · ${kernelInfo.os}/${kernelInfo.arch}`
                   : '需要下载内核才能使用'}
               </p>
@@ -278,18 +341,18 @@ export default function Settings() {
                   onChange={(e) => setFormData({ ...formData, mixed_port: parseInt(e.target.value) || 2080 })}
                 />
               </SettingItem>
-              
+
               <Divider />
-              
+
               <SettingItem label="TUN 模式" desc="透明代理，接管全部流量">
                 <Switch
                   isSelected={formData.tun_enabled}
                   onValueChange={(v) => setFormData({ ...formData, tun_enabled: v })}
                 />
               </SettingItem>
-              
+
               <Divider />
-              
+
               <SettingItem label="允许局域网" desc="其他设备可通过本机代理">
                 <Switch
                   isSelected={formData.allow_lan}
@@ -331,63 +394,311 @@ export default function Settings() {
                   </div>
                 </div>
               )}
-              
-              <Divider />
-              
-              <SettingItem label="自动应用配置" desc="变更后自动重载 sing-box">
+
+              {/* 系统 hosts（只读） */}
+              {systemHosts.length > 0 && (
+                <div>
+                  <p className="text-sm text-gray-500 mb-2">
+                    系统 hosts <Chip size="sm" variant="flat">只读</Chip>
+                  </p>
+                  {systemHosts.map((host) => (
+                    <div
+                      key={host.id}
+                      className="flex items-center justify-between p-3 bg-default-100 rounded-lg mb-2"
+                    >
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <Server className="w-4 h-4 text-gray-500" />
+                          <span className="font-medium">{host.domain}</span>
+                          <Chip size="sm" color="secondary" variant="flat">系统</Chip>
+                        </div>
+                        <div className="flex gap-1 mt-1 flex-wrap">
+                          {host.ips.map((ip, idx) => (
+                            <Chip key={idx} size="sm" variant="bordered">{ip}</Chip>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* 空状态 */}
+              {(!formData.hosts || formData.hosts.length === 0) && systemHosts.length === 0 && (
+                <p className="text-gray-500 text-center py-4">暂无 hosts 映射</p>
+              )}
+            </CardBody>
+          </Card>
+
+          {/* 控制面板配置 */}
+          <Card>
+            <CardHeader>
+              <h2 className="text-lg font-semibold">控制面板</h2>
+            </CardHeader>
+            <CardBody className="space-y-4">
+              <Input
+                type="number"
+                label="Web 管理端口"
+                placeholder="9090"
+                disabled
+                value={String(formData.web_port)}
+                onChange={(e) => setFormData({ ...formData, web_port: parseInt(e.target.value) || 9090 })}
+              />
+              <Input
+                type="number"
+                label="Clash API 端口"
+                placeholder="9091"
+                value={String(formData.clash_api_port)}
+                onChange={(e) => setFormData({ ...formData, clash_api_port: parseInt(e.target.value) || 9091 })}
+              />
+              <Input
+                label="漏网规则出站"
+                placeholder="Proxy"
+                value={formData.final_outbound}
+                onChange={(e) => setFormData({ ...formData, final_outbound: e.target.value })}
+              />
+            </CardBody>
+          </Card>
+
+          {/* 自动化设置 */}
+          <Card>
+            <CardHeader>
+              <h2 className="text-lg font-semibold">自动化</h2>
+            </CardHeader>
+            <CardBody className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium">配置变更后自动应用</p>
+                  <p className="text-sm text-gray-500">订阅刷新或规则变更后自动重启 sing-box</p>
+                </div>
                 <Switch
                   isSelected={formData.auto_apply}
-                  onValueChange={(v) => setFormData({ ...formData, auto_apply: v })}
+                  onValueChange={(enabled) => setFormData({ ...formData, auto_apply: enabled })}
                 />
-              </SettingItem>
-              
-              <SettingItem label="订阅更新间隔" desc="0 表示禁用自动更新">
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="number"
-                    size="sm"
-                    className="w-24"
-                    value={String(formData.subscription_interval)}
-                    onChange={(e) => setFormData({ ...formData, subscription_interval: parseInt(e.target.value) || 0 })}
-                  />
-                  <span className="text-sm text-gray-500">分钟</span>
+              </div>
+              <Input
+                type="number"
+                label="订阅自动更新间隔 (分钟)"
+                placeholder="60"
+                description="设置为 0 表示禁用自动更新"
+                value={String(formData.subscription_interval)}
+                onChange={(e) => setFormData({ ...formData, subscription_interval: parseInt(e.target.value) || 0 })}
+              />
+            </CardBody>
+          </Card>
+
+          {/* 订阅下发 */}
+          <Card>
+            <CardHeader>
+              {/* <Upload className="w-5 h-5 mr-2" /> */}
+              <h2 className="text-lg font-semibold">订阅下发</h2>
+            </CardHeader>
+            <CardBody className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium">启用订阅下发</p>
+                  <p className="text-sm text-gray-500">允许其他设备通过链接获取配置</p>
                 </div>
-              </SettingItem>
-
-              <Divider />
-
-              <SettingItem label="健康检查" desc="定期检查 sing-box 是否正常">
                 <Switch
-                  isSelected={formData.health_check_enabled}
-                  onValueChange={(v) => setFormData({ ...formData, health_check_enabled: v })}
+                  isSelected={formData.subscribe_enabled}
+                  onValueChange={(enabled) => setFormData({ ...formData, subscribe_enabled: enabled })}
                 />
-              </SettingItem>
+              </div>
 
-              {formData.health_check_enabled && (
+              {formData.subscribe_enabled && (
                 <>
-                  <SettingItem label="检查间隔">
+                  <div className="p-4 rounded-lg bg-default-100">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="font-medium">订阅令牌</p>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="flat"
+                          startContent={<RefreshCw className="w-4 h-4" />}
+                          onPress={handleGenerateSubscribeToken}
+                        >
+                          生成新令牌
+                        </Button>
+                      </div>
+                    </div>
                     <div className="flex items-center gap-2">
                       <Input
-                        type="number"
+                        type={showSubscribeToken ? "text" : "password"}
+                        value={subscribeInfo?.token || formData.subscribe_token || ''}
+                        readOnly
                         size="sm"
-                        className="w-24"
-                        value={String(formData.health_check_interval || 30)}
-                        onChange={(e) => setFormData({ ...formData, health_check_interval: parseInt(e.target.value) || 30 })}
+                        className="flex-1"
+                        endContent={
+                          <Button
+                            isIconOnly
+                            size="sm"
+                            variant="light"
+                            onPress={() => setShowSubscribeToken(!showSubscribeToken)}
+                          >
+                            {showSubscribeToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </Button>
+                        }
                       />
-                      <span className="text-sm text-gray-500">秒</span>
+                      <Button
+                        isIconOnly
+                        size="sm"
+                        variant="flat"
+                        onPress={() => handleCopySubscribeLink(subscribeInfo?.token || '')}
+                        isDisabled={!subscribeInfo?.token}
+                      >
+                        <Copy className="w-4 h-4" />
+                      </Button>
                     </div>
-                  </SettingItem>
+                  </div>
 
-                  <SettingItem label="自动重启" desc="检查失败时自动重启 sing-box">
-                    <Switch
-                      isSelected={formData.auto_restart}
-                      onValueChange={(v) => setFormData({ ...formData, auto_restart: v })}
-                    />
-                  </SettingItem>
+                  {subscribeInfo?.links?.singbox && (
+                    <div className="space-y-3">
+                      <p className="text-sm text-gray-500">订阅链接（保存设置后生效）</p>
+                      <div className="flex items-center gap-2">
+                        <Chip size="sm" color="primary" variant="flat">sing-box</Chip>
+                        <Input
+                          value={subscribeInfo.links.singbox}
+                          readOnly
+                          size="sm"
+                          className="flex-1"
+                        />
+                        <Button
+                          isIconOnly
+                          size="sm"
+                          variant="flat"
+                          onPress={() => handleCopySubscribeLink(subscribeInfo.links.singbox!)}
+                        >
+                          <Copy className="w-4 h-4" />
+                        </Button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Chip size="sm" color="secondary" variant="flat">Clash</Chip>
+                        <Input
+                          value={subscribeInfo.links.clash || ''}
+                          readOnly
+                          size="sm"
+                          className="flex-1"
+                        />
+                        <Button
+                          isIconOnly
+                          size="sm"
+                          variant="flat"
+                          onPress={() => handleCopySubscribeLink(subscribeInfo.links.clash!)}
+                        >
+                          <Copy className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </CardBody>
           </Card>
+
+          {/* 后台服务管理 */}
+          {daemonStatus?.supported && (
+            <Card>
+              <CardHeader className="flex justify-between items-center">
+                <h2 className="text-lg font-semibold">后台服务</h2>
+                {daemonStatus && (
+                  <Chip
+                    color={daemonStatus.installed ? 'success' : 'default'}
+                    variant="flat"
+                    size="sm"
+                  >
+                    {daemonStatus.installed ? '已安装' : '未安装'}
+                  </Chip>
+                )}
+              </CardHeader>
+              <CardBody>
+                <p className="text-sm text-gray-500 mb-4">
+                  安装后台服务可让 sbm 管理程序在后台运行，关闭终端后仍可访问 Web 管理界面。服务会开机自启并在崩溃后自动重启。
+                </p>
+                <div className="flex gap-2">
+                  {daemonStatus?.installed ? (
+                    <>
+                      <Button
+                        color="primary"
+                        variant="flat"
+                        onPress={handleRestartDaemon}
+                      >
+                        重启服务
+                      </Button>
+                      <Button
+                        color="danger"
+                        variant="flat"
+                        onPress={handleUninstallDaemon}
+                      >
+                        卸载服务
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      color="primary"
+                      onPress={handleInstallDaemon}
+                    >
+                      安装后台服务
+                    </Button>
+                  )}
+                </div>
+
+                <Divider />
+
+                <SettingItem label="自动应用配置" desc="变更后自动重载 sing-box">
+                  <Switch
+                    isSelected={formData.auto_apply}
+                    onValueChange={(v) => setFormData({ ...formData, auto_apply: v })}
+                  />
+                </SettingItem>
+
+                <SettingItem label="订阅更新间隔" desc="0 表示禁用自动更新">
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      size="sm"
+                      className="w-24"
+                      value={String(formData.subscription_interval)}
+                      onChange={(e) => setFormData({ ...formData, subscription_interval: parseInt(e.target.value) || 0 })}
+                    />
+                    <span className="text-sm text-gray-500">分钟</span>
+                  </div>
+                </SettingItem>
+
+                <Divider />
+
+                <SettingItem label="健康检查" desc="定期检查 sing-box 是否正常">
+                  <Switch
+                    isSelected={formData.health_check_enabled}
+                    onValueChange={(v) => setFormData({ ...formData, health_check_enabled: v })}
+                  />
+                </SettingItem>
+
+                {formData.health_check_enabled && (
+                  <>
+                    <SettingItem label="检查间隔">
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          size="sm"
+                          className="w-24"
+                          value={String(formData.health_check_interval || 30)}
+                          onChange={(e) => setFormData({ ...formData, health_check_interval: parseInt(e.target.value) || 30 })}
+                        />
+                        <span className="text-sm text-gray-500">秒</span>
+                      </div>
+                    </SettingItem>
+
+                    <SettingItem label="自动重启" desc="检查失败时自动重启 sing-box">
+                      <Switch
+                        isSelected={formData.auto_restart}
+                        onValueChange={(v) => setFormData({ ...formData, auto_restart: v })}
+                      />
+                    </SettingItem>
+                  </>
+                )}
+              </CardBody>
+            </Card>
+          )}
         </Tab>
 
         {/* DNS 设置 */}
@@ -402,9 +713,9 @@ export default function Settings() {
                   onChange={(e) => setFormData({ ...formData, proxy_dns: e.target.value })}
                 />
               </SettingItem>
-              
+
               <Divider />
-              
+
               <SettingItem label="直连 DNS" desc="直连域名使用">
                 <Input
                   size="sm"
@@ -413,9 +724,9 @@ export default function Settings() {
                   onChange={(e) => setFormData({ ...formData, direct_dns: e.target.value })}
                 />
               </SettingItem>
-              
+
               <Divider />
-              
+
               <div>
                 <div className="flex justify-between items-center mb-4">
                   <div>
@@ -426,7 +737,7 @@ export default function Settings() {
                     添加
                   </Button>
                 </div>
-                
+
                 <div className="space-y-2">
                   {formData.hosts?.map((host) => (
                     <div key={host.id} className="flex items-center justify-between p-3 bg-default-100 rounded-lg">
@@ -451,7 +762,7 @@ export default function Settings() {
                       </div>
                     </div>
                   ))}
-                  
+
                   {systemHosts.length > 0 && (
                     <div className="pt-4">
                       <p className="text-sm text-gray-500 mb-2">系统 Hosts</p>
@@ -485,9 +796,9 @@ export default function Settings() {
                   onChange={(e) => setFormData({ ...formData, config_path: e.target.value })}
                 />
               </SettingItem>
-              
+
               <Divider />
-              
+
               <SettingItem label="Clash API 端口">
                 <Input
                   type="number"
@@ -497,9 +808,9 @@ export default function Settings() {
                   onChange={(e) => setFormData({ ...formData, clash_api_port: parseInt(e.target.value) || 9091 })}
                 />
               </SettingItem>
-              
+
               <Divider />
-              
+
               <SettingItem label="漏网规则出站" desc="未匹配规则的流量">
                 <Input
                   size="sm"
@@ -508,9 +819,9 @@ export default function Settings() {
                   onChange={(e) => setFormData({ ...formData, final_outbound: e.target.value })}
                 />
               </SettingItem>
-              
+
               <Divider />
-              
+
               <SettingItem label="GitHub 代理" desc="加速内核下载">
                 <Input
                   size="sm"
@@ -520,9 +831,9 @@ export default function Settings() {
                   onChange={(e) => setFormData({ ...formData, github_proxy: e.target.value })}
                 />
               </SettingItem>
-              
+
               <Divider />
-              
+
               <SettingItem label="规则集地址">
                 <Input
                   size="sm"
@@ -549,7 +860,7 @@ export default function Settings() {
                     {daemonStatus.installed ? '已安装' : '未安装'}
                   </Chip>
                 </div>
-                
+
                 <div className="flex gap-2">
                   {daemonStatus.installed ? (
                     <>
@@ -634,7 +945,7 @@ export default function Settings() {
           </ModalFooter>
         </ModalContent>
       </Modal>
-    </div>
+    </div >
   );
 }
 
