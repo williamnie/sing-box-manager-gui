@@ -3,7 +3,7 @@ import {
   Card, CardHeader, CardBody, Input, Button, Switch, Chip, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter,
   Select, SelectItem, Progress, Textarea, useDisclosure, Tabs, Tab, Divider,
 } from '@nextui-org/react';
-import { Save, Download, CheckCircle, AlertCircle, Plus, Pencil, Trash2, Eye, EyeOff, Copy, RefreshCw, Server } from 'lucide-react';
+import { Save, Download, CheckCircle, AlertCircle, Plus, Pencil, Trash2, Eye, EyeOff, Copy, RefreshCw } from 'lucide-react';
 import { useStore } from '../store';
 import type { Settings as SettingsType, HostEntry } from '../store';
 import { daemonApi, kernelApi, settingsApi, subscribeApi } from '../api';
@@ -51,6 +51,7 @@ export default function Settings() {
   // 订阅下发状态
   const [subscribeInfo, setSubscribeInfo] = useState<{ enabled: boolean; token: string; links: { singbox?: string; clash?: string } } | null>(null);
   const [showSubscribeToken, setShowSubscribeToken] = useState(false);
+  const [interfaces, setInterfaces] = useState<{ name: string; ip: string }[]>([]);
 
   useEffect(() => {
     fetchSettings();
@@ -58,6 +59,7 @@ export default function Settings() {
     fetchKernelInfo();
     fetchSystemHosts();
     fetchSubscribeInfo();
+    fetchInterfaces();
   }, []);
 
   useEffect(() => {
@@ -88,6 +90,15 @@ export default function Settings() {
       setSubscribeInfo(res.data);
     } catch (error) {
       console.error('获取订阅信息失败:', error);
+    }
+  };
+
+  const fetchInterfaces = async () => {
+    try {
+      const res = await settingsApi.getInterfaces();
+      setInterfaces(res.data.data || []);
+    } catch (error) {
+      console.error('获取网络接口失败:', error);
     }
   };
 
@@ -327,7 +338,7 @@ export default function Settings() {
       </Card>
 
       {/* 设置 Tabs */}
-      <Tabs aria-label="设置" variant="underlined" classNames={{ tabList: "gap-6", panel: "pt-4" }}>
+      <Tabs aria-label="设置" variant="underlined" classNames={{ tabList: "gap-6", panel: "pt-4 flex flex-col gap-4" }}>
         {/* 基础设置 */}
         <Tab key="basic" title="基础">
           <Card>
@@ -395,70 +406,9 @@ export default function Settings() {
                 </div>
               )}
 
-              {/* 系统 hosts（只读） */}
-              {systemHosts.length > 0 && (
-                <div>
-                  <p className="text-sm text-gray-500 mb-2">
-                    系统 hosts <Chip size="sm" variant="flat">只读</Chip>
-                  </p>
-                  {systemHosts.map((host) => (
-                    <div
-                      key={host.id}
-                      className="flex items-center justify-between p-3 bg-default-100 rounded-lg mb-2"
-                    >
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <Server className="w-4 h-4 text-gray-500" />
-                          <span className="font-medium">{host.domain}</span>
-                          <Chip size="sm" color="secondary" variant="flat">系统</Chip>
-                        </div>
-                        <div className="flex gap-1 mt-1 flex-wrap">
-                          {host.ips.map((ip, idx) => (
-                            <Chip key={idx} size="sm" variant="bordered">{ip}</Chip>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* 空状态 */}
-              {(!formData.hosts || formData.hosts.length === 0) && systemHosts.length === 0 && (
-                <p className="text-gray-500 text-center py-4">暂无 hosts 映射</p>
-              )}
             </CardBody>
           </Card>
 
-          {/* 控制面板配置 */}
-          <Card>
-            <CardHeader>
-              <h2 className="text-lg font-semibold">控制面板</h2>
-            </CardHeader>
-            <CardBody className="space-y-4">
-              <Input
-                type="number"
-                label="Web 管理端口"
-                placeholder="9090"
-                disabled
-                value={String(formData.web_port)}
-                onChange={(e) => setFormData({ ...formData, web_port: parseInt(e.target.value) || 9090 })}
-              />
-              <Input
-                type="number"
-                label="Clash API 端口"
-                placeholder="9091"
-                value={String(formData.clash_api_port)}
-                onChange={(e) => setFormData({ ...formData, clash_api_port: parseInt(e.target.value) || 9091 })}
-              />
-              <Input
-                label="漏网规则出站"
-                placeholder="Proxy"
-                value={formData.final_outbound}
-                onChange={(e) => setFormData({ ...formData, final_outbound: e.target.value })}
-              />
-            </CardBody>
-          </Card>
 
           {/* 自动化设置 */}
           <Card>
@@ -498,6 +448,7 @@ export default function Settings() {
                 <div>
                   <p className="font-medium">启用订阅下发</p>
                   <p className="text-sm text-gray-500">允许其他设备通过链接获取配置</p>
+                  <p className="text-sm text-gray-500">注：点击保存后才会生效</p>
                 </div>
                 <Switch
                   isSelected={formData.subscribe_enabled}
@@ -507,6 +458,54 @@ export default function Settings() {
 
               {formData.subscribe_enabled && (
                 <>
+                  <div className="mb-4">
+                    <Select
+                      label="订阅地址 / Subscription URL"
+                      placeholder="选择局域网 IP"
+                      description="选择本机 IP 自动生成订阅地址，方便局域网设备访问"
+                      selectedKeys={formData.subscribe_url ? [formData.subscribe_url] : []}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val) {
+                          // 如果是选择的 IP，自动补全端口
+                          let finalUrl = val;
+                          // 简单判断是否是 IP，如果是则补全端口
+                          if (/^[\d.]+$/.test(val)) {
+                            finalUrl = `http://${val}:${formData.web_port || 9090}`;
+                          }
+                          setFormData({ ...formData, subscribe_url: finalUrl });
+                        } else {
+                          setFormData({ ...formData, subscribe_url: '' });
+                        }
+                      }}
+                    >
+                      {interfaces.map((iface) => (
+                        <SelectItem key={`http://${iface.ip}:${formData.web_port || 9090}`} textValue={`${iface.name} - ${iface.ip}`}>
+                          <div className="flex flex-col">
+                            <span className="text-small">{iface.name}</span>
+                            <span className="text-tiny text-default-400">{iface.ip}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </Select>
+                    {/* 提供一个手动输入的选项或者 fallback，如果为了简单，可以只提供 Select，
+                        或者用 Autocomplete (NextUI 支持自由输入)。
+                        用户需求是“做成下拉选择的”，如果需要完全自由输入，Autocomplete 更好。
+                        这里先用 Select 展示接口列表。
+                        为了灵活性，可以额外加一个Input或者把Select改成Autocomplete允许自定义。
+                        NextUI Autocomplete 允许自定义输入。
+                    */}
+                    <div className="mt-2">
+                      <Input
+                        size="sm"
+                        label="自定义地址 (可选)"
+                        placeholder="如果下拉框不满足，可手动输入完整地址"
+                        value={formData.subscribe_url || ''}
+                        onChange={(e) => setFormData({ ...formData, subscribe_url: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
                   <div className="p-4 rounded-lg bg-default-100">
                     <div className="flex items-center justify-between mb-2">
                       <p className="font-medium">订阅令牌</p>
@@ -539,15 +538,6 @@ export default function Settings() {
                           </Button>
                         }
                       />
-                      <Button
-                        isIconOnly
-                        size="sm"
-                        variant="flat"
-                        onPress={() => handleCopySubscribeLink(subscribeInfo?.token || '')}
-                        isDisabled={!subscribeInfo?.token}
-                      >
-                        <Copy className="w-4 h-4" />
-                      </Button>
                     </div>
                   </div>
 
@@ -557,7 +547,7 @@ export default function Settings() {
                       <div className="flex items-center gap-2">
                         <Chip size="sm" color="primary" variant="flat">sing-box</Chip>
                         <Input
-                          value={subscribeInfo.links.singbox}
+                          value={formData.subscribe_url ? `${formData.subscribe_url}/api/subscribe/singbox?token=${subscribeInfo.token}` : subscribeInfo.links.singbox}
                           readOnly
                           size="sm"
                           className="flex-1"
@@ -566,7 +556,7 @@ export default function Settings() {
                           isIconOnly
                           size="sm"
                           variant="flat"
-                          onPress={() => handleCopySubscribeLink(subscribeInfo.links.singbox!)}
+                          onPress={() => handleCopySubscribeLink(formData.subscribe_url ? `${formData.subscribe_url}/api/subscribe/singbox?token=${subscribeInfo.token}` : subscribeInfo.links.singbox!)}
                         >
                           <Copy className="w-4 h-4" />
                         </Button>
@@ -574,7 +564,7 @@ export default function Settings() {
                       <div className="flex items-center gap-2">
                         <Chip size="sm" color="secondary" variant="flat">Clash</Chip>
                         <Input
-                          value={subscribeInfo.links.clash || ''}
+                          value={formData.subscribe_url ? `${formData.subscribe_url}/api/subscribe/clash?token=${subscribeInfo.token}` : (subscribeInfo.links.clash || '')}
                           readOnly
                           size="sm"
                           className="flex-1"
@@ -583,7 +573,7 @@ export default function Settings() {
                           isIconOnly
                           size="sm"
                           variant="flat"
-                          onPress={() => handleCopySubscribeLink(subscribeInfo.links.clash!)}
+                          onPress={() => handleCopySubscribeLink(formData.subscribe_url ? `${formData.subscribe_url}/api/subscribe/clash?token=${subscribeInfo.token}` : subscribeInfo.links.clash!)}
                         >
                           <Copy className="w-4 h-4" />
                         </Button>
@@ -599,50 +589,9 @@ export default function Settings() {
           {daemonStatus?.supported && (
             <Card>
               <CardHeader className="flex justify-between items-center">
-                <h2 className="text-lg font-semibold">后台服务</h2>
-                {daemonStatus && (
-                  <Chip
-                    color={daemonStatus.installed ? 'success' : 'default'}
-                    variant="flat"
-                    size="sm"
-                  >
-                    {daemonStatus.installed ? '已安装' : '未安装'}
-                  </Chip>
-                )}
+                <h2 className="text-lg font-semibold">自动化配置</h2>
               </CardHeader>
               <CardBody>
-                <p className="text-sm text-gray-500 mb-4">
-                  安装后台服务可让 sbm 管理程序在后台运行，关闭终端后仍可访问 Web 管理界面。服务会开机自启并在崩溃后自动重启。
-                </p>
-                <div className="flex gap-2">
-                  {daemonStatus?.installed ? (
-                    <>
-                      <Button
-                        color="primary"
-                        variant="flat"
-                        onPress={handleRestartDaemon}
-                      >
-                        重启服务
-                      </Button>
-                      <Button
-                        color="danger"
-                        variant="flat"
-                        onPress={handleUninstallDaemon}
-                      >
-                        卸载服务
-                      </Button>
-                    </>
-                  ) : (
-                    <Button
-                      color="primary"
-                      onPress={handleInstallDaemon}
-                    >
-                      安装后台服务
-                    </Button>
-                  )}
-                </div>
-
-                <Divider />
 
                 <SettingItem label="自动应用配置" desc="变更后自动重载 sing-box">
                   <Switch
@@ -664,7 +613,6 @@ export default function Settings() {
                   </div>
                 </SettingItem>
 
-                <Divider />
 
                 <SettingItem label="健康检查" desc="定期检查 sing-box 是否正常">
                   <Switch
@@ -766,16 +714,13 @@ export default function Settings() {
                   {systemHosts.length > 0 && (
                     <div className="pt-4">
                       <p className="text-sm text-gray-500 mb-2">系统 Hosts</p>
-                      {systemHosts.slice(0, 5).map((host) => (
+                      {systemHosts.map((host) => (
                         <div key={host.id} className="flex items-center gap-2 p-2 text-sm text-gray-500">
                           <span>{host.domain}</span>
                           <span>→</span>
                           <span>{host.ips.join(', ')}</span>
                         </div>
                       ))}
-                      {systemHosts.length > 5 && (
-                        <p className="text-sm text-gray-400">还有 {systemHosts.length - 5} 条...</p>
-                      )}
                     </div>
                   )}
                 </div>
@@ -825,7 +770,7 @@ export default function Settings() {
               <SettingItem label="GitHub 代理" desc="加速内核下载">
                 <Input
                   size="sm"
-                  className="w-72"
+                  className="w-24"
                   placeholder="如 https://ghproxy.com/"
                   value={formData.github_proxy || ''}
                   onChange={(e) => setFormData({ ...formData, github_proxy: e.target.value })}
@@ -952,8 +897,8 @@ export default function Settings() {
 // 设置项组件
 function SettingItem({ label, desc, children }: { label: string; desc?: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between">
-      <div>
+    <div className="flex items-center justify-between gap-4">
+      <div className="flex-shrink-0">
         <p className="font-medium">{label}</p>
         {desc && <p className="text-sm text-gray-500">{desc}</p>}
       </div>

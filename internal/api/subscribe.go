@@ -17,20 +17,25 @@ func (s *Server) getSubscribeInfo(c *gin.Context) {
 	settings := s.store.GetSettings()
 
 	// 构建订阅链接
-	host := c.Request.Host
-	scheme := "http"
-	if c.Request.TLS != nil {
-		scheme = "https"
+	var baseURL string
+	if settings.SubscribeURL != "" {
+		baseURL = settings.SubscribeURL
+	} else {
+		host := c.Request.Host
+		scheme := "http"
+		if c.Request.TLS != nil {
+			scheme = "https"
+		}
+		if forwardedProto := c.GetHeader("X-Forwarded-Proto"); forwardedProto != "" {
+			scheme = forwardedProto
+		}
+		baseURL = fmt.Sprintf("%s://%s", scheme, host)
 	}
-	if forwardedProto := c.GetHeader("X-Forwarded-Proto"); forwardedProto != "" {
-		scheme = forwardedProto
-	}
-
-	baseURL := fmt.Sprintf("%s://%s", scheme, host)
 
 	info := gin.H{
 		"enabled": settings.SubscribeEnabled,
 		"token":   settings.SubscribeToken,
+		"url":     settings.SubscribeURL,
 		"links":   gin.H{},
 	}
 

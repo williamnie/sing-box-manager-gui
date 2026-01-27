@@ -143,6 +143,7 @@ type Settings struct {
 	// 订阅下发配置
 	SubscribeEnabled bool   `json:"subscribe_enabled"` // 是否启用订阅下发
 	SubscribeToken   string `json:"subscribe_token"`   // 订阅访问令牌
+	SubscribeURL     string `json:"subscribe_url"`     // 订阅地址 (覆盖自动生成的地址)
 }
 
 // DefaultSettings 默认设置
@@ -169,6 +170,7 @@ func DefaultSettings() *Settings {
 		GithubProxy:          "",   // 默认不使用代理
 		SubscribeEnabled:     false, // 默认不启用订阅下发
 		SubscribeToken:       "",   // 默认无令牌
+		SubscribeURL:         "",   // 默认无自定义地址
 	}
 }
 

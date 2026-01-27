@@ -50,6 +50,7 @@ export const settingsApi = {
   get: () => api.get('/settings'),
   update: (data: any) => api.put('/settings', data),
   getSystemHosts: () => api.get('/system-hosts'),
+  getInterfaces: () => api.get('/system/interfaces'),
 };
 
 // 配置 API

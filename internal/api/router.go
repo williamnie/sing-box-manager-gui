@@ -172,6 +172,7 @@ func (s *Server) setupRoutes() {
 
 		// 系统 hosts
 		api.GET("/system-hosts", s.getSystemHosts)
+		api.GET("/system/interfaces", s.getNetworkInterfaces)
 
 		// 配置生成
 		api.POST("/config/generate", s.generateConfig)

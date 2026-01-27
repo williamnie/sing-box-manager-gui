@@ -112,6 +112,7 @@ export interface Settings {
   github_proxy: string;          // GitHub 代理地址
   subscribe_enabled: boolean;    // 订阅下发开关
   subscribe_token: string;       // 订阅令牌
+  subscribe_url: string;         // 订阅地址
 }
 
 export interface ServiceStatus {
