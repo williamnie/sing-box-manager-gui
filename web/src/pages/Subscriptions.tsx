@@ -103,7 +103,7 @@ export default function Subscriptions() {
   const {
     subscriptions, manualNodes, countryGroups, filters, loading, settings,
     fetchSubscriptions, fetchManualNodes, fetchCountryGroups, fetchFilters, fetchSettings,
-    addSubscription, updateSubscription, deleteSubscription, refreshSubscription,
+    addSubscription, updateSubscription, deleteSubscription, refreshSubscription, toggleSubscription,
     addManualNode, updateManualNode, deleteManualNode,
     addFilter, updateFilter, deleteFilter, toggleFilter,
   } = useStore();
@@ -339,8 +339,9 @@ export default function Subscriptions() {
                   <div className="absolute top-3 left-0">
                     <Chip
                       size="sm"
-                      className="rounded-l-none rounded-r-full"
+                      className="rounded-l-none rounded-r-full cursor-pointer hover:opacity-80 transition-opacity"
                       color={sub.enabled ? 'primary' : 'default'}
+                      onClick={() => toggleSubscription(sub.id, !sub.enabled)}
                     >
                       {sub.enabled ? '启用' : '禁用'}
                     </Chip>

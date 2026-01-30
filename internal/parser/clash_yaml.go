@@ -221,12 +221,10 @@ func convertClashProxy(proxy ClashProxy) (*storage.Node, error) {
 	}
 
 	// 传输层配置
+	// sing-box 不支持 transport.type = "tcp"，使用 TCP 时应省略 transport 字段
+	// 只有当 network 明确指定为非 tcp 类型时才添加 transport
 	network := proxy.Network
-	if network == "" {
-		network = "tcp"
-	}
-
-	if network != "tcp" || proxy.WSOpts != nil || proxy.H2Opts != nil || proxy.GrpcOpts != nil {
+	if network != "" && network != "tcp" {
 		transport := map[string]interface{}{
 			"type": network,
 		}

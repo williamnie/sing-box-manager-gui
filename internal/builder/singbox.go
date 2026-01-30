@@ -754,6 +754,10 @@ func (b *ConfigBuilder) nodeToOutbound(node *storage.Node) Outbound {
 	// 规范化 transport 配置（处理 WebSocket early data 等）
 	b.normalizeTransport(outbound)
 
+	// 移除无效的 transport 配置：sing-box 不支持 transport.type = "tcp"
+	// 当 type=tcp 时应该完全省略 transport 字段
+	b.removeInvalidTransport(outbound)
+
 	return outbound
 }
 
@@ -817,6 +821,26 @@ func (b *ConfigBuilder) normalizeTransport(outbound Outbound) {
 				transport["early_data_header_name"] = "Sec-WebSocket-Protocol"
 			}
 		}
+	}
+}
+
+// removeInvalidTransport 移除无效的 transport 配置
+// sing-box 不支持 transport.type = "tcp"，当使用 TCP 传输时应完全省略 transport 字段
+func (b *ConfigBuilder) removeInvalidTransport(outbound Outbound) {
+	transportRaw, ok := outbound["transport"]
+	if !ok {
+		return
+	}
+
+	transport, ok := transportRaw.(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	// 如果 transport.type 是 "tcp" 或为空，则移除整个 transport 字段
+	transportType, _ := transport["type"].(string)
+	if transportType == "" || transportType == "tcp" {
+		delete(outbound, "transport")
 	}
 }
 

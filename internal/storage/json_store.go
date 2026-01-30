@@ -99,6 +99,15 @@ func (s *JSONStore) load() error {
 		s.data.Settings.ConfigPath = "generated/config.json"
 		needSave = true
 	}
+
+	// 迁移旧数据：确保订阅默认启用（旧数据缺少 enabled 字段时 bool 零值为 false）
+	for i := range s.data.Subscriptions {
+		if !s.data.Subscriptions[i].Enabled && len(s.data.Subscriptions[i].Nodes) > 0 {
+			s.data.Subscriptions[i].Enabled = true
+			needSave = true
+		}
+	}
+
 	if needSave {
 		return s.saveInternal()
 	}
