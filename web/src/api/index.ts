@@ -1,5 +1,7 @@
 import axios from 'axios';
 
+type ApiPayload = Record<string, unknown>;
+
 const api = axios.create({
   baseURL: '/api',
   timeout: 30000,
@@ -9,7 +11,7 @@ const api = axios.create({
 export const subscriptionApi = {
   getAll: () => api.get('/subscriptions'),
   add: (name: string, url: string) => api.post('/subscriptions', { name, url }),
-  update: (id: string, data: any) => api.put(`/subscriptions/${id}`, data),
+  update: (id: string, data: ApiPayload) => api.put(`/subscriptions/${id}`, data),
   delete: (id: string) => api.delete(`/subscriptions/${id}`),
   refresh: (id: string) => api.post(`/subscriptions/${id}/refresh`),
   refreshAll: () => api.post('/subscriptions/refresh-all'),
@@ -22,23 +24,23 @@ export const subscriptionApi = {
 // 过滤器 API
 export const filterApi = {
   getAll: () => api.get('/filters'),
-  add: (data: any) => api.post('/filters', data),
-  update: (id: string, data: any) => api.put(`/filters/${id}`, data),
+  add: (data: ApiPayload) => api.post('/filters', data),
+  update: (id: string, data: ApiPayload) => api.put(`/filters/${id}`, data),
   delete: (id: string) => api.delete(`/filters/${id}`),
 };
 
 // 规则 API
 export const ruleApi = {
   getAll: () => api.get('/rules'),
-  add: (data: any) => api.post('/rules', data),
-  update: (id: string, data: any) => api.put(`/rules/${id}`, data),
+  add: (data: ApiPayload) => api.post('/rules', data),
+  update: (id: string, data: ApiPayload) => api.put(`/rules/${id}`, data),
   delete: (id: string) => api.delete(`/rules/${id}`),
 };
 
 // 规则组 API
 export const ruleGroupApi = {
   getAll: () => api.get('/rule-groups'),
-  update: (id: string, data: any) => api.put(`/rule-groups/${id}`, data),
+  update: (id: string, data: ApiPayload) => api.put(`/rule-groups/${id}`, data),
 };
 
 // 规则集验证 API
@@ -50,7 +52,7 @@ export const ruleSetApi = {
 // 设置 API
 export const settingsApi = {
   get: () => api.get('/settings'),
-  update: (data: any) => api.put('/settings', data),
+  update: (data: ApiPayload) => api.put('/settings', data),
   getSystemHosts: () => api.get('/system-hosts'),
 };
 
@@ -105,8 +107,8 @@ export const nodeApi = {
 // 手动节点 API
 export const manualNodeApi = {
   getAll: () => api.get('/manual-nodes'),
-  add: (data: any) => api.post('/manual-nodes', data),
-  update: (id: string, data: any) => api.put(`/manual-nodes/${id}`, data),
+  add: (data: ApiPayload) => api.post('/manual-nodes', data),
+  update: (id: string, data: ApiPayload) => api.put(`/manual-nodes/${id}`, data),
   delete: (id: string) => api.delete(`/manual-nodes/${id}`),
 };
 

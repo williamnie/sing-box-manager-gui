@@ -19,6 +19,8 @@ export interface Connection {
   metadata: ConnectionMetadata;
   upload: number;
   download: number;
+  uploadSpeed?: number;
+  downloadSpeed?: number;
   start: string;
   chains: string[];
   rule: string;
@@ -33,11 +35,13 @@ export interface ConnectionsMessage {
 
 interface UseClashConnectionsReturn {
   connections: Connection[];
+  closedConnections: Connection[];
   downloadTotal: number;
   uploadTotal: number;
   isConnected: boolean;
   error: string | null;
   reconnect: () => void;
+  clearClosedConnections: () => void;
 }
 
 const BASE_RECONNECT_DELAY_MS = 1000;
@@ -47,6 +51,7 @@ const MAX_BACKOFF_EXPONENT = 8;
 export function useClashConnections(): UseClashConnectionsReturn {
   const settings = useStore(state => state.settings);
   const [connections, setConnections] = useState<Connection[]>([]);
+  const [closedConnections, setClosedConnections] = useState<Connection[]>([]);
   const [downloadTotal, setDownloadTotal] = useState(0);
   const [uploadTotal, setUploadTotal] = useState(0);
   const [isConnected, setIsConnected] = useState(false);
@@ -55,27 +60,29 @@ export function useClashConnections(): UseClashConnectionsReturn {
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttempts = useRef(0);
   const mountedRef = useRef(true);
+  const connectRef = useRef<() => void>(() => {});
+  const previousConnectionsRef = useRef<Connection[]>([]);
+
+  const scheduleReconnect = useCallback(() => {
+    if (!mountedRef.current) return;
+
+    reconnectAttempts.current++;
+    const exponent = Math.min(reconnectAttempts.current, MAX_BACKOFF_EXPONENT);
+    const delay = Math.min(BASE_RECONNECT_DELAY_MS * Math.pow(2, exponent), MAX_RECONNECT_DELAY_MS);
+
+    setError(`连接已断开，${Math.ceil(delay / 1000)} 秒后自动重连`);
+
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+    }
+    reconnectTimeoutRef.current = setTimeout(() => {
+      reconnectTimeoutRef.current = null;
+      connectRef.current();
+    }, delay);
+  }, []);
 
   const connect = useCallback(() => {
     if (!settings || !mountedRef.current) return;
-
-    const scheduleReconnect = () => {
-      if (!mountedRef.current) return;
-
-      reconnectAttempts.current++;
-      const exponent = Math.min(reconnectAttempts.current, MAX_BACKOFF_EXPONENT);
-      const delay = Math.min(BASE_RECONNECT_DELAY_MS * Math.pow(2, exponent), MAX_RECONNECT_DELAY_MS);
-
-      setError(`连接已断开，${Math.ceil(delay / 1000)} 秒后自动重连`);
-
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-      reconnectTimeoutRef.current = setTimeout(() => {
-        reconnectTimeoutRef.current = null;
-        connect();
-      }, delay);
-    };
 
     const port = settings.clash_api_port || 9091;
     const secret = settings.clash_api_secret || '';
@@ -114,10 +121,21 @@ export function useClashConnections(): UseClashConnectionsReturn {
         if (!mountedRef.current) return;
         try {
           const data: ConnectionsMessage = JSON.parse(event.data);
-          setConnections(data.connections || []);
+          const currentConnections = data.connections || [];
+          const currentIds = new Set(currentConnections.map(c => c.id));
+          const closed = previousConnectionsRef.current.filter(c => !currentIds.has(c.id));
+
+          if (closed.length > 0) {
+            setClosedConnections(prev => [...closed, ...prev].slice(0, 100));
+          }
+
+          previousConnectionsRef.current = currentConnections;
+          setConnections(currentConnections);
           setDownloadTotal(data.downloadTotal || 0);
           setUploadTotal(data.uploadTotal || 0);
-        } catch {}
+        } catch {
+          return;
+        }
       };
 
       ws.onerror = () => {
@@ -137,23 +155,29 @@ export function useClashConnections(): UseClashConnectionsReturn {
       wsRef.current = null;
       scheduleReconnect();
     }
-  }, [settings]);
+  }, [scheduleReconnect, settings]);
+
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   const reconnect = useCallback(() => {
     reconnectAttempts.current = 0;
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
     }
-    connect();
-  }, [connect]);
+    connectRef.current();
+  }, []);
+
+  const clearClosedConnections = useCallback(() => {
+    setClosedConnections([]);
+  }, []);
 
   useEffect(() => {
     mountedRef.current = true;
-    
-    // 当 settings 加载完成后自动连接
-    if (settings) {
-      connect();
-    }
+
+    connectRef.current();
 
     return () => {
       mountedRef.current = false;
@@ -166,14 +190,16 @@ export function useClashConnections(): UseClashConnectionsReturn {
         wsRef.current = null;
       }
     };
-  }, [settings?.clash_api_port, settings?.clash_api_secret, connect]);
+  }, [connect]);
 
   return {
     connections,
+    closedConnections,
     downloadTotal,
     uploadTotal,
     isConnected,
     error,
     reconnect,
+    clearClosedConnections,
   };
 }

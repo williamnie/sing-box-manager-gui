@@ -15,6 +15,14 @@ interface MemoryData {
 
 const MAX_RECONNECT_ATTEMPTS = 10;
 
+const safeJsonParse = <T>(value: string): T | null => {
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
+};
+
 // Traffic Hook
 export function useClashTraffic() {
   const settings = useStore(state => state.settings);
@@ -56,10 +64,9 @@ export function useClashTraffic() {
 
         ws.onmessage = (event) => {
           if (!mountedRef.current) return;
-          try {
-            const parsed = JSON.parse(event.data);
+          const parsed = safeJsonParse<{ up?: number; down?: number }>(event.data);
+          if (!parsed) return;
             setData({ up: parsed.up || 0, down: parsed.down || 0, connected: true });
-          } catch {}
         };
 
         ws.onclose = () => {
@@ -75,7 +82,9 @@ export function useClashTraffic() {
         ws.onerror = () => {
           if (ws.readyState === WebSocket.OPEN) ws.close();
         };
-      } catch {}
+      } catch {
+        return;
+      }
     };
 
     connect();
@@ -89,7 +98,7 @@ export function useClashTraffic() {
         wsRef.current = null;
       }
     };
-  }, [settings?.clash_api_port, settings?.clash_api_secret]);
+  }, [settings]);
 
   return data;
 }
@@ -134,10 +143,9 @@ export function useClashMemory() {
 
         ws.onmessage = (event) => {
           if (!mountedRef.current) return;
-          try {
-            const parsed = JSON.parse(event.data);
+          const parsed = safeJsonParse<{ inuse?: number; oslimit?: number }>(event.data);
+          if (!parsed) return;
             setData({ inuse: parsed.inuse || 0, oslimit: parsed.oslimit || 0, connected: true });
-          } catch {}
         };
 
         ws.onclose = () => {
@@ -153,7 +161,9 @@ export function useClashMemory() {
         ws.onerror = () => {
           if (ws.readyState === WebSocket.OPEN) ws.close();
         };
-      } catch {}
+      } catch {
+        return;
+      }
     };
 
     connect();
@@ -167,7 +177,7 @@ export function useClashMemory() {
         wsRef.current = null;
       }
     };
-  }, [settings?.clash_api_port, settings?.clash_api_secret]);
+  }, [settings]);
 
   return data;
 }

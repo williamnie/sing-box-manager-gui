@@ -99,12 +99,18 @@ export default function Rules() {
   const [isValidating, setIsValidating] = useState(false);
   const validationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const clearValidationResultsAsync = useCallback(() => {
+    queueMicrotask(() => {
+      setValidationResults({});
+    });
+  }, []);
+
   useEffect(() => {
     fetchRuleGroups();
     fetchRules();
     fetchFilters();
     fetchCountryGroups();
-  }, []);
+  }, [fetchCountryGroups, fetchFilters, fetchRuleGroups, fetchRules]);
 
   // 验证规则集（防抖）
   const validateRuleSet = useCallback(async (type: 'geosite' | 'geoip', names: string[]) => {
@@ -121,7 +127,7 @@ export default function Rules() {
       try {
         const response = await ruleSetApi.validate(type, name.trim());
         results[name] = response.data;
-      } catch (error) {
+      } catch {
         results[name] = {
           valid: false,
           url: '',
@@ -138,7 +144,7 @@ export default function Rules() {
   // 当规则值改变时触发验证（防抖 500ms）
   useEffect(() => {
     if (formData.rule_type !== 'geosite' && formData.rule_type !== 'geoip') {
-      setValidationResults({});
+      clearValidationResultsAsync();
       return;
     }
 
@@ -148,7 +154,7 @@ export default function Rules() {
       .filter((v) => v);
 
     if (names.length === 0) {
-      setValidationResults({});
+      clearValidationResultsAsync();
       return;
     }
 
@@ -165,7 +171,7 @@ export default function Rules() {
         clearTimeout(validationTimerRef.current);
       }
     };
-  }, [valuesText, formData.rule_type, validateRuleSet]);
+  }, [clearValidationResultsAsync, valuesText, formData.rule_type, validateRuleSet]);
 
   // 检查是否所有规则集都验证通过
   const allValidationsPassed = useCallback(() => {

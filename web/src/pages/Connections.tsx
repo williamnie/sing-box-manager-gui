@@ -33,8 +33,22 @@ const formatTime = (isoString: string) => {
 const getConnectionType = (conn: Connection) => `${conn.metadata.type}(${conn.metadata.network})`;
 const getConnectionChains = (conn: Connection) => conn.chains.slice().reverse().join(' → ');
 
+function SortIndicator({ isActive, sortOrder }: { isActive: boolean; sortOrder: SortOrder }) {
+  if (!isActive) return <ArrowUpDown className="w-3 h-3 opacity-50" />;
+  return sortOrder === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />;
+}
+
 export default function Connections() {
-  const { connections, downloadTotal, uploadTotal, isConnected, error, reconnect } = useClashConnections();
+  const {
+    connections,
+    closedConnections,
+    downloadTotal,
+    uploadTotal,
+    isConnected,
+    error,
+    reconnect,
+    clearClosedConnections,
+  } = useClashConnections();
   const settings = useStore(state => state.settings);
   const fetchSettings = useStore(state => state.fetchSettings);
 
@@ -52,7 +66,6 @@ export default function Connections() {
   const [isPaused, setIsPaused] = useState(false);
   const [pausedConnections, setPausedConnections] = useState<Connection[]>([]);
   const [selectedConnection, setSelectedConnection] = useState<Connection | null>(null);
-  const [closedConnections, setClosedConnections] = useState<Connection[]>([]);
   
   // 新增筛选状态
   const [sourceIPFilter, setSourceIPFilter] = useState<string>('');
@@ -60,19 +73,6 @@ export default function Connections() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(50);
-
-  // 当连接消失时，添加到已关闭列表
-  useMemo(() => {
-    if (isPaused) return;
-    
-    const currentIds = new Set(connections.map(c => c.id));
-    const closed = pausedConnections.filter(c => !currentIds.has(c.id));
-    
-    if (closed.length > 0) {
-      setClosedConnections(prev => [...closed, ...prev].slice(0, 100));
-    }
-    setPausedConnections(connections);
-  }, [connections, isPaused]);
 
   // 当前显示的连接
   const currentConnections = useMemo(() => {
@@ -123,10 +123,10 @@ export default function Connections() {
           comparison = a.upload - b.upload;
           break;
         case 'dlSpeed':
-          comparison = ((a as any).downloadSpeed || 0) - ((b as any).downloadSpeed || 0);
+          comparison = (a.downloadSpeed || 0) - (b.downloadSpeed || 0);
           break;
         case 'ulSpeed':
-          comparison = ((a as any).uploadSpeed || 0) - ((b as any).uploadSpeed || 0);
+          comparison = (a.uploadSpeed || 0) - (b.uploadSpeed || 0);
           break;
         case 'host':
           comparison = (a.metadata.host || '').localeCompare(b.metadata.host || '');
@@ -190,11 +190,6 @@ export default function Connections() {
   }, [filteredConnections, currentPage, pageSize, groupField]);
 
   const totalPages = Math.ceil(filteredConnections.length / pageSize);
-
-  // 重置页码当筛选条件变化时
-  useMemo(() => {
-    setCurrentPage(1);
-  }, [activeTab, searchQuery, sourceIPFilter]);
 
   // 切换排序
   const handleSort = useCallback((field: SortField) => {
@@ -267,15 +262,6 @@ export default function Connections() {
       console.error('Failed to close all connections:', e);
     }
   }, [settings]);
-
-  const clearClosedConnections = useCallback(() => {
-    setClosedConnections([]);
-  }, []);
-
-  const SortIcon = ({ field }: { field: SortField }) => {
-    if (sortField !== field) return <ArrowUpDown className="w-3 h-3 opacity-50" />;
-    return sortOrder === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />;
-  };
 
   // 渲染连接行
   const renderConnectionRow = (conn: Connection, showClose = true) => (
@@ -417,13 +403,19 @@ export default function Connections() {
             <div className="inline-flex bg-default-100 rounded-lg p-1">
               <button
                 className={`px-3 py-1.5 text-xs rounded-md transition-all ${activeTab === 'active' ? 'bg-white dark:bg-default-50 shadow-small font-medium' : 'text-default-500 hover:text-default-700'}`}
-                onClick={() => setActiveTab('active')}
+                onClick={() => {
+                  setActiveTab('active');
+                  setCurrentPage(1);
+                }}
               >
                 活跃 {currentConnections.length}
               </button>
               <button
                 className={`px-3 py-1.5 text-xs rounded-md transition-all ${activeTab === 'closed' ? 'bg-white dark:bg-default-50 shadow-small font-medium' : 'text-default-500 hover:text-default-700'}`}
-                onClick={() => setActiveTab('closed')}
+                onClick={() => {
+                  setActiveTab('closed');
+                  setCurrentPage(1);
+                }}
               >
                 已关闭 {closedConnections.length}
               </button>
@@ -433,7 +425,10 @@ export default function Connections() {
             {uniqueSourceIPs.length > 0 && (
               <select
                 value={sourceIPFilter}
-                onChange={(e) => setSourceIPFilter(e.target.value)}
+                onChange={(e) => {
+                  setSourceIPFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="h-8 px-2 text-xs bg-default-100 border-0 rounded-lg outline-none cursor-pointer"
               >
                 <option value="">全部来源</option>
@@ -464,10 +459,16 @@ export default function Connections() {
             <Input
               placeholder="搜索主机、IP、规则..."
               value={searchQuery}
-              onValueChange={setSearchQuery}
+              onValueChange={(value) => {
+                setSearchQuery(value);
+                setCurrentPage(1);
+              }}
               startContent={<Search className="w-4 h-4 text-default-400" />}
               isClearable
-              onClear={() => setSearchQuery('')}
+              onClear={() => {
+                setSearchQuery('');
+                setCurrentPage(1);
+              }}
               size="sm"
               className="w-48 md:w-64"
               classNames={{ inputWrapper: "h-8" }}
@@ -507,7 +508,7 @@ export default function Connections() {
                 <tr className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
                   <th className="text-left py-2 px-3">
                     <button className="flex items-center gap-1 hover:text-primary text-xs" onClick={() => handleSort('host')}>
-                      主机 <SortIcon field="host" />
+                      主机 <SortIndicator isActive={sortField === 'host'} sortOrder={sortOrder} />
                     </button>
                   </th>
                   <th className="text-left py-2 px-3 hidden md:table-cell text-xs">类型</th>
@@ -515,17 +516,17 @@ export default function Connections() {
                   <th className="text-left py-2 px-3 hidden xl:table-cell text-xs">链路</th>
                   <th className="text-right py-2 px-3">
                     <button className="flex items-center gap-1 hover:text-primary ml-auto text-xs" onClick={() => handleSort('download')}>
-                      下载 <SortIcon field="download" />
+                      下载 <SortIndicator isActive={sortField === 'download'} sortOrder={sortOrder} />
                     </button>
                   </th>
                   <th className="text-right py-2 px-3">
                     <button className="flex items-center gap-1 hover:text-primary ml-auto text-xs" onClick={() => handleSort('upload')}>
-                      上传 <SortIcon field="upload" />
+                      上传 <SortIndicator isActive={sortField === 'upload'} sortOrder={sortOrder} />
                     </button>
                   </th>
                   <th className="text-right py-2 px-3 hidden sm:table-cell">
                     <button className="flex items-center gap-1 hover:text-primary ml-auto text-xs" onClick={() => handleSort('time')}>
-                      时间 <SortIcon field="time" />
+                      时间 <SortIndicator isActive={sortField === 'time'} sortOrder={sortOrder} />
                     </button>
                   </th>
                   {activeTab === 'active' && <th className="w-8"></th>}

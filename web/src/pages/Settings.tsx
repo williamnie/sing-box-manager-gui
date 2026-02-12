@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { 
   Card, CardBody, Input, Button, Switch, Chip, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, 
   Select, SelectItem, Progress, Textarea, useDisclosure, Tabs, Tab, Divider
@@ -6,7 +6,7 @@ import {
 import { Save, Download, CheckCircle, AlertCircle, Plus, Pencil, Trash2, Eye, EyeOff, Copy, RefreshCw } from 'lucide-react';
 import { useStore } from '../store';
 import type { Settings as SettingsType, HostEntry } from '../store';
-import { daemonApi, kernelApi, settingsApi } from '../api';
+import { configApi, daemonApi, kernelApi, settingsApi } from '../api';
 import { toast } from '../components/Toast';
 
 interface KernelInfo {
@@ -30,6 +30,41 @@ interface GithubRelease {
   name: string;
 }
 
+interface ConfigNode {
+  tag?: string;
+  type?: string;
+}
+
+interface ConfigPreviewData {
+  inbounds?: ConfigNode[];
+  outbounds?: ConfigNode[];
+  dns?: {
+    servers?: unknown[];
+  };
+  route?: {
+    rules?: unknown[];
+    rule_set?: unknown[];
+    rule_sets?: unknown[];
+  };
+}
+
+interface ApiErrorLike {
+  response?: {
+    data?: {
+      error?: string;
+    };
+  };
+  message?: string;
+}
+
+const toErrorMessage = (error: unknown, fallback: string) => {
+  if (error && typeof error === 'object') {
+    const maybeError = error as ApiErrorLike;
+    return maybeError.response?.data?.error || maybeError.message || fallback;
+  }
+  return fallback;
+};
+
 export default function Settings() {
   const { settings, fetchSettings, updateSettings } = useStore();
   const [formData, setFormData] = useState<SettingsType | null>(null);
@@ -47,13 +82,74 @@ export default function Settings() {
   const [hostFormData, setHostFormData] = useState({ domain: '', enabled: true });
   const [ipsText, setIpsText] = useState('');
   const [showSecret, setShowSecret] = useState(false);
+  const [configPreview, setConfigPreview] = useState('');
+  const [configData, setConfigData] = useState<ConfigPreviewData | null>(null);
+  const [configLoading, setConfigLoading] = useState(false);
+  const [configError, setConfigError] = useState<string | null>(null);
+  const [configUpdatedAt, setConfigUpdatedAt] = useState<Date | null>(null);
+
+  const fetchKernelInfo = useCallback(async () => {
+    try {
+      const res = await kernelApi.getInfo();
+      setKernelInfo(res.data.data);
+    } catch (e) { console.error(e); }
+  }, []);
+
+  const fetchSystemHosts = useCallback(async () => {
+    try {
+      const res = await settingsApi.getSystemHosts();
+      setSystemHosts(res.data.data || []);
+    } catch (e) { console.error(e); }
+  }, []);
+
+  const fetchConfigPreview = useCallback(async () => {
+    setConfigLoading(true);
+    setConfigError(null);
+    try {
+      const res = await configApi.preview();
+      let parsed: ConfigPreviewData;
+
+      if (typeof res.data === 'string') {
+        parsed = JSON.parse(res.data);
+      } else {
+        parsed = res.data as ConfigPreviewData;
+      }
+
+      setConfigData(parsed);
+      setConfigPreview(JSON.stringify(parsed, null, 2));
+      setConfigUpdatedAt(new Date());
+    } catch (error) {
+      const message = toErrorMessage(error, '获取配置预览失败');
+      setConfigError(message);
+      setConfigData(null);
+      setConfigPreview('');
+    } finally {
+      setConfigLoading(false);
+    }
+  }, []);
+
+  const fetchDaemonStatus = useCallback(async () => {
+    try {
+      const res = await daemonApi.status();
+      setDaemonStatus(res.data.data);
+    } catch (e) { console.error(e); }
+  }, []);
+
+  const fetchReleases = useCallback(async () => {
+    try {
+      const res = await kernelApi.getReleases();
+      setReleases(res.data.data || []);
+      if (res.data.data?.length > 0) setSelectedVersion(res.data.data[0].tag_name);
+    } catch (e) { console.error(e); }
+  }, []);
 
   useEffect(() => {
     fetchSettings();
     fetchDaemonStatus();
     fetchKernelInfo();
     fetchSystemHosts();
-  }, []);
+    fetchConfigPreview();
+  }, [fetchConfigPreview, fetchDaemonStatus, fetchKernelInfo, fetchSettings, fetchSystemHosts]);
 
   useEffect(() => {
     if (settings) setFormData(settings);
@@ -62,20 +158,6 @@ export default function Settings() {
   useEffect(() => {
     return () => { if (pollIntervalRef.current) clearInterval(pollIntervalRef.current); };
   }, []);
-
-  const fetchKernelInfo = async () => {
-    try {
-      const res = await kernelApi.getInfo();
-      setKernelInfo(res.data.data);
-    } catch (e) { console.error(e); }
-  };
-
-  const fetchSystemHosts = async () => {
-    try {
-      const res = await settingsApi.getSystemHosts();
-      setSystemHosts(res.data.data || []);
-    } catch (e) { console.error(e); }
-  };
 
   const handleAddHost = () => {
     setEditingHost(null);
@@ -125,16 +207,9 @@ export default function Settings() {
     try {
       await updateSettings(formData);
       toast.success('设置已保存');
-    } catch (e: any) {
-      toast.error(e.response?.data?.error || '保存失败');
+    } catch (error) {
+      toast.error(toErrorMessage(error, '保存失败'));
     }
-  };
-
-  const fetchDaemonStatus = async () => {
-    try {
-      const res = await daemonApi.status();
-      setDaemonStatus(res.data.data);
-    } catch (e) { console.error(e); }
   };
 
   const handleInstallDaemon = async () => {
@@ -142,8 +217,8 @@ export default function Settings() {
       await daemonApi.install();
       toast.success('后台服务已安装');
       await fetchDaemonStatus();
-    } catch (e: any) {
-      toast.error(e.response?.data?.error || '安装失败');
+    } catch (error) {
+      toast.error(toErrorMessage(error, '安装失败'));
     }
   };
 
@@ -152,8 +227,8 @@ export default function Settings() {
       await daemonApi.uninstall();
       toast.success('后台服务已卸载');
       await fetchDaemonStatus();
-    } catch (e: any) {
-      toast.error(e.response?.data?.error || '卸载失败');
+    } catch (error) {
+      toast.error(toErrorMessage(error, '卸载失败'));
     }
   };
 
@@ -162,17 +237,9 @@ export default function Settings() {
       await daemonApi.restart();
       toast.success('服务已重启');
       await fetchDaemonStatus();
-    } catch (e: any) {
-      toast.error(e.response?.data?.error || '重启失败');
+    } catch (error) {
+      toast.error(toErrorMessage(error, '重启失败'));
     }
-  };
-
-  const fetchReleases = async () => {
-    try {
-      const res = await kernelApi.getReleases();
-      setReleases(res.data.data || []);
-      if (res.data.data?.length > 0) setSelectedVersion(res.data.data[0].tag_name);
-    } catch (e) { console.error(e); }
   };
 
   const openDownloadModal = async () => {
@@ -202,9 +269,9 @@ export default function Settings() {
           }
         } catch (e) { console.error(e); }
       }, 500);
-    } catch (e: any) {
+    } catch (error) {
       setDownloading(false);
-      setDownloadProgress({ status: 'error', progress: 0, message: e.response?.data?.error || '下载失败' });
+      setDownloadProgress({ status: 'error', progress: 0, message: toErrorMessage(error, '下载失败') });
     }
   };
 
@@ -221,6 +288,30 @@ export default function Settings() {
     setFormData({ ...formData!, clash_api_secret: secret });
     toast.success('已生成新密钥');
   };
+
+  const handleCopyConfig = async () => {
+    if (!configPreview) return;
+    try {
+      await navigator.clipboard.writeText(configPreview);
+      toast.success('配置 JSON 已复制');
+    } catch {
+      toast.error('复制失败，请检查浏览器权限');
+    }
+  };
+
+  const configSummary = useMemo(() => {
+    const inbounds = Array.isArray(configData?.inbounds) ? configData.inbounds : [];
+    const outbounds = Array.isArray(configData?.outbounds) ? configData.outbounds : [];
+    const routeRules = Array.isArray(configData?.route?.rules) ? configData.route.rules : [];
+    const dnsServers = Array.isArray(configData?.dns?.servers) ? configData.dns.servers : [];
+    const ruleSets = Array.isArray(configData?.route?.rule_set)
+      ? configData.route.rule_set
+      : Array.isArray(configData?.route?.rule_sets)
+        ? configData.route.rule_sets
+        : [];
+
+    return { inbounds, outbounds, routeRules, dnsServers, ruleSets };
+  }, [configData]);
 
   if (!formData) return <div className="p-8 text-center text-gray-500">加载中...</div>;
 
@@ -535,6 +626,118 @@ export default function Settings() {
           </Card>
         </Tab>
 
+        <Tab key="config" title="配置">
+          <div className="space-y-4">
+            <Card>
+              <CardBody className="p-4 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="font-medium">sing-box 配置预览</p>
+                    <p className="text-sm text-gray-500">自动读取后端生成结果，可视化展示并支持复制</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="flat"
+                      startContent={<Copy className="w-4 h-4" />}
+                      onPress={handleCopyConfig}
+                      isDisabled={!configPreview}
+                    >
+                      复制 JSON
+                    </Button>
+                    <Button
+                      size="sm"
+                      color="primary"
+                      startContent={<RefreshCw className="w-4 h-4" />}
+                      onPress={fetchConfigPreview}
+                      isLoading={configLoading}
+                    >
+                      刷新预览
+                    </Button>
+                  </div>
+                </div>
+
+                {configError && (
+                  <div className="p-3 rounded-lg bg-danger-50 dark:bg-danger-900/20 text-danger-600 dark:text-danger-400 text-sm">
+                    {configError}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                  <MetricCard label="入站" value={configSummary.inbounds.length} tone="blue" />
+                  <MetricCard label="路由规则" value={configSummary.routeRules.length} tone="purple" />
+                  <MetricCard label="出站" value={configSummary.outbounds.length} tone="green" />
+                  <MetricCard label="DNS 服务器" value={configSummary.dnsServers.length} tone="orange" />
+                  <MetricCard label="规则集" value={configSummary.ruleSets.length} tone="indigo" />
+                </div>
+
+                <div className="p-3 rounded-lg bg-default-100 dark:bg-default-50/20">
+                  <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">配置流程图</p>
+                  <div className="flex flex-wrap items-center gap-2 text-sm">
+                    <FlowNode label="入站" count={configSummary.inbounds.length} tone="blue" />
+                    <span className="text-gray-400">→</span>
+                    <FlowNode label="路由" count={configSummary.routeRules.length} tone="purple" />
+                    <span className="text-gray-400">→</span>
+                    <FlowNode label="出站" count={configSummary.outbounds.length} tone="green" />
+                    <span className="text-gray-400">·</span>
+                    <FlowNode label="DNS" count={configSummary.dnsServers.length} tone="orange" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="p-3 rounded-lg border border-default-200 dark:border-default-100/20">
+                    <p className="text-sm font-medium mb-2">入站标签</p>
+                    <div className="flex flex-wrap gap-2">
+                      {configSummary.inbounds.length === 0 ? (
+                        <span className="text-xs text-gray-500">暂无</span>
+                      ) : (
+                        configSummary.inbounds.slice(0, 10).map((item: ConfigNode, idx: number) => (
+                          <Chip key={`inbound-${item?.tag || idx}`} size="sm" variant="flat" color="primary">
+                            {item?.tag || `${item?.type || 'inbound'}-${idx + 1}`}
+                          </Chip>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-lg border border-default-200 dark:border-default-100/20">
+                    <p className="text-sm font-medium mb-2">出站标签</p>
+                    <div className="flex flex-wrap gap-2">
+                      {configSummary.outbounds.length === 0 ? (
+                        <span className="text-xs text-gray-500">暂无</span>
+                      ) : (
+                        configSummary.outbounds.slice(0, 10).map((item: ConfigNode, idx: number) => (
+                          <Chip key={`outbound-${item?.tag || idx}`} size="sm" variant="flat" color="success">
+                            {item?.tag || `${item?.type || 'outbound'}-${idx + 1}`}
+                          </Chip>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-xs text-gray-500">
+                  {configUpdatedAt ? `最近刷新：${configUpdatedAt.toLocaleString()}` : '尚未加载配置预览'}
+                </div>
+              </CardBody>
+            </Card>
+
+            <Card>
+              <CardBody className="p-4">
+                <p className="text-sm font-medium mb-3">JSON 原文</p>
+                <Textarea
+                  isReadOnly
+                  minRows={18}
+                  maxRows={28}
+                  value={configPreview}
+                  placeholder="点击“刷新预览”加载配置"
+                  classNames={{ input: 'font-mono text-xs' }}
+                />
+              </CardBody>
+            </Card>
+          </div>
+        </Tab>
+
         {/* 服务管理 */}
         {daemonStatus?.supported && (
           <Tab key="service" title="服务">
@@ -647,6 +850,38 @@ function SettingItem({ label, desc, children }: { label: string; desc?: string; 
         {desc && <p className="text-sm text-gray-500">{desc}</p>}
       </div>
       {children}
+    </div>
+  );
+}
+
+function MetricCard({ label, value, tone }: { label: string; value: number; tone: 'blue' | 'purple' | 'green' | 'orange' | 'indigo' }) {
+  const toneClassMap = {
+    blue: 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300',
+    purple: 'bg-purple-50 text-purple-700 dark:bg-purple-900/20 dark:text-purple-300',
+    green: 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-300',
+    orange: 'bg-orange-50 text-orange-700 dark:bg-orange-900/20 dark:text-orange-300',
+    indigo: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300',
+  };
+
+  return (
+    <div className={`rounded-lg px-3 py-2 ${toneClassMap[tone]}`}>
+      <p className="text-xs opacity-80">{label}</p>
+      <p className="text-lg font-bold leading-none mt-1">{value}</p>
+    </div>
+  );
+}
+
+function FlowNode({ label, count, tone }: { label: string; count: number; tone: 'blue' | 'purple' | 'green' | 'orange' }) {
+  const toneClassMap = {
+    blue: 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-900/20 dark:text-blue-300',
+    purple: 'border-purple-300 bg-purple-50 text-purple-700 dark:border-purple-700 dark:bg-purple-900/20 dark:text-purple-300',
+    green: 'border-green-300 bg-green-50 text-green-700 dark:border-green-700 dark:bg-green-900/20 dark:text-green-300',
+    orange: 'border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-700 dark:bg-orange-900/20 dark:text-orange-300',
+  };
+
+  return (
+    <div className={`px-3 py-1.5 rounded-md border text-xs font-medium ${toneClassMap[tone]}`}>
+      {label} {count}
     </div>
   );
 }

@@ -29,7 +29,7 @@ export default function Layout({ children }: LayoutProps) {
       !settings && fetchSettings(),
       !serviceStatus && fetchServiceStatus(),
     ]);
-  }, []);
+  }, [fetchServiceStatus, fetchSettings, serviceStatus, settings]);
 
   const clashApiPort = settings?.clash_api_port || 9091;
 

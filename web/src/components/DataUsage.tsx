@@ -21,6 +21,11 @@ type SortOrder = 'asc' | 'desc';
 // 格式化字节
 const formatBytes = (bytes: number) => byteSize(bytes).toString();
 
+function SortIndicator({ isActive, sortOrder }: { isActive: boolean; sortOrder: SortOrder }) {
+  if (!isActive) return <ArrowUpDown className="w-3 h-3 opacity-50" />;
+  return sortOrder === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />;
+}
+
 // 格式化时长
 const formatDuration = (start: number, end: number) => {
   const diff = end - start;
@@ -69,18 +74,20 @@ export default function DataUsage() {
 
   // 更新数据用量
   useEffect(() => {
-    if (!connections || connections.length === 0) return;
+    const hasReset = uploadTotal < lastTotals.current.upload || downloadTotal < lastTotals.current.download;
+    if (hasReset) {
+      connectionLastData.current.clear();
+    }
+
+    if (!connections || connections.length === 0) {
+      lastTotals.current = { upload: uploadTotal, download: downloadTotal };
+      return;
+    }
 
     // 检测服务重启（总量减少）
-    if (uploadTotal < lastTotals.current.upload || downloadTotal < lastTotals.current.download) {
-      connectionLastData.current.clear();
-      setDataUsageMap({});
-      saveDataUsage({});
-    }
     lastTotals.current = { upload: uploadTotal, download: downloadTotal };
 
     const now = Date.now();
-    const updates: Record<string, DataUsageEntry> = { ...dataUsageMap };
 
     // 按 IP 汇总增量
     const ipDeltaMap = new Map<string, { upload: number; download: number }>();
@@ -124,35 +131,41 @@ export default function DataUsage() {
       }
     });
 
-    // 更新数据用量表
-    ipDeltaMap.forEach((data, sourceIP) => {
-      const existing = updates[sourceIP];
-      if (existing) {
-        if (data.upload > 0 || data.download > 0) {
-          updates[sourceIP] = {
-            ...existing,
-            upload: existing.upload + data.upload,
-            download: existing.download + data.download,
-            total: existing.upload + data.upload + existing.download + data.download,
-            lastSeen: now,
-          };
-        } else {
-          updates[sourceIP] = { ...existing, lastSeen: now };
-        }
-      } else if (data.upload > 0 || data.download > 0) {
-        updates[sourceIP] = {
-          sourceIP,
-          upload: data.upload,
-          download: data.download,
-          total: data.upload + data.download,
-          firstSeen: now,
-          lastSeen: now,
-        };
-      }
-    });
+    queueMicrotask(() => {
+      setDataUsageMap((prev) => {
+        const updates: Record<string, DataUsageEntry> = { ...(hasReset ? {} : prev) };
 
-    setDataUsageMap(updates);
-    saveDataUsage(updates);
+        // 更新数据用量表
+        ipDeltaMap.forEach((data, sourceIP) => {
+          const existing = updates[sourceIP];
+          if (existing) {
+            if (data.upload > 0 || data.download > 0) {
+              updates[sourceIP] = {
+                ...existing,
+                upload: existing.upload + data.upload,
+                download: existing.download + data.download,
+                total: existing.upload + data.upload + existing.download + data.download,
+                lastSeen: now,
+              };
+            } else {
+              updates[sourceIP] = { ...existing, lastSeen: now };
+            }
+          } else if (data.upload > 0 || data.download > 0) {
+            updates[sourceIP] = {
+              sourceIP,
+              upload: data.upload,
+              download: data.download,
+              total: data.upload + data.download,
+              firstSeen: now,
+              lastSeen: now,
+            };
+          }
+        });
+
+        saveDataUsage(updates);
+        return updates;
+      });
+    });
   }, [connections, uploadTotal, downloadTotal]);
 
   // 保存显示状态
@@ -244,16 +257,6 @@ export default function DataUsage() {
     });
   }, []);
 
-  // 排序图标
-  const SortIcon = ({ field }: { field: SortField }) => {
-    if (sortField !== field) return <ArrowUpDown className="w-3 h-3 opacity-50" />;
-    return sortOrder === 'asc' ? (
-      <ChevronUp className="w-3 h-3" />
-    ) : (
-      <ChevronDown className="w-3 h-3" />
-    );
-  };
-
   return (
     <Card>
       <CardHeader className="flex justify-between items-center">
@@ -332,7 +335,7 @@ export default function DataUsage() {
                         className="flex items-center gap-1 hover:text-primary"
                         onClick={() => handleSort('ip')}
                       >
-                        IP 地址 <SortIcon field="ip" />
+                        IP 地址 <SortIndicator isActive={sortField === 'ip'} sortOrder={sortOrder} />
                       </button>
                     </th>
                     <th className="text-left py-2 px-2">
@@ -340,7 +343,7 @@ export default function DataUsage() {
                         className="flex items-center gap-1 hover:text-primary"
                         onClick={() => handleSort('duration')}
                       >
-                        时长 <SortIcon field="duration" />
+                        时长 <SortIndicator isActive={sortField === 'duration'} sortOrder={sortOrder} />
                       </button>
                     </th>
                     <th className="text-right py-2 px-2">
@@ -348,7 +351,7 @@ export default function DataUsage() {
                         className="flex items-center gap-1 hover:text-primary ml-auto"
                         onClick={() => handleSort('upload')}
                       >
-                        上传 <SortIcon field="upload" />
+                        上传 <SortIndicator isActive={sortField === 'upload'} sortOrder={sortOrder} />
                       </button>
                     </th>
                     <th className="text-right py-2 px-2">
@@ -356,7 +359,7 @@ export default function DataUsage() {
                         className="flex items-center gap-1 hover:text-primary ml-auto"
                         onClick={() => handleSort('download')}
                       >
-                        下载 <SortIcon field="download" />
+                        下载 <SortIndicator isActive={sortField === 'download'} sortOrder={sortOrder} />
                       </button>
                     </th>
                     <th className="text-right py-2 px-2">
@@ -364,7 +367,7 @@ export default function DataUsage() {
                         className="flex items-center gap-1 hover:text-primary ml-auto"
                         onClick={() => handleSort('total')}
                       >
-                        总计 <SortIcon field="total" />
+                        总计 <SortIndicator isActive={sortField === 'total'} sortOrder={sortOrder} />
                       </button>
                     </th>
                     <th className="w-10"></th>

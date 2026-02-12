@@ -10,6 +10,22 @@ import { nodeApi, clashApi, subscriptionApi } from '../api';
 import { toast } from '../components/Toast';
 import type { Subscription, ManualNode, Node, Filter } from '../store';
 
+interface ApiErrorLike {
+  response?: {
+    data?: {
+      error?: string;
+    };
+  };
+}
+
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error && typeof error === 'object') {
+    const maybeError = error as ApiErrorLike;
+    return maybeError.response?.data?.error || fallback;
+  }
+  return fallback;
+};
+
 // 测速结果类型
 type DelayResults = Record<string, { delay: number; available: boolean }>;
 
@@ -154,7 +170,7 @@ export default function Subscriptions() {
 
   useEffect(() => {
     fetchSubscriptions(); fetchManualNodes(); fetchCountryGroups(); fetchFilters(); fetchSettings();
-  }, []);
+  }, [fetchCountryGroups, fetchFilters, fetchManualNodes, fetchSettings, fetchSubscriptions]);
 
   // 同步 selectedSub 与 subscriptions
   useEffect(() => {
@@ -164,7 +180,7 @@ export default function Subscriptions() {
         setSelectedSub(updated);
       }
     }
-  }, [subscriptions]);
+  }, [selectedSub, subscriptions]);
 
   // 测速功能
   const handleTestNodes = useCallback(async (sub: Subscription) => {
@@ -200,7 +216,7 @@ export default function Subscriptions() {
       // 统计结果
       const available = Object.values(allResults).filter(r => r.available).length;
       toast.success(`测速完成: ${available}/${nodeNames.length} 可用`);
-    } catch (error) {
+    } catch {
       toast.error('测速失败');
     } finally {
       setTestingSubId(null);
@@ -399,14 +415,12 @@ export default function Subscriptions() {
       onConfirmClose();
       setConfirmingSub(null);
       setSelectedNodeIndices(new Set());
-    } catch (error: any) {
+    } catch (error) {
       logConfirmNodeDebug('确认接口异常', {
         subscription_id: confirmingSub.id,
-        error_message: error?.message,
-        error_response_status: error?.response?.status,
-        error_response_data: error?.response?.data,
+        error,
       });
-      toast.error(error.response?.data?.error || '确认节点失败');
+      toast.error(getErrorMessage(error, '确认节点失败'));
     } finally {
       setConfirmSubmitting(false);
     }
@@ -421,8 +435,8 @@ export default function Subscriptions() {
     try {
       const response = await nodeApi.parse(nodeUrl.trim());
       setNodeForm(response.data.data as Node);
-    } catch (error: any) {
-      setParseError(error.response?.data?.error || '解析失败');
+    } catch (error) {
+      setParseError(getErrorMessage(error, '解析失败'));
     } finally { setIsParsing(false); }
   };
 
@@ -950,7 +964,7 @@ export default function Subscriptions() {
                       try {
                         await subscriptionApi.toggleNodeDisabled(selectedSub.id, nodeIndex);
                         fetchSubscriptions(); // useEffect 会自动同步 selectedSub
-                      } catch (e) {
+                      } catch {
                         toast.error('切换失败');
                       }
                     };

@@ -8,6 +8,23 @@ import NetworkTopology from '../components/NetworkTopology';
 import DataUsage from '../components/DataUsage';
 import { useClashTraffic, useClashMemory, formatSpeed, formatMemory } from '../hooks/useClashTraffic';
 
+interface ApiErrorLike {
+  response?: {
+    data?: {
+      error?: string;
+    };
+  };
+  message?: string;
+}
+
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error && typeof error === 'object') {
+    const maybeError = error as ApiErrorLike;
+    return maybeError.response?.data?.error || maybeError.message || fallback;
+  }
+  return fallback;
+};
+
 export default function Dashboard() {
   // 使用选择器优化渲染性能
   const serviceStatus = useStore(state => state.serviceStatus);
@@ -39,8 +56,8 @@ export default function Dashboard() {
   const memory = useClashMemory();
 
   // 显示错误的辅助函数
-  const showError = (title: string, error: any) => {
-    const message = error.response?.data?.error || error.message || '操作失败';
+  const showError = (title: string, error: unknown) => {
+    const message = getErrorMessage(error, '操作失败');
     setErrorModal({
       isOpen: true,
       title,
@@ -90,7 +107,9 @@ export default function Dashboard() {
           signal: AbortSignal.timeout(2000) 
         });
         if (res.ok) return true;
-      } catch {}
+      } catch {
+        await Promise.resolve();
+      }
       await new Promise(r => setTimeout(r, 500));
     }
     return false;
