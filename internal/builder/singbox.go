@@ -43,22 +43,22 @@ type DNSConfig struct {
 // DNSServer DNS 服务器 (新格式，支持 FakeIP 和 hosts)
 type DNSServer struct {
 	Tag        string         `json:"tag"`
-	Type       string         `json:"type"`                   // udp, tcp, https, tls, quic, h3, fakeip, rcode, hosts
-	Server     string         `json:"server,omitempty"`       // 服务器地址
-	Detour     string         `json:"detour,omitempty"`       // 出站代理
-	Inet4Range string         `json:"inet4_range,omitempty"`  // FakeIP IPv4 地址池
-	Inet6Range string         `json:"inet6_range,omitempty"`  // FakeIP IPv6 地址池
-	Predefined map[string]any `json:"predefined,omitempty"`   // hosts 类型专用：预定义域名映射
+	Type       string         `json:"type"`                  // udp, tcp, https, tls, quic, h3, fakeip, rcode, hosts
+	Server     string         `json:"server,omitempty"`      // 服务器地址
+	Detour     string         `json:"detour,omitempty"`      // 出站代理
+	Inet4Range string         `json:"inet4_range,omitempty"` // FakeIP IPv4 地址池
+	Inet6Range string         `json:"inet6_range,omitempty"` // FakeIP IPv6 地址池
+	Predefined map[string]any `json:"predefined,omitempty"`  // hosts 类型专用：预定义域名映射
 }
 
 // DNSRule DNS 规则
 type DNSRule struct {
-	Outbound  string   `json:"outbound,omitempty"`   // 匹配出站的 DNS 查询，如 "any" 表示代理服务器地址解析
+	Outbound  string   `json:"outbound,omitempty"` // 匹配出站的 DNS 查询，如 "any" 表示代理服务器地址解析
 	RuleSet   []string `json:"rule_set,omitempty"`
 	QueryType []string `json:"query_type,omitempty"`
-	Domain    []string `json:"domain,omitempty"`     // 完整域名匹配
+	Domain    []string `json:"domain,omitempty"` // 完整域名匹配
 	Server    string   `json:"server,omitempty"`
-	Action    string   `json:"action,omitempty"`     // route, reject 等
+	Action    string   `json:"action,omitempty"` // route, reject 等
 }
 
 // NTPConfig NTP 配置
@@ -69,16 +69,16 @@ type NTPConfig struct {
 
 // Inbound 入站配置
 type Inbound struct {
-	Type           string   `json:"type"`
-	Tag            string   `json:"tag"`
-	Listen         string   `json:"listen,omitempty"`
-	ListenPort     int      `json:"listen_port,omitempty"`
-	Address        []string `json:"address,omitempty"`
-	AutoRoute      bool     `json:"auto_route,omitempty"`
-	StrictRoute    bool     `json:"strict_route,omitempty"`
-	Stack          string   `json:"stack,omitempty"`
-	Sniff          bool     `json:"sniff,omitempty"`
-	SniffOverrideDestination bool `json:"sniff_override_destination,omitempty"`
+	Type                     string   `json:"type"`
+	Tag                      string   `json:"tag"`
+	Listen                   string   `json:"listen,omitempty"`
+	ListenPort               int      `json:"listen_port,omitempty"`
+	Address                  []string `json:"address,omitempty"`
+	AutoRoute                bool     `json:"auto_route,omitempty"`
+	StrictRoute              bool     `json:"strict_route,omitempty"`
+	Stack                    string   `json:"stack,omitempty"`
+	Sniff                    bool     `json:"sniff,omitempty"`
+	SniffOverrideDestination bool     `json:"sniff_override_destination,omitempty"`
 }
 
 // Outbound 出站配置
@@ -108,23 +108,23 @@ type RuleSet struct {
 	Type           string `json:"type"`
 	Format         string `json:"format"`
 	URL            string `json:"url,omitempty"`
-	Path           string `json:"path,omitempty"`           // 本地规则集路径
+	Path           string `json:"path,omitempty"` // 本地规则集路径
 	DownloadDetour string `json:"download_detour,omitempty"`
 }
 
 // ExperimentalConfig 实验性配置
 type ExperimentalConfig struct {
-	ClashAPI *ClashAPIConfig `json:"clash_api,omitempty"`
+	ClashAPI  *ClashAPIConfig  `json:"clash_api,omitempty"`
 	CacheFile *CacheFileConfig `json:"cache_file,omitempty"`
 }
 
 // ClashAPIConfig Clash API 配置
 type ClashAPIConfig struct {
-	ExternalController string `json:"external_controller,omitempty"`
-	ExternalUI         string `json:"external_ui,omitempty"`
+	ExternalController    string `json:"external_controller,omitempty"`
+	ExternalUI            string `json:"external_ui,omitempty"`
 	ExternalUIDownloadURL string `json:"external_ui_download_url,omitempty"`
-	Secret             string `json:"secret,omitempty"`
-	DefaultMode        string `json:"default_mode,omitempty"`
+	Secret                string `json:"secret,omitempty"`
+	DefaultMode           string `json:"default_mode,omitempty"`
 }
 
 // CacheFileConfig 缓存文件配置
@@ -422,24 +422,24 @@ func (b *ConfigBuilder) buildInbounds() []Inbound {
 
 	inbounds := []Inbound{
 		{
-			Type:       "mixed",
-			Tag:        "mixed-in",
-			Listen:     listenAddr,
-			ListenPort: b.settings.MixedPort,
-			Sniff:      true,
+			Type:                     "mixed",
+			Tag:                      "mixed-in",
+			Listen:                   listenAddr,
+			ListenPort:               b.settings.MixedPort,
+			Sniff:                    true,
 			SniffOverrideDestination: true,
 		},
 	}
 
 	if b.settings.TunEnabled {
 		inbounds = append(inbounds, Inbound{
-			Type:        "tun",
-			Tag:         "tun-in",
-			Address:     []string{"172.19.0.1/30", "fdfe:dcba:9876::1/126"},
-			AutoRoute:   true,
-			StrictRoute: true,
-			Stack:       "system",
-			Sniff:       true,
+			Type:                     "tun",
+			Tag:                      "tun-in",
+			Address:                  []string{"172.19.0.1/30", "fdfe:dcba:9876::1/126"},
+			AutoRoute:                true,
+			StrictRoute:              true,
+			Stack:                    "system",
+			Sniff:                    true,
 			SniffOverrideDestination: true,
 		})
 	}
@@ -724,51 +724,13 @@ func (b *ConfigBuilder) normalizeTransport(outbound Outbound) {
 
 // matchFilter 检查节点是否匹配过滤器
 func (b *ConfigBuilder) matchFilter(node *storage.Node, filter storage.Filter) bool {
-	name := strings.ToLower(node.Tag)
-
-	// 1. 检查国家包含条件
-	if len(filter.IncludeCountries) > 0 {
-		matched := false
-		for _, country := range filter.IncludeCountries {
-			if strings.EqualFold(node.Country, country) {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			return false
+	for _, selectedTag := range filter.SelectedNodes {
+		if node.Tag == selectedTag {
+			return true
 		}
 	}
 
-	// 2. 检查国家排除条件
-	for _, country := range filter.ExcludeCountries {
-		if strings.EqualFold(node.Country, country) {
-			return false
-		}
-	}
-
-	// 3. 检查关键字包含条件
-	if len(filter.Include) > 0 {
-		matched := false
-		for _, keyword := range filter.Include {
-			if strings.Contains(name, strings.ToLower(keyword)) {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			return false
-		}
-	}
-
-	// 4. 检查关键字排除条件
-	for _, keyword := range filter.Exclude {
-		if strings.Contains(name, strings.ToLower(keyword)) {
-			return false
-		}
-	}
-
-	return true
+	return false
 }
 
 // buildRoute 构建路由配置

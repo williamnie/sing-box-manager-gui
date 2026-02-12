@@ -25,7 +25,7 @@ type Traffic struct {
 // Node 节点
 type Node struct {
 	Tag          string                 `json:"tag"`
-	Type         string                 `json:"type"`                    // shadowsocks/vmess/vless/trojan/hysteria2/tuic
+	Type         string                 `json:"type"` // shadowsocks/vmess/vless/trojan/hysteria2/tuic
 	Server       string                 `json:"server"`
 	ServerPort   int                    `json:"server_port"`
 	Extra        map[string]interface{} `json:"extra,omitempty"`         // 协议特定字段
@@ -51,17 +51,14 @@ type CountryGroup struct {
 
 // Filter 过滤器
 type Filter struct {
-	ID               string         `json:"id"`
-	Name             string         `json:"name"`
-	Include          []string       `json:"include"`           // 包含关键字
-	Exclude          []string       `json:"exclude"`           // 排除关键字
-	IncludeCountries []string       `json:"include_countries"` // 包含的国家代码
-	ExcludeCountries []string       `json:"exclude_countries"` // 排除的国家代码
-	Mode             string         `json:"mode"`              // urltest / select
-	URLTestConfig    *URLTestConfig `json:"urltest_config,omitempty"`
-	Subscriptions    []string       `json:"subscriptions"` // 适用的订阅ID，空表示全部
-	AllNodes         bool           `json:"all_nodes"`     // 是否应用于所有节点
-	Enabled          bool           `json:"enabled"`
+	ID            string         `json:"id"`
+	Name          string         `json:"name"`
+	Mode          string         `json:"mode"` // urltest / select
+	URLTestConfig *URLTestConfig `json:"urltest_config,omitempty"`
+	Subscriptions []string       `json:"subscriptions"`            // 适用的订阅ID，空表示全部
+	AllNodes      bool           `json:"all_nodes"`                // 是否应用于所有节点
+	SelectedNodes []string       `json:"selected_nodes,omitempty"` // 直选节点标签列表（优先生效）
+	Enabled       bool           `json:"enabled"`
 }
 
 // URLTestConfig urltest 模式配置
@@ -79,7 +76,7 @@ type Rule struct {
 	Values   []string `json:"values"`    // 规则值列表
 	Outbound string   `json:"outbound"`  // 目标出站
 	Enabled  bool     `json:"enabled"`
-	Priority int      `json:"priority"`  // 优先级 (越小越优先)
+	Priority int      `json:"priority"` // 优先级 (越小越优先)
 }
 
 // RuleGroup 预设规则组
@@ -112,15 +109,15 @@ type Settings struct {
 	AllowLAN   bool `json:"allow_lan"`   // 允许局域网访问
 
 	// DNS 配置
-	ProxyDNS  string      `json:"proxy_dns"`        // 代理 DNS
-	DirectDNS string      `json:"direct_dns"`       // 直连 DNS
-	Hosts     []HostEntry `json:"hosts,omitempty"`  // DNS hosts 映射
+	ProxyDNS  string      `json:"proxy_dns"`       // 代理 DNS
+	DirectDNS string      `json:"direct_dns"`      // 直连 DNS
+	Hosts     []HostEntry `json:"hosts,omitempty"` // DNS hosts 映射
 
 	// 控制面板
-	WebPort        int    `json:"web_port"`          // 管理界面端口
-	ClashAPIPort   int    `json:"clash_api_port"`    // Clash API 端口
-	ClashUIPath    string `json:"clash_ui_path"`     // zashboard 路径
-	ClashAPISecret string `json:"clash_api_secret"`  // ClashAPI 密钥
+	WebPort        int    `json:"web_port"`         // 管理界面端口
+	ClashAPIPort   int    `json:"clash_api_port"`   // Clash API 端口
+	ClashUIPath    string `json:"clash_ui_path"`    // zashboard 路径
+	ClashAPISecret string `json:"clash_api_secret"` // ClashAPI 密钥
 
 	// 漏网规则
 	FinalOutbound string `json:"final_outbound"` // 默认出站
@@ -197,96 +194,96 @@ func DefaultRuleGroups() []RuleGroup {
 
 // CountryNames 国家代码到中文名称的映射
 var CountryNames = map[string]string{
-	"HK": "香港",
-	"TW": "台湾",
-	"JP": "日本",
-	"KR": "韩国",
-	"SG": "新加坡",
-	"US": "美国",
-	"GB": "英国",
-	"DE": "德国",
-	"FR": "法国",
-	"NL": "荷兰",
-	"AU": "澳大利亚",
-	"CA": "加拿大",
-	"RU": "俄罗斯",
-	"IN": "印度",
-	"BR": "巴西",
-	"AR": "阿根廷",
-	"TR": "土耳其",
-	"TH": "泰国",
-	"VN": "越南",
-	"MY": "马来西亚",
-	"PH": "菲律宾",
-	"ID": "印尼",
-	"AE": "阿联酋",
-	"ZA": "南非",
-	"CH": "瑞士",
-	"IT": "意大利",
-	"ES": "西班牙",
-	"SE": "瑞典",
-	"NO": "挪威",
-	"FI": "芬兰",
-	"DK": "丹麦",
-	"PL": "波兰",
-	"CZ": "捷克",
-	"AT": "奥地利",
-	"IE": "爱尔兰",
-	"PT": "葡萄牙",
-	"GR": "希腊",
-	"IL": "以色列",
-	"MX": "墨西哥",
-	"CL": "智利",
-	"CO": "哥伦比亚",
-	"PE": "秘鲁",
+	"HK":    "香港",
+	"TW":    "台湾",
+	"JP":    "日本",
+	"KR":    "韩国",
+	"SG":    "新加坡",
+	"US":    "美国",
+	"GB":    "英国",
+	"DE":    "德国",
+	"FR":    "法国",
+	"NL":    "荷兰",
+	"AU":    "澳大利亚",
+	"CA":    "加拿大",
+	"RU":    "俄罗斯",
+	"IN":    "印度",
+	"BR":    "巴西",
+	"AR":    "阿根廷",
+	"TR":    "土耳其",
+	"TH":    "泰国",
+	"VN":    "越南",
+	"MY":    "马来西亚",
+	"PH":    "菲律宾",
+	"ID":    "印尼",
+	"AE":    "阿联酋",
+	"ZA":    "南非",
+	"CH":    "瑞士",
+	"IT":    "意大利",
+	"ES":    "西班牙",
+	"SE":    "瑞典",
+	"NO":    "挪威",
+	"FI":    "芬兰",
+	"DK":    "丹麦",
+	"PL":    "波兰",
+	"CZ":    "捷克",
+	"AT":    "奥地利",
+	"IE":    "爱尔兰",
+	"PT":    "葡萄牙",
+	"GR":    "希腊",
+	"IL":    "以色列",
+	"MX":    "墨西哥",
+	"CL":    "智利",
+	"CO":    "哥伦比亚",
+	"PE":    "秘鲁",
 	"NZ":    "新西兰",
 	"OTHER": "其他",
 }
 
 // CountryEmojis 国家代码到 emoji 的映射
 var CountryEmojis = map[string]string{
-	"HK": "🇭🇰",
-	"TW": "🇹🇼",
-	"JP": "🇯🇵",
-	"KR": "🇰🇷",
-	"SG": "🇸🇬",
-	"US": "🇺🇸",
-	"GB": "🇬🇧",
-	"DE": "🇩🇪",
-	"FR": "🇫🇷",
-	"NL": "🇳🇱",
-	"AU": "🇦🇺",
-	"CA": "🇨🇦",
-	"RU": "🇷🇺",
-	"IN": "🇮🇳",
-	"BR": "🇧🇷",
-	"AR": "🇦🇷",
-	"TR": "🇹🇷",
-	"TH": "🇹🇭",
-	"VN": "🇻🇳",
-	"MY": "🇲🇾",
-	"PH": "🇵🇭",
-	"ID": "🇮🇩",
-	"AE": "🇦🇪",
-	"ZA": "🇿🇦",
-	"CH": "🇨🇭",
-	"IT": "🇮🇹",
-	"ES": "🇪🇸",
-	"SE": "🇸🇪",
-	"NO": "🇳🇴",
-	"FI": "🇫🇮",
-	"DK": "🇩🇰",
-	"PL": "🇵🇱",
-	"CZ": "🇨🇿",
-	"AT": "🇦🇹",
-	"IE": "🇮🇪",
-	"PT": "🇵🇹",
-	"GR": "🇬🇷",
-	"IL": "🇮🇱",
-	"MX": "🇲🇽",
-	"CL": "🇨🇱",
-	"CO": "🇨🇴",
-	"PE": "🇵🇪",
+	"HK":    "🇭🇰",
+	"TW":    "🇹🇼",
+	"JP":    "🇯🇵",
+	"KR":    "🇰🇷",
+	"SG":    "🇸🇬",
+	"US":    "🇺🇸",
+	"GB":    "🇬🇧",
+	"DE":    "🇩🇪",
+	"FR":    "🇫🇷",
+	"NL":    "🇳🇱",
+	"AU":    "🇦🇺",
+	"CA":    "🇨🇦",
+	"RU":    "🇷🇺",
+	"IN":    "🇮🇳",
+	"BR":    "🇧🇷",
+	"AR":    "🇦🇷",
+	"TR":    "🇹🇷",
+	"TH":    "🇹🇭",
+	"VN":    "🇻🇳",
+	"MY":    "🇲🇾",
+	"PH":    "🇵🇭",
+	"ID":    "🇮🇩",
+	"AE":    "🇦🇪",
+	"ZA":    "🇿🇦",
+	"CH":    "🇨🇭",
+	"IT":    "🇮🇹",
+	"ES":    "🇪🇸",
+	"SE":    "🇸🇪",
+	"NO":    "🇳🇴",
+	"FI":    "🇫🇮",
+	"DK":    "🇩🇰",
+	"PL":    "🇵🇱",
+	"CZ":    "🇨🇿",
+	"AT":    "🇦🇹",
+	"IE":    "🇮🇪",
+	"PT":    "🇵🇹",
+	"GR":    "🇬🇷",
+	"IL":    "🇮🇱",
+	"MX":    "🇲🇽",
+	"CL":    "🇨🇱",
+	"CO":    "🇨🇴",
+	"PE":    "🇵🇪",
 	"NZ":    "🇳🇿",
 	"OTHER": "🌐",
 }

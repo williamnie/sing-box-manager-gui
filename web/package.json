@@ -3,7 +3,13 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
+    "check:node": "node ./scripts/check-node-version.cjs",
+    "predev": "npm run check:node",
+    "prebuild": "npm run check:node",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",

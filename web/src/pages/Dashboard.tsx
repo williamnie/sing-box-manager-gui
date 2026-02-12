@@ -277,42 +277,42 @@ export default function Dashboard() {
 
       {/* 统计卡片 */}
       <Card>
-        <CardBody className="flex flex-row items-center justify-between gap-4 py-3">
-          <div className="flex items-center gap-2">
+        <CardBody className="grid grid-cols-2 lg:grid-cols-4 gap-4 py-3">
+          <div className="flex items-center gap-2 min-w-0">
             <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
               <Wifi className="w-4 h-4 text-blue-600 dark:text-blue-300" />
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-xs text-gray-500">订阅数量</p>
               <p className="text-base font-bold">{enabledSubs}/{subscriptions.length}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             <div className="p-2 bg-green-100 dark:bg-green-900 rounded-lg">
               <HardDrive className="w-4 h-4 text-green-600 dark:text-green-300" />
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-xs text-gray-500">节点总数</p>
               <p className="text-base font-bold">{totalNodes}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             <div className="p-2 bg-purple-100 dark:bg-purple-900 rounded-lg">
               <Cpu className="w-4 h-4 text-purple-600 dark:text-purple-300" />
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-xs text-gray-500">内存占用</p>
               <p className="text-base font-bold">{memory.connected ? formatMemory(memory.inuse) : '-'}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             <div className="p-2 bg-orange-100 dark:bg-orange-900 rounded-lg">
               <Activity className="w-4 h-4 text-orange-600 dark:text-orange-300" />
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-xs text-gray-500">实时流量</p>
               {traffic.connected ? (
                 <div className="flex items-center gap-2 text-sm font-bold">

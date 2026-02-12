@@ -15,6 +15,8 @@ export const subscriptionApi = {
   refreshAll: () => api.post('/subscriptions/refresh-all'),
   toggleNodeDisabled: (subId: string, nodeIndex: number) => 
     api.post(`/subscriptions/${subId}/nodes/${nodeIndex}/toggle`),
+  confirmNodes: (subId: string, selectedIndices: number[]) =>
+    api.post(`/subscriptions/${subId}/nodes/confirm`, { selected_indices: selectedIndices }),
 };
 
 // 过滤器 API

@@ -15,33 +15,33 @@ func TestNormalizeTransportWSEarlyData(t *testing.T) {
 	settings := storage.DefaultSettings()
 
 	tests := []struct {
-		name             string
-		inputPath        string
-		expectedPath     string
+		name              string
+		inputPath         string
+		expectedPath      string
 		expectedEarlyData int
 	}{
 		{
-			name:             "带 ed 参数的路径",
-			inputPath:        "/?ed=2048",
-			expectedPath:     "/",
+			name:              "带 ed 参数的路径",
+			inputPath:         "/?ed=2048",
+			expectedPath:      "/",
 			expectedEarlyData: 2048,
 		},
 		{
-			name:             "带路径和 ed 参数",
-			inputPath:        "/ws?ed=4096",
-			expectedPath:     "/ws",
+			name:              "带路径和 ed 参数",
+			inputPath:         "/ws?ed=4096",
+			expectedPath:      "/ws",
 			expectedEarlyData: 4096,
 		},
 		{
-			name:             "无 ed 参数",
-			inputPath:        "/websocket",
-			expectedPath:     "/websocket",
+			name:              "无 ed 参数",
+			inputPath:         "/websocket",
+			expectedPath:      "/websocket",
 			expectedEarlyData: 0,
 		},
 		{
-			name:             "空路径带 ed",
-			inputPath:        "?ed=2048",
-			expectedPath:     "/",
+			name:              "空路径带 ed",
+			inputPath:         "?ed=2048",
+			expectedPath:      "/",
 			expectedEarlyData: 2048,
 		},
 	}
@@ -76,7 +76,7 @@ func TestNormalizeTransportWSEarlyData(t *testing.T) {
 			for _, ob := range config.Outbounds {
 				if ob["type"] == "vmess" {
 					transport := ob["transport"].(map[string]interface{})
-					
+
 					// 检查 path
 					actualPath := transport["path"].(string)
 					if actualPath != tt.expectedPath {
@@ -245,7 +245,7 @@ func TestBuildRuleSetRemote(t *testing.T) {
 // TestConfigJSONOutput 测试生成的 JSON 配置是否有效
 func TestConfigJSONOutput(t *testing.T) {
 	settings := storage.DefaultSettings()
-	
+
 	nodes := []*storage.Node{
 		{
 			Tag:        "test-vmess",
@@ -308,4 +308,90 @@ func TestConfigJSONOutput(t *testing.T) {
 	}
 
 	t.Logf("Generated config length: %d bytes", len(jsonStr))
+}
+
+// TestFilterSelectedNodesOnly 测试过滤器仅按直选节点生效
+func TestFilterSelectedNodesOnly(t *testing.T) {
+	settings := storage.DefaultSettings()
+
+	nodes := []*storage.Node{
+		{Tag: "JP-01", Type: "vmess", Server: "jp.example.com", ServerPort: 443, Extra: map[string]interface{}{"uuid": "id-1"}},
+		{Tag: "US-01", Type: "vmess", Server: "us.example.com", ServerPort: 443, Extra: map[string]interface{}{"uuid": "id-2"}},
+	}
+
+	filters := []storage.Filter{
+		{
+			ID:            "f1",
+			Name:          "直选节点",
+			Mode:          "selector",
+			SelectedNodes: []string{"US-01"},
+			Enabled:       true,
+		},
+	}
+
+	b := NewConfigBuilder(settings, nodes, filters, nil, nil)
+	config, err := b.Build()
+	if err != nil {
+		t.Fatalf("Build failed: %v", err)
+	}
+
+	var filterGroup map[string]interface{}
+	for _, ob := range config.Outbounds {
+		if tag, ok := ob["tag"].(string); ok && tag == "直选节点" {
+			filterGroup = ob
+			break
+		}
+	}
+
+	if filterGroup == nil {
+		t.Fatal("filter group not found")
+	}
+
+	outbounds, ok := filterGroup["outbounds"].([]string)
+	if !ok {
+		// 兼容 map 反序列化可能得到 []interface{} 的情况
+		if arr, ok := filterGroup["outbounds"].([]interface{}); ok {
+			outbounds = make([]string, 0, len(arr))
+			for _, item := range arr {
+				if s, ok := item.(string); ok {
+					outbounds = append(outbounds, s)
+				}
+			}
+		}
+	}
+
+	if len(outbounds) != 1 || outbounds[0] != "US-01" {
+		t.Fatalf("filter outbounds = %v, want [US-01]", outbounds)
+	}
+}
+
+// TestFilterRequiresSelectedNodes 测试未设置直选节点时过滤器不生效
+func TestFilterRequiresSelectedNodes(t *testing.T) {
+	settings := storage.DefaultSettings()
+
+	nodes := []*storage.Node{
+		{Tag: "JP-01", Type: "vmess", Server: "jp.example.com", ServerPort: 443, Extra: map[string]interface{}{"uuid": "id-1"}},
+		{Tag: "US-01", Type: "vmess", Server: "us.example.com", ServerPort: 443, Extra: map[string]interface{}{"uuid": "id-2"}},
+	}
+
+	filters := []storage.Filter{
+		{
+			ID:      "f2",
+			Name:    "无直选",
+			Mode:    "selector",
+			Enabled: true,
+		},
+	}
+
+	b := NewConfigBuilder(settings, nodes, filters, nil, nil)
+	config, err := b.Build()
+	if err != nil {
+		t.Fatalf("Build failed: %v", err)
+	}
+
+	for _, ob := range config.Outbounds {
+		if tag, ok := ob["tag"].(string); ok && tag == "无直选" {
+			t.Fatalf("filter group should be skipped when selected_nodes is empty")
+		}
+	}
 }

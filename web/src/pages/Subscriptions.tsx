@@ -112,6 +112,7 @@ export default function Subscriptions() {
   const { isOpen: isNodeOpen, onOpen: onNodeOpen, onClose: onNodeClose } = useDisclosure();
   const { isOpen: isFilterOpen, onOpen: onFilterOpen, onClose: onFilterClose } = useDisclosure();
   const { isOpen: isDetailOpen, onOpen: onDetailOpen, onClose: onDetailClose } = useDisclosure();
+  const { isOpen: isConfirmOpen, onOpen: onConfirmOpen, onClose: onConfirmClose } = useDisclosure();
   
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
@@ -126,17 +127,30 @@ export default function Subscriptions() {
   const [editingFilter, setEditingFilter] = useState<Filter | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSub, setSelectedSub] = useState<Subscription | null>(null);
+  const [confirmingSub, setConfirmingSub] = useState<Subscription | null>(null);
+  const [selectedNodeIndices, setSelectedNodeIndices] = useState<Set<number>>(new Set());
+  const [confirmSubmitting, setConfirmSubmitting] = useState(false);
   
   // 测速相关状态
   const [testResults, setTestResults] = useState<Record<string, DelayResults>>({});
   const [testingSubId, setTestingSubId] = useState<string | null>(null);
   
   const defaultFilterForm: Omit<Filter, 'id'> = {
-    name: '', include: [], exclude: [], include_countries: [], exclude_countries: [],
+    name: '',
     mode: 'urltest', urltest_config: { url: 'https://www.gstatic.com/generate_204', interval: '5m', tolerance: 50 },
-    subscriptions: [], all_nodes: true, enabled: true,
+    subscriptions: [], all_nodes: true, selected_nodes: [], enabled: true,
   };
   const [filterForm, setFilterForm] = useState<Omit<Filter, 'id'>>(defaultFilterForm);
+
+  const logConfirmNodeDebug = useCallback((event: string, detail?: unknown) => {
+    const timestamp = new Date().toISOString();
+    const prefix = `[确认节点调试][${timestamp}] ${event}`;
+    if (detail === undefined) {
+      console.log(prefix);
+      return;
+    }
+    console.log(prefix, detail);
+  }, []);
 
   useEffect(() => {
     fetchSubscriptions(); fetchManualNodes(); fetchCountryGroups(); fetchFilters(); fetchSettings();
@@ -212,21 +226,191 @@ export default function Subscriptions() {
     return filters.filter(f => f.name.toLowerCase().includes(q));
   }, [filters, searchQuery]);
 
+  const selectableNodeTags = useMemo(() => {
+    const subscriptionTags = subscriptions.flatMap((sub) =>
+      (sub.nodes || []).filter((node) => !node.disabled).map((node) => node.tag)
+    );
+    const manualTags = manualNodes
+      .filter((manualNode) => manualNode.enabled)
+      .map((manualNode) => manualNode.node.tag);
+
+    return Array.from(new Set([...subscriptionTags, ...manualTags])).sort();
+  }, [subscriptions, manualNodes]);
+
   const handleOpenAddSubscription = () => { setEditingSubscription(null); setName(''); setUrl(''); onSubOpen(); };
   const handleOpenEditSubscription = (sub: Subscription) => { setEditingSubscription(sub); setName(sub.name); setUrl(sub.url); onSubOpen(); };
+
+  const openConfirmForSub = (sub: Subscription) => {
+    const initialSelected = new Set<number>();
+    (sub.nodes || []).forEach((node, index) => {
+      if (!node.disabled) {
+        initialSelected.add(index);
+      }
+    });
+
+    const initialSelectedIndices = Array.from(initialSelected).sort((a, b) => a - b);
+    const totalIndices = (sub.nodes || []).map((_, index) => index);
+    const initialUnselectedIndices = totalIndices.filter(index => !initialSelected.has(index));
+    logConfirmNodeDebug('打开确认弹窗', {
+      subscription_id: sub.id,
+      subscription_name: sub.name,
+      modal_total_nodes: (sub.nodes || []).length,
+      initial_selected_count: initialSelectedIndices.length,
+      initial_unselected_count: initialUnselectedIndices.length,
+      initial_selected_indices: initialSelectedIndices,
+      initial_unselected_indices: initialUnselectedIndices,
+      modal_nodes: (sub.nodes || []).map((node, index) => ({
+        index,
+        tag: node.tag,
+        disabled: !!node.disabled,
+        server: `${node.server}:${node.server_port}`,
+      })),
+    });
+
+    setConfirmingSub(sub);
+    setSelectedNodeIndices(initialSelected);
+    onConfirmOpen();
+  };
 
   const handleSaveSubscription = async () => {
     if (!name || !url) return;
     setIsSubmitting(true);
     try {
-      if (editingSubscription) await updateSubscription(editingSubscription.id, name, url);
-      else await addSubscription(name, url);
+      if (editingSubscription) {
+        await updateSubscription(editingSubscription.id, name, url);
+      } else {
+        const newSub = await addSubscription(name, url);
+        if (newSub?.nodes?.length) {
+          openConfirmForSub(newSub);
+        }
+      }
       setName(''); setUrl(''); setEditingSubscription(null); onSubClose();
     } finally { setIsSubmitting(false); }
   };
 
-  const handleRefresh = async (id: string) => { await refreshSubscription(id); };
+  const handleRefresh = async (id: string) => {
+    const refreshed = await refreshSubscription(id);
+    if (refreshed?.nodes?.length) {
+      openConfirmForSub(refreshed);
+    }
+  };
   const handleDeleteSubscription = async (id: string) => { if (confirm('确定删除？')) await deleteSubscription(id); };
+
+  const handleSetConfirmNodeSelected = (index: number, selected: boolean) => {
+    const nodeTag = confirmingSub?.nodes?.[index]?.tag || '';
+    setSelectedNodeIndices(prev => {
+      const beforeIndices = Array.from(prev).sort((a, b) => a - b);
+      const next = new Set(prev);
+      if (selected) {
+        next.add(index);
+      } else {
+        next.delete(index);
+      }
+      const afterIndices = Array.from(next).sort((a, b) => a - b);
+      logConfirmNodeDebug('切换节点勾选', {
+        subscription_id: confirmingSub?.id,
+        index,
+        selected,
+        tag: nodeTag,
+        before_count: beforeIndices.length,
+        after_count: afterIndices.length,
+        before_selected_indices: beforeIndices,
+        after_selected_indices: afterIndices,
+      });
+      return next;
+    });
+  };
+
+  const handleSelectAllConfirmNodes = () => {
+    if (!confirmingSub?.nodes?.length) return;
+    const selectedIndices = confirmingSub.nodes.map((_, index) => index);
+    logConfirmNodeDebug('点击全选', {
+      subscription_id: confirmingSub.id,
+      selected_count: selectedIndices.length,
+      selected_indices: selectedIndices,
+    });
+    setSelectedNodeIndices(new Set(selectedIndices));
+  };
+
+  const handleClearConfirmNodes = () => {
+    logConfirmNodeDebug('点击全不选', {
+      subscription_id: confirmingSub?.id,
+      before_selected_count: selectedNodeIndices.size,
+      before_selected_indices: Array.from(selectedNodeIndices).sort((a, b) => a - b),
+    });
+    setSelectedNodeIndices(new Set());
+  };
+
+  const handleConfirmNodes = async () => {
+    if (!confirmingSub) return;
+    setConfirmSubmitting(true);
+    try {
+      const selectedIndices = Array.from(selectedNodeIndices).sort((a, b) => a - b);
+      const selectedSet = new Set(selectedIndices);
+      const unselectedIndices = (confirmingSub.nodes || [])
+        .map((_, index) => index)
+        .filter(index => !selectedSet.has(index));
+      const selectedNodes = selectedIndices.map(index => ({
+        index,
+        tag: confirmingSub.nodes?.[index]?.tag || '',
+      }));
+      const unselectedNodes = unselectedIndices.map(index => ({
+        index,
+        tag: confirmingSub.nodes?.[index]?.tag || '',
+      }));
+
+      logConfirmNodeDebug('点击确认并继续-提交前', {
+        subscription_id: confirmingSub.id,
+        subscription_name: confirmingSub.name,
+        modal_total_nodes: (confirmingSub.nodes || []).length,
+        selected_count: selectedIndices.length,
+        unselected_count: unselectedIndices.length,
+        payload: { selected_indices: selectedIndices },
+        selected_nodes: selectedNodes,
+        unselected_nodes: unselectedNodes,
+      });
+
+      const response = await subscriptionApi.confirmNodes(confirmingSub.id, selectedIndices);
+      logConfirmNodeDebug('确认接口响应', {
+        subscription_id: confirmingSub.id,
+        http_status: response.status,
+        response_data: response.data,
+      });
+
+      await fetchSubscriptions();
+      await fetchCountryGroups();
+
+      const updatedSub = useStore.getState().subscriptions.find(sub => sub.id === confirmingSub.id);
+      logConfirmNodeDebug('确认后刷新订阅', {
+        subscription_id: confirmingSub.id,
+        subscription_found: !!updatedSub,
+        node_count: updatedSub?.node_count,
+        nodes_length: updatedSub?.nodes?.length,
+        updated_nodes: (updatedSub?.nodes || []).map((node, index) => ({
+          index,
+          tag: node.tag,
+          disabled: !!node.disabled,
+          server: `${node.server}:${node.server_port}`,
+        })),
+      });
+
+      const savedCount = Number(response?.data?.node_count);
+      toast.success(`已保留 ${Number.isFinite(savedCount) ? savedCount : selectedIndices.length} 个节点`);
+      onConfirmClose();
+      setConfirmingSub(null);
+      setSelectedNodeIndices(new Set());
+    } catch (error: any) {
+      logConfirmNodeDebug('确认接口异常', {
+        subscription_id: confirmingSub.id,
+        error_message: error?.message,
+        error_response_status: error?.response?.status,
+        error_response_data: error?.response?.data,
+      });
+      toast.error(error.response?.data?.error || '确认节点失败');
+    } finally {
+      setConfirmSubmitting(false);
+    }
+  };
 
   const handleOpenAddNode = () => { setEditingNode(null); setNodeForm(defaultNode); setNodeEnabled(true); setNodeUrl(''); setParseError(''); onNodeOpen(); };
   const handleOpenEditNode = (mn: ManualNode) => { setEditingNode(mn); setNodeForm(mn.node); setNodeEnabled(mn.enabled); setNodeUrl(''); setParseError(''); onNodeOpen(); };
@@ -261,11 +445,10 @@ export default function Subscriptions() {
   const handleOpenEditFilter = (filter: Filter) => {
     setEditingFilter(filter);
     setFilterForm({
-      name: filter.name, include: filter.include || [], exclude: filter.exclude || [],
-      include_countries: filter.include_countries || [], exclude_countries: filter.exclude_countries || [],
+      name: filter.name,
       mode: filter.mode || 'urltest',
       urltest_config: filter.urltest_config || { url: 'https://www.gstatic.com/generate_204', interval: '5m', tolerance: 50 },
-      subscriptions: filter.subscriptions || [], all_nodes: filter.all_nodes ?? true, enabled: filter.enabled,
+      subscriptions: filter.subscriptions || [], all_nodes: filter.all_nodes ?? true, selected_nodes: filter.selected_nodes || [], enabled: filter.enabled,
     });
     onFilterOpen();
   };
@@ -484,12 +667,11 @@ export default function Subscriptions() {
                   <div className="mt-6 mb-3">
                     <h3 className="font-semibold">{filter.name}</h3>
                     <div className="flex gap-1 mt-2 flex-wrap">
-                      {filter.include_countries?.map(c => (
-                        <span key={c} className="text-sm">{countryOptions.find(o => o.code === c)?.emoji}</span>
-                      ))}
-                      {filter.include?.length > 0 && (
-                        <Chip size="sm" variant="flat" className="h-5 text-xs">{filter.include.join('|')}</Chip>
-                      )}
+                      {filter.selected_nodes?.length ? (
+                        <Chip size="sm" variant="flat" className="h-5 text-xs" color="secondary">
+                          直选 {filter.selected_nodes.length} 个节点
+                        </Chip>
+                      ) : null}
                     </div>
                   </div>
                   <div className="flex justify-end gap-1 pt-2 border-t border-gray-100 dark:border-gray-800">
@@ -613,54 +795,104 @@ export default function Subscriptions() {
         </ModalContent>
       </Modal>
 
+      {/* 拉取后节点确认弹窗 */}
+      <Modal
+        isOpen={isConfirmOpen}
+        onClose={() => {
+          if (confirmSubmitting) return;
+          onConfirmClose();
+        }}
+        size="2xl"
+      >
+        <ModalContent>
+          <ModalHeader>确认本次订阅节点</ModalHeader>
+          <ModalBody>
+            <p className="text-sm text-gray-500">
+              已拉取 <span className="font-medium text-foreground">{confirmingSub?.name || '订阅'}</span> 的节点，
+              请勾选要保留的节点后继续。
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button
+                size="sm"
+                variant="flat"
+                onPress={handleSelectAllConfirmNodes}
+                isDisabled={confirmSubmitting || !(confirmingSub?.nodes?.length)}
+              >
+                全选
+              </Button>
+              <Button
+                size="sm"
+                variant="flat"
+                onPress={handleClearConfirmNodes}
+                isDisabled={confirmSubmitting || selectedNodeIndices.size === 0}
+              >
+                全不选
+              </Button>
+            </div>
+            <div className="max-h-[420px] overflow-y-auto space-y-2 pr-1">
+              {(confirmingSub?.nodes || []).map((node, index) => (
+                <div key={`${node.tag}-${index}`} className="flex items-center gap-3 p-2 rounded bg-gray-50 dark:bg-gray-800">
+                  <Switch
+                    size="sm"
+                    isSelected={selectedNodeIndices.has(index)}
+                    onValueChange={(selected) => handleSetConfirmNodeSelected(index, selected)}
+                  />
+                  <span className="text-xl">{node.country_emoji || '🌐'}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate" title={node.tag}>{node.tag}</p>
+                    <p className="text-xs text-gray-500 truncate">{node.server}:{node.server_port}</p>
+                  </div>
+                  <Chip size="sm" variant="flat">{node.type}</Chip>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500">已选择 {selectedNodeIndices.size} / {(confirmingSub?.nodes || []).length}</p>
+          </ModalBody>
+          <ModalFooter>
+            <Button
+              variant="flat"
+              onPress={() => {
+                onConfirmClose();
+                setConfirmingSub(null);
+                setSelectedNodeIndices(new Set());
+              }}
+              isDisabled={confirmSubmitting}
+            >
+              稍后处理
+            </Button>
+            <Button color="primary" onPress={handleConfirmNodes} isLoading={confirmSubmitting}>
+              确认并继续
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
       {/* 过滤器弹窗 */}
       <Modal isOpen={isFilterOpen} onClose={onFilterClose} size="xl">
         <ModalContent>
           <ModalHeader>{editingFilter ? '编辑过滤器' : '添加过滤器'}</ModalHeader>
           <ModalBody>
             <Input label="名称" placeholder="如：日本高速" value={filterForm.name} onChange={(e) => setFilterForm({ ...filterForm, name: e.target.value })} isRequired />
-            <div className="grid grid-cols-2 gap-3">
-              <Select 
-                label="包含国家" 
-                selectionMode="multiple" 
-                selectedKeys={new Set(filterForm.include_countries)}
-                onSelectionChange={(keys) => setFilterForm({ ...filterForm, include_countries: Array.from(keys) as string[] })}
-                renderValue={(items) => (
-                  <div className="flex flex-wrap gap-1">
-                    {items.map(item => {
-                      const code = String(item.key);
-                      const c = countryOptions.find(o => o.code === code);
-                      return <span key={code}>{c?.emoji || code}</span>;
-                    })}
-                  </div>
-                )}
-              >
-                {countryOptions.map((o) => <SelectItem key={o.code} textValue={`${o.emoji} ${o.name}`}>{o.emoji} {o.name}</SelectItem>)}
-              </Select>
-              <Select 
-                label="排除国家" 
-                selectionMode="multiple" 
-                selectedKeys={new Set(filterForm.exclude_countries)}
-                onSelectionChange={(keys) => setFilterForm({ ...filterForm, exclude_countries: Array.from(keys) as string[] })}
-                renderValue={(items) => (
-                  <div className="flex flex-wrap gap-1">
-                    {items.map(item => {
-                      const code = String(item.key);
-                      const c = countryOptions.find(o => o.code === code);
-                      return <span key={code}>{c?.emoji || code}</span>;
-                    })}
-                  </div>
-                )}
-              >
-                {countryOptions.map((o) => <SelectItem key={o.code} textValue={`${o.emoji} ${o.name}`}>{o.emoji} {o.name}</SelectItem>)}
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Input label="包含关键字" placeholder="用 | 分隔" value={filterForm.include.join('|')}
-                onChange={(e) => setFilterForm({ ...filterForm, include: e.target.value ? e.target.value.split('|').filter(Boolean) : [] })} />
-              <Input label="排除关键字" placeholder="用 | 分隔" value={filterForm.exclude.join('|')}
-                onChange={(e) => setFilterForm({ ...filterForm, exclude: e.target.value ? e.target.value.split('|').filter(Boolean) : [] })} />
-            </div>
+
+            <Select
+              label="直选节点（可选，设置后优先生效）"
+              selectionMode="multiple"
+              selectedKeys={new Set(filterForm.selected_nodes || [])}
+              onSelectionChange={(keys) => setFilterForm({ ...filterForm, selected_nodes: Array.from(keys) as string[] })}
+              renderValue={(items) => (
+                <div className="flex flex-wrap gap-1">
+                  {items.slice(0, 8).map(item => (
+                    <Chip key={String(item.key)} size="sm" variant="flat" className="h-5 text-xs">{String(item.key)}</Chip>
+                  ))}
+                  {items.length > 8 ? <Chip size="sm" variant="flat" className="h-5 text-xs">+{items.length - 8}</Chip> : null}
+                </div>
+              )}
+            >
+              {selectableNodeTags.map(tag => (
+                <SelectItem key={tag} textValue={tag}>{tag}</SelectItem>
+              ))}
+            </Select>
+
             <Select label="模式" selectedKeys={[filterForm.mode]} onChange={(e) => setFilterForm({ ...filterForm, mode: e.target.value })}>
               <SelectItem key="urltest">自动测速</SelectItem>
               <SelectItem key="selector">手动选择</SelectItem>

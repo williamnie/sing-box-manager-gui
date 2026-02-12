@@ -172,6 +172,14 @@ func (s *JSONStore) UpdateSubscription(sub Subscription) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	activeNodeCount := 0
+	for _, node := range sub.Nodes {
+		if !node.Disabled {
+			activeNodeCount++
+		}
+	}
+	sub.NodeCount = activeNodeCount
+
 	for i := range s.data.Subscriptions {
 		if s.data.Subscriptions[i].ID == sub.ID {
 			s.data.Subscriptions[i] = sub
@@ -186,9 +194,17 @@ func (s *JSONStore) SaveSubscriptionNodes(id string, nodes []Node) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	activeNodeCount := 0
+	for _, node := range nodes {
+		if !node.Disabled {
+			activeNodeCount++
+		}
+	}
+
 	for i := range s.data.Subscriptions {
 		if s.data.Subscriptions[i].ID == id {
 			s.data.Subscriptions[i].Nodes = nodes
+			s.data.Subscriptions[i].NodeCount = activeNodeCount
 			return s.saveInternal()
 		}
 	}
@@ -428,7 +444,11 @@ func (s *JSONStore) GetAllNodes() []Node {
 	capacity := 0
 	for _, sub := range s.data.Subscriptions {
 		if sub.Enabled {
-			capacity += len(sub.Nodes)
+			for _, node := range sub.Nodes {
+				if !node.Disabled {
+					capacity++
+				}
+			}
 		}
 	}
 	for _, mn := range s.data.ManualNodes {
@@ -443,7 +463,11 @@ func (s *JSONStore) GetAllNodes() []Node {
 	// 添加订阅节点
 	for _, sub := range s.data.Subscriptions {
 		if sub.Enabled {
-			nodes = append(nodes, sub.Nodes...)
+			for _, node := range sub.Nodes {
+				if !node.Disabled {
+					nodes = append(nodes, node)
+				}
+			}
 		}
 	}
 	// 添加手动节点
@@ -465,7 +489,11 @@ func (s *JSONStore) GetAllNodesPtr() []*Node {
 	capacity := 0
 	for _, sub := range s.data.Subscriptions {
 		if sub.Enabled {
-			capacity += len(sub.Nodes)
+			for _, node := range sub.Nodes {
+				if !node.Disabled {
+					capacity++
+				}
+			}
 		}
 	}
 	for _, mn := range s.data.ManualNodes {
@@ -481,6 +509,9 @@ func (s *JSONStore) GetAllNodesPtr() []*Node {
 	for i := range s.data.Subscriptions {
 		if s.data.Subscriptions[i].Enabled {
 			for j := range s.data.Subscriptions[i].Nodes {
+				if s.data.Subscriptions[i].Nodes[j].Disabled {
+					continue
+				}
 				nodes = append(nodes, &s.data.Subscriptions[i].Nodes[j])
 			}
 		}
@@ -506,7 +537,7 @@ func (s *JSONStore) GetNodesByCountry(countryCode string) []Node {
 	for _, sub := range s.data.Subscriptions {
 		if sub.Enabled {
 			for _, node := range sub.Nodes {
-				if node.Country == countryCode {
+				if !node.Disabled && node.Country == countryCode {
 					capacity++
 				}
 			}
@@ -525,7 +556,7 @@ func (s *JSONStore) GetNodesByCountry(countryCode string) []Node {
 	for _, sub := range s.data.Subscriptions {
 		if sub.Enabled {
 			for _, node := range sub.Nodes {
-				if node.Country == countryCode {
+				if !node.Disabled && node.Country == countryCode {
 					nodes = append(nodes, node)
 				}
 			}
@@ -551,7 +582,7 @@ func (s *JSONStore) GetCountryGroups() []CountryGroup {
 	for _, sub := range s.data.Subscriptions {
 		if sub.Enabled {
 			for _, node := range sub.Nodes {
-				if node.Country != "" {
+				if !node.Disabled && node.Country != "" {
 					countryCount[node.Country]++
 				}
 			}

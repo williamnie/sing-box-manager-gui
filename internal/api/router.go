@@ -146,6 +146,7 @@ func (s *Server) setupRoutes() {
 		api.POST("/subscriptions/:id/refresh", s.refreshSubscription)
 		api.POST("/subscriptions/refresh-all", s.refreshAllSubscriptions)
 		api.POST("/subscriptions/:id/nodes/:nodeIndex/toggle", s.toggleNodeDisabled)
+		api.POST("/subscriptions/:id/nodes/confirm", s.confirmSubscriptionNodes)
 
 		// 过滤器管理
 		api.GET("/filters", s.getFilters)
@@ -402,6 +403,67 @@ func (s *Server) toggleNodeDisabled(c *gin.Context) {
 		"message":  "已更新",
 		"disabled": sub.Nodes[nodeIndex].Disabled,
 	})
+}
+
+// confirmSubscriptionNodes 按用户确认结果批量设置节点启用状态
+func (s *Server) confirmSubscriptionNodes(c *gin.Context) {
+	subID := c.Param("id")
+
+	var req struct {
+		SelectedIndices []int `json:"selected_indices"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	logger.Printf("[ConfirmNodes] sub=%s received selected_indices=%v (count=%d)", subID, req.SelectedIndices, len(req.SelectedIndices))
+
+	sub := s.store.GetSubscription(subID)
+	if sub == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "订阅不存在"})
+		return
+	}
+
+	// 拷贝一份，避免直接修改共享对象
+	updatedSub := *sub
+
+	selectedIndexSet := make(map[int]struct{}, len(req.SelectedIndices))
+	for _, idx := range req.SelectedIndices {
+		if idx < 0 || idx >= len(updatedSub.Nodes) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "存在无效的节点索引"})
+			return
+		}
+		selectedIndexSet[idx] = struct{}{}
+	}
+
+	selectedNodes := make([]storage.Node, 0, len(selectedIndexSet))
+	for idx, node := range updatedSub.Nodes {
+		if _, selected := selectedIndexSet[idx]; !selected {
+			continue
+		}
+		node.Disabled = false
+		selectedNodes = append(selectedNodes, node)
+	}
+
+	updatedSub.Nodes = selectedNodes
+	updatedSub.NodeCount = len(selectedNodes)
+	updatedSub.UpdatedAt = time.Now()
+
+	logger.Printf("[ConfirmNodes] sub=%s deduplicated_count=%d saved_count=%d", subID, len(selectedIndexSet), len(selectedNodes))
+
+	if err := s.store.UpdateSubscription(updatedSub); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := s.autoApplyConfig(); err != nil {
+		c.JSON(http.StatusOK, gin.H{"message": "节点确认成功，但自动应用配置失败: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "节点确认成功", "node_count": updatedSub.NodeCount})
 }
 
 // ==================== 过滤器 API ====================
@@ -753,6 +815,17 @@ func (s *Server) applyConfig(c *gin.Context) {
 		return
 	}
 
+	message, err := s.applyConfigWithStrategy(configJSON)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": message})
+}
+
+// applyConfigWithStrategy 统一执行配置保存、检查和应用策略
+func (s *Server) applyConfigWithStrategy(configJSON string) (string, error) {
 	// 读取旧配置（用于判断是否需要硬重启）
 	settings := s.store.GetSettings()
 	configPath := s.resolvePath(settings.ConfigPath)
@@ -760,46 +833,38 @@ func (s *Server) applyConfig(c *gin.Context) {
 
 	// 保存新配置文件
 	if err := s.saveConfigFile(configPath, configJSON); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+		return "", err
 	}
 
 	// 检查配置
 	if err := s.processManager.Check(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+		return "", err
 	}
 
-	// 重启服务
-	if s.processManager.IsRunning() {
-		// 判断是否需要硬重启
-		needHardRestart := s.needHardRestart(oldConfig, []byte(configJSON))
-		
-		if needHardRestart {
-			logger.Printf("配置变更需要硬重启")
-			if err := s.processManager.Restart(); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-			c.JSON(http.StatusOK, gin.H{"message": "配置已应用（硬重启）"})
-		} else {
-			logger.Printf("配置变更使用软重载")
-			if err := s.processManager.Reload(); err != nil {
-				// 软重载失败，尝试硬重启
-				logger.Printf("软重载失败，尝试硬重启: %v", err)
-				if err := s.processManager.Restart(); err != nil {
-					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-					return
-				}
-				c.JSON(http.StatusOK, gin.H{"message": "配置已应用（软重载失败，已硬重启）"})
-				return
-			}
-			c.JSON(http.StatusOK, gin.H{"message": "配置已应用（软重载）"})
+	if !s.processManager.IsRunning() {
+		return "配置已保存", nil
+	}
+
+	// 判断是否需要硬重启
+	if s.needHardRestart(oldConfig, []byte(configJSON)) {
+		logger.Printf("配置变更需要硬重启")
+		if err := s.processManager.Restart(); err != nil {
+			return "", err
 		}
-		return
+		return "配置已应用（硬重启）", nil
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "配置已保存"})
+	logger.Printf("配置变更使用软重载")
+	if err := s.processManager.Reload(); err != nil {
+		// 软重载失败，尝试硬重启
+		logger.Printf("软重载失败，尝试硬重启: %v", err)
+		if err := s.processManager.Restart(); err != nil {
+			return "", err
+		}
+		return "配置已应用（软重载失败，已硬重启）", nil
+	}
+
+	return "配置已应用（软重载）", nil
 }
 
 // needHardRestart 判断配置变更是否需要硬重启
@@ -853,14 +918,14 @@ func (s *Server) buildConfig() (string, error) {
 
 	// 获取已存在的本地规则集
 	available := ruleSetService.GetAvailableRuleSets()
-	
+
 	// 统计使用情况
 	localCount := len(available)
 	remoteCount := len(missing)
 	if localCount > 0 || remoteCount > 0 {
 		logger.Printf("配置生成: 本地规则集 %d 个，远程规则集 %d 个", localCount, remoteCount)
 	}
-	
+
 	// 构建配置（本地存在的用本地，不存在的用远程）
 	b := builder.NewConfigBuilder(settings, nodes, filters, rules, ruleGroups).
 		WithLocalRuleSet(ruleSetService.GetRuleSetDir(), available)
@@ -926,8 +991,6 @@ func (s *Server) configApplyWorker() {
 
 // doApplyConfig 实际执行配置应用
 func (s *Server) doApplyConfig() {
-	settings := s.store.GetSettings()
-
 	// 生成配置
 	configJSON, err := s.buildConfig()
 	if err != nil {
@@ -936,21 +999,13 @@ func (s *Server) doApplyConfig() {
 		return
 	}
 
-	// 保存配置文件
-	if err := s.saveConfigFile(s.resolvePath(settings.ConfigPath), configJSON); err != nil {
-		logger.Printf("保存配置失败: %v", err)
+	message, err := s.applyConfigWithStrategy(configJSON)
+	if err != nil {
+		logger.Printf("自动应用配置失败: %v", err)
 		s.setLastApplyError(err)
 		return
 	}
-
-	// 如果 sing-box 正在运行，则重启
-	if s.processManager.IsRunning() {
-		if err := s.processManager.Restart(); err != nil {
-			logger.Printf("重启 sing-box 失败: %v", err)
-			s.setLastApplyError(err)
-			return
-		}
-	}
+	logger.Printf("自动应用配置完成: %s", message)
 
 	// 成功时清除错误
 	s.setLastApplyError(nil)

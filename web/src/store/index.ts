@@ -52,14 +52,11 @@ export interface URLTestConfig {
 export interface Filter {
   id: string;
   name: string;
-  include: string[];
-  exclude: string[];
-  include_countries: string[];
-  exclude_countries: string[];
   mode: string;
   urltest_config?: URLTestConfig;
   subscriptions: string[];
   all_nodes: boolean;
+  selected_nodes?: string[];
   enabled: boolean;
 }
 
@@ -156,10 +153,10 @@ interface AppState {
   fetchServiceStatus: () => Promise<void>;
   fetchSystemInfo: () => Promise<void>;
 
-  addSubscription: (name: string, url: string) => Promise<void>;
+  addSubscription: (name: string, url: string) => Promise<Subscription | null>;
   updateSubscription: (id: string, name: string, url: string) => Promise<void>;
   deleteSubscription: (id: string) => Promise<void>;
-  refreshSubscription: (id: string) => Promise<void>;
+  refreshSubscription: (id: string) => Promise<Subscription | null>;
   toggleSubscription: (id: string, enabled: boolean) => Promise<void>;
 
   // 手动节点操作
@@ -281,9 +278,10 @@ export const useStore = create<AppState>((set, get) => ({
   addSubscription: async (name: string, url: string) => {
     set({ loading: true });
     try {
-      await subscriptionApi.add(name, url);
+      const res = await subscriptionApi.add(name, url);
       await get().fetchSubscriptions();
       toast.success('订阅添加成功');
+      return (res.data.data as Subscription) || null;
     } catch (error: any) {
       toast.error(error.response?.data?.error || '添加订阅失败');
       throw error;
@@ -329,9 +327,11 @@ export const useStore = create<AppState>((set, get) => ({
       } else {
         toast.success('订阅刷新成功');
       }
+      return get().subscriptions.find(s => s.id === id) || null;
     } catch (error: any) {
       console.error('刷新订阅失败:', error);
       toast.error(error.response?.data?.error || '刷新订阅失败');
+      return null;
     } finally {
       set({ loading: false });
     }

@@ -34,7 +34,7 @@ const getConnectionType = (conn: Connection) => `${conn.metadata.type}(${conn.me
 const getConnectionChains = (conn: Connection) => conn.chains.slice().reverse().join(' → ');
 
 export default function Connections() {
-  const { connections, downloadTotal, uploadTotal, isConnected, reconnect } = useClashConnections();
+  const { connections, downloadTotal, uploadTotal, isConnected, error, reconnect } = useClashConnections();
   const settings = useStore(state => state.settings);
   const fetchSettings = useStore(state => state.fetchSettings);
 
@@ -341,14 +341,25 @@ export default function Connections() {
         <div className="flex items-center gap-2">
           {!isConnected && (
             <Button size="sm" color="warning" variant="flat" startContent={<RefreshCw className="w-4 h-4" />} onPress={reconnect}>
-              重连
+              立即重连
             </Button>
           )}
           <Chip size="sm" color={isConnected ? 'success' : 'danger'} variant="flat">
-            {isConnected ? '已连接' : '未连接'}
+            {isConnected ? '已连接' : '未连接（自动重连中）'}
           </Chip>
         </div>
       </div>
+
+      {!isConnected && (
+        <Card className="border border-warning-300/60 dark:border-warning-600/60 bg-warning-50/70 dark:bg-warning-900/20">
+          <CardBody className="py-2 px-3">
+            <div className="flex items-center gap-2 text-warning-700 dark:text-warning-300">
+              <RefreshCw className="w-4 h-4 animate-spin" />
+              <span className="text-sm font-medium">{error || '连接已断开，正在自动重连'}</span>
+            </div>
+          </CardBody>
+        </Card>
+      )}
 
       {/* 流量统计 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

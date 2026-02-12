@@ -40,7 +40,9 @@ interface UseClashConnectionsReturn {
   reconnect: () => void;
 }
 
-const MAX_RECONNECT_ATTEMPTS = 10;
+const BASE_RECONNECT_DELAY_MS = 1000;
+const MAX_RECONNECT_DELAY_MS = 30000;
+const MAX_BACKOFF_EXPONENT = 8;
 
 export function useClashConnections(): UseClashConnectionsReturn {
   const settings = useStore(state => state.settings);
@@ -56,7 +58,24 @@ export function useClashConnections(): UseClashConnectionsReturn {
 
   const connect = useCallback(() => {
     if (!settings || !mountedRef.current) return;
-    if (reconnectAttempts.current >= MAX_RECONNECT_ATTEMPTS) return;
+
+    const scheduleReconnect = () => {
+      if (!mountedRef.current) return;
+
+      reconnectAttempts.current++;
+      const exponent = Math.min(reconnectAttempts.current, MAX_BACKOFF_EXPONENT);
+      const delay = Math.min(BASE_RECONNECT_DELAY_MS * Math.pow(2, exponent), MAX_RECONNECT_DELAY_MS);
+
+      setError(`连接已断开，${Math.ceil(delay / 1000)} 秒后自动重连`);
+
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+      reconnectTimeoutRef.current = setTimeout(() => {
+        reconnectTimeoutRef.current = null;
+        connect();
+      }, delay);
+    };
 
     const port = settings.clash_api_port || 9091;
     const secret = settings.clash_api_secret || '';
@@ -67,6 +86,11 @@ export function useClashConnections(): UseClashConnectionsReturn {
     
     if (secret) {
       wsUrl += `?token=${encodeURIComponent(secret)}`;
+    }
+
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
     }
 
     // 清理旧连接
@@ -104,19 +128,14 @@ export function useClashConnections(): UseClashConnectionsReturn {
         if (!mountedRef.current) return;
         setIsConnected(false);
         wsRef.current = null;
-        
-        reconnectAttempts.current++;
-        if (reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS) {
-          const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
-          reconnectTimeoutRef.current = setTimeout(connect, delay);
-        } else {
-          setError('连接失败，已达最大重试次数');
-        }
+
+        scheduleReconnect();
       };
     } catch {
-      if (mountedRef.current) {
-        setError('无法建立 WebSocket 连接');
-      }
+      if (!mountedRef.current) return;
+      setIsConnected(false);
+      wsRef.current = null;
+      scheduleReconnect();
     }
   }, [settings]);
 
@@ -132,7 +151,7 @@ export function useClashConnections(): UseClashConnectionsReturn {
     mountedRef.current = true;
     
     // 当 settings 加载完成后自动连接
-    if (settings?.clash_api_port) {
+    if (settings) {
       connect();
     }
 
