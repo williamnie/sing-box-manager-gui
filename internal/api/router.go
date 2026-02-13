@@ -10,7 +10,9 @@ import (
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -61,6 +63,12 @@ type Server struct {
 	configPending  atomic.Bool // 标记是否有待处理的配置更新
 	lastApplyError error
 	lastApplyMu    sync.RWMutex
+
+	// 配置缓存
+	configCacheMu               sync.RWMutex
+	configCacheVersion          uint64
+	configCacheRuleSetSignature string
+	configCacheJSON             string
 }
 
 // NewServer 创建 API 服务器
@@ -897,6 +905,7 @@ func (s *Server) needHardRestart(oldConfig, newConfig []byte) bool {
 }
 
 func (s *Server) buildConfig() (string, error) {
+	dataVersion := s.store.GetVersion()
 	settings := s.store.GetSettings()
 	nodes := s.store.GetAllNodesPtr()
 	filters := s.store.GetFilters()
@@ -918,6 +927,10 @@ func (s *Server) buildConfig() (string, error) {
 
 	// 获取已存在的本地规则集
 	available := ruleSetService.GetAvailableRuleSets()
+	ruleSetSignature := buildRuleSetSignature(available)
+	if cached, ok := s.getCachedConfig(dataVersion, ruleSetSignature); ok {
+		return cached, nil
+	}
 
 	// 统计使用情况
 	localCount := len(available)
@@ -929,7 +942,48 @@ func (s *Server) buildConfig() (string, error) {
 	// 构建配置（本地存在的用本地，不存在的用远程）
 	b := builder.NewConfigBuilder(settings, nodes, filters, rules, ruleGroups).
 		WithLocalRuleSet(ruleSetService.GetRuleSetDir(), available)
-	return b.BuildJSON()
+
+	configJSON, err := b.BuildJSON()
+	if err != nil {
+		return "", err
+	}
+
+	s.setCachedConfig(dataVersion, ruleSetSignature, configJSON)
+	return configJSON, nil
+}
+
+func buildRuleSetSignature(available map[string]bool) string {
+	if len(available) == 0 {
+		return ""
+	}
+
+	tags := make([]string, 0, len(available))
+	for tag := range available {
+		tags = append(tags, tag)
+	}
+	sort.Strings(tags)
+
+	return strings.Join(tags, ",")
+}
+
+func (s *Server) getCachedConfig(version uint64, ruleSetSignature string) (string, bool) {
+	s.configCacheMu.RLock()
+	defer s.configCacheMu.RUnlock()
+
+	if s.configCacheVersion == version && s.configCacheRuleSetSignature == ruleSetSignature && s.configCacheJSON != "" {
+		return s.configCacheJSON, true
+	}
+
+	return "", false
+}
+
+func (s *Server) setCachedConfig(version uint64, ruleSetSignature string, config string) {
+	s.configCacheMu.Lock()
+	defer s.configCacheMu.Unlock()
+
+	s.configCacheVersion = version
+	s.configCacheRuleSetSignature = ruleSetSignature
+	s.configCacheJSON = config
 }
 
 func (s *Server) saveConfigFile(path, content string) error {

@@ -18,6 +18,9 @@ func TestRuleSetService_CollectNeededRuleSets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
 
 	svc := NewRuleSetService(store, tmpDir)
 
@@ -67,6 +70,9 @@ func TestRuleSetService_BuildRuleSetURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
 
 	svc := NewRuleSetService(store, tmpDir)
 	settings := store.GetSettings()
@@ -103,6 +109,9 @@ func TestRuleSetService_GetLocalPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
 
 	svc := NewRuleSetService(store, tmpDir)
 

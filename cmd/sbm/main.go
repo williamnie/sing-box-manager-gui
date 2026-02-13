@@ -124,5 +124,9 @@ func main() {
 		logger.Printf("服务关闭出错: %v", err)
 	}
 
+	if err := store.Close(); err != nil {
+		logger.Printf("存储关闭出错: %v", err)
+	}
+
 	logger.Printf("服务已关闭")
 }

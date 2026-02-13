@@ -1,12 +1,20 @@
 package storage
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 func TestJSONStoreNodeQueriesSkipDisabledNodes(t *testing.T) {
 	store, err := NewJSONStore(t.TempDir())
 	if err != nil {
 		t.Fatalf("NewJSONStore() error = %v", err)
 	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
 
 	if err := store.AddSubscription(Subscription{
 		ID:      "sub-enabled",
@@ -120,6 +128,9 @@ func TestJSONStoreSubscriptionNodeCountTracksEnabledNodes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewJSONStore() error = %v", err)
 	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
 
 	if err := store.AddSubscription(Subscription{
 		ID:      "sub-count",
@@ -168,5 +179,79 @@ func TestJSONStoreSubscriptionNodeCountTracksEnabledNodes(t *testing.T) {
 	}
 	if finalSub.NodeCount != 1 {
 		t.Fatalf("NodeCount after SaveSubscriptionNodes = %d, want 1", finalSub.NodeCount)
+	}
+}
+
+func TestJSONStoreCloseFlushesPendingWrites(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewJSONStore(dir)
+	if err != nil {
+		t.Fatalf("NewJSONStore() error = %v", err)
+	}
+
+	if err := store.AddSubscription(Subscription{
+		ID:      "sub-persist",
+		Name:    "persist",
+		Enabled: true,
+		Nodes: []Node{
+			{Tag: "node-a", Country: "US"},
+		},
+	}); err != nil {
+		t.Fatalf("AddSubscription() error = %v", err)
+	}
+
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	reopened, err := NewJSONStore(dir)
+	if err != nil {
+		t.Fatalf("reopen NewJSONStore() error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = reopened.Close()
+	})
+
+	if got := reopened.GetSubscription("sub-persist"); got == nil {
+		t.Fatalf("subscription should be persisted after Close")
+	}
+
+	backupPath := filepath.Join(dir, dataBackupName)
+	if _, err := os.Stat(backupPath); err != nil {
+		t.Fatalf("backup file should exist, stat error = %v", err)
+	}
+}
+
+func TestJSONStoreRejectMutationAfterClose(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewJSONStore(dir)
+	if err != nil {
+		t.Fatalf("NewJSONStore() error = %v", err)
+	}
+
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	err = store.AddRule(Rule{ID: "rule-after-close", Name: "should-fail"})
+	if err == nil {
+		t.Fatalf("AddRule() after Close should fail")
+	}
+	if !strings.Contains(err.Error(), "存储已关闭") {
+		t.Fatalf("AddRule() error = %v, want contains 存储已关闭", err)
+	}
+
+	reopened, err := NewJSONStore(dir)
+	if err != nil {
+		t.Fatalf("reopen NewJSONStore() error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = reopened.Close()
+	})
+
+	for _, rule := range reopened.GetRules() {
+		if rule.ID == "rule-after-close" {
+			t.Fatalf("unexpected rule persisted after Close")
+		}
 	}
 }
