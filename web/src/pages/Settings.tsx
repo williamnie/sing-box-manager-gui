@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
-import { 
-  Card, CardBody, Input, Button, Switch, Chip, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, 
+import {
+  Card, CardBody, Input, Button, Switch, Chip, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter,
   Select, SelectItem, Progress, Textarea, useDisclosure, Tabs, Tab, Divider
 } from '@nextui-org/react';
-import { Save, Download, CheckCircle, AlertCircle, Plus, Pencil, Trash2, Eye, EyeOff, Copy, RefreshCw } from 'lucide-react';
+import { Save, Download, CheckCircle, AlertCircle, Plus, Pencil, Trash2, Eye, EyeOff, Copy, RefreshCw, ArrowRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store';
 import type { Settings as SettingsType, HostEntry } from '../store';
 import { configApi, daemonApi, kernelApi, settingsApi } from '../api';
+import type { ConfigPreviewData } from '../features/config-topology/types';
 import { toast } from '../components/Toast';
 
 interface KernelInfo {
@@ -30,24 +32,6 @@ interface GithubRelease {
   name: string;
 }
 
-interface ConfigNode {
-  tag?: string;
-  type?: string;
-}
-
-interface ConfigPreviewData {
-  inbounds?: ConfigNode[];
-  outbounds?: ConfigNode[];
-  dns?: {
-    servers?: unknown[];
-  };
-  route?: {
-    rules?: unknown[];
-    rule_set?: unknown[];
-    rule_sets?: unknown[];
-  };
-}
-
 interface ApiErrorLike {
   response?: {
     data?: {
@@ -66,6 +50,7 @@ const toErrorMessage = (error: unknown, fallback: string) => {
 };
 
 export default function Settings() {
+  const navigate = useNavigate();
   const { settings, fetchSettings, updateSettings } = useStore();
   const [formData, setFormData] = useState<SettingsType | null>(null);
   const [daemonStatus, setDaemonStatus] = useState<{ installed: boolean; running: boolean; supported: boolean } | null>(null);
@@ -444,39 +429,6 @@ export default function Settings() {
                   <span className="text-sm text-gray-500">分钟</span>
                 </div>
               </SettingItem>
-
-              <Divider />
-
-              <SettingItem label="健康检查" desc="定期检查 sing-box 是否正常">
-                <Switch
-                  isSelected={formData.health_check_enabled}
-                  onValueChange={(v) => setFormData({ ...formData, health_check_enabled: v })}
-                />
-              </SettingItem>
-
-              {formData.health_check_enabled && (
-                <>
-                  <SettingItem label="检查间隔">
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="number"
-                        size="sm"
-                        className="w-24"
-                        value={String(formData.health_check_interval || 30)}
-                        onChange={(e) => setFormData({ ...formData, health_check_interval: parseInt(e.target.value) || 30 })}
-                      />
-                      <span className="text-sm text-gray-500">秒</span>
-                    </div>
-                  </SettingItem>
-
-                  <SettingItem label="自动重启" desc="检查失败时自动重启 sing-box">
-                    <Switch
-                      isSelected={formData.auto_restart}
-                      onValueChange={(v) => setFormData({ ...formData, auto_restart: v })}
-                    />
-                  </SettingItem>
-                </>
-              )}
             </CardBody>
           </Card>
         </Tab>
@@ -671,48 +623,20 @@ export default function Settings() {
                   <MetricCard label="规则集" value={configSummary.ruleSets.length} tone="indigo" />
                 </div>
 
-                <div className="p-3 rounded-lg bg-default-100 dark:bg-default-50/20">
-                  <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">配置流程图</p>
-                  <div className="flex flex-wrap items-center gap-2 text-sm">
-                    <FlowNode label="入站" count={configSummary.inbounds.length} tone="blue" />
-                    <span className="text-gray-400">→</span>
-                    <FlowNode label="路由" count={configSummary.routeRules.length} tone="purple" />
-                    <span className="text-gray-400">→</span>
-                    <FlowNode label="出站" count={configSummary.outbounds.length} tone="green" />
-                    <span className="text-gray-400">·</span>
-                    <FlowNode label="DNS" count={configSummary.dnsServers.length} tone="orange" />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="p-3 rounded-lg border border-default-200 dark:border-default-100/20">
-                    <p className="text-sm font-medium mb-2">入站标签</p>
-                    <div className="flex flex-wrap gap-2">
-                      {configSummary.inbounds.length === 0 ? (
-                        <span className="text-xs text-gray-500">暂无</span>
-                      ) : (
-                        configSummary.inbounds.slice(0, 10).map((item: ConfigNode, idx: number) => (
-                          <Chip key={`inbound-${item?.tag || idx}`} size="sm" variant="flat" color="primary">
-                            {item?.tag || `${item?.type || 'inbound'}-${idx + 1}`}
-                          </Chip>
-                        ))
-                      )}
+                <div className="rounded-lg border border-default-200 p-3 dark:border-default-100/20">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-medium">工作拓扑</p>
+                      <p className="text-xs text-gray-500">以业务流程图方式查看流量路径</p>
                     </div>
-                  </div>
-
-                  <div className="p-3 rounded-lg border border-default-200 dark:border-default-100/20">
-                    <p className="text-sm font-medium mb-2">出站标签</p>
-                    <div className="flex flex-wrap gap-2">
-                      {configSummary.outbounds.length === 0 ? (
-                        <span className="text-xs text-gray-500">暂无</span>
-                      ) : (
-                        configSummary.outbounds.slice(0, 10).map((item: ConfigNode, idx: number) => (
-                          <Chip key={`outbound-${item?.tag || idx}`} size="sm" variant="flat" color="success">
-                            {item?.tag || `${item?.type || 'outbound'}-${idx + 1}`}
-                          </Chip>
-                        ))
-                      )}
-                    </div>
+                    <Button
+                      size="sm"
+                      color="primary"
+                      endContent={<ArrowRight className="w-4 h-4" />}
+                      onPress={() => navigate('/topology')}
+                    >
+                      查看拓扑
+                    </Button>
                   </div>
                 </div>
 
@@ -738,35 +662,90 @@ export default function Settings() {
           </div>
         </Tab>
 
-        {/* 服务管理 */}
-        {daemonStatus?.supported && (
-          <Tab key="service" title="服务">
+        {/* 服务与健康 */}
+        <Tab key="service" title="服务">
+          <div className="space-y-4">
             <Card>
               <CardBody className="p-6">
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <p className="font-medium">后台服务</p>
-                    <p className="text-sm text-gray-500">开机自启、崩溃自动重启</p>
+                    <p className="text-sm text-gray-500">系统守护 sbm（开机自启、崩溃拉起）</p>
                   </div>
-                  <Chip color={daemonStatus.installed ? 'success' : 'default'} variant="flat">
-                    {daemonStatus.installed ? '已安装' : '未安装'}
+                  <Chip
+                    color={daemonStatus?.supported ? (daemonStatus.installed ? 'success' : 'default') : 'default'}
+                    variant="flat"
+                  >
+                    {daemonStatus?.supported
+                      ? (daemonStatus.installed ? '已安装' : '未安装')
+                      : '不支持'}
                   </Chip>
                 </div>
-                
-                <div className="flex gap-2">
-                  {daemonStatus.installed ? (
-                    <>
-                      <Button variant="flat" onPress={handleRestartDaemon}>重启服务</Button>
-                      <Button variant="flat" color="danger" onPress={handleUninstallDaemon}>卸载</Button>
-                    </>
-                  ) : (
-                    <Button color="primary" onPress={handleInstallDaemon}>安装服务</Button>
-                  )}
-                </div>
+
+                {daemonStatus?.supported ? (
+                  <div className="flex gap-2">
+                    {daemonStatus.installed ? (
+                      <>
+                        <Button variant="flat" onPress={handleRestartDaemon}>重启服务</Button>
+                        <Button variant="flat" color="danger" onPress={handleUninstallDaemon}>卸载</Button>
+                      </>
+                    ) : (
+                      <Button color="primary" onPress={handleInstallDaemon}>安装服务</Button>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">当前系统不支持守护服务，仅可使用下方健康检查能力。</p>
+                )}
               </CardBody>
             </Card>
-          </Tab>
-        )}
+
+            <Card>
+              <CardBody className="space-y-6 p-6">
+                <div>
+                  <p className="font-medium">健康检查</p>
+                  <p className="text-sm text-gray-500">应用内定期检查 sing-box 可用性（非系统服务）</p>
+                </div>
+
+                <SettingItem label="启用健康检查" desc="定期请求 Clash API，发现异常触发自愈策略">
+                  <Switch
+                    isSelected={formData.health_check_enabled}
+                    onValueChange={(v) => setFormData({ ...formData, health_check_enabled: v })}
+                  />
+                </SettingItem>
+
+                {formData.health_check_enabled && (
+                  <>
+                    <Divider />
+
+                    <SettingItem label="检查间隔">
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          size="sm"
+                          className="w-24"
+                          value={String(formData.health_check_interval || 30)}
+                          onChange={(e) => setFormData({ ...formData, health_check_interval: parseInt(e.target.value) || 30 })}
+                        />
+                        <span className="text-sm text-gray-500">秒</span>
+                      </div>
+                    </SettingItem>
+
+                    <SettingItem label="自动重启" desc="健康检查连续失败后自动重启 sing-box">
+                      <Switch
+                        isSelected={formData.auto_restart}
+                        onValueChange={(v) => setFormData({ ...formData, auto_restart: v })}
+                      />
+                    </SettingItem>
+                  </>
+                )}
+
+                <p className="text-xs text-gray-500">
+                  说明：后台服务负责守护 sbm 进程；健康检查负责守护 sing-box 可用性。
+                </p>
+              </CardBody>
+            </Card>
+          </div>
+        </Tab>
       </Tabs>
 
       {/* 下载内核弹窗 */}
@@ -867,21 +846,6 @@ function MetricCard({ label, value, tone }: { label: string; value: number; tone
     <div className={`rounded-lg px-3 py-2 ${toneClassMap[tone]}`}>
       <p className="text-xs opacity-80">{label}</p>
       <p className="text-lg font-bold leading-none mt-1">{value}</p>
-    </div>
-  );
-}
-
-function FlowNode({ label, count, tone }: { label: string; count: number; tone: 'blue' | 'purple' | 'green' | 'orange' }) {
-  const toneClassMap = {
-    blue: 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-900/20 dark:text-blue-300',
-    purple: 'border-purple-300 bg-purple-50 text-purple-700 dark:border-purple-700 dark:bg-purple-900/20 dark:text-purple-300',
-    green: 'border-green-300 bg-green-50 text-green-700 dark:border-green-700 dark:bg-green-900/20 dark:text-green-300',
-    orange: 'border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-700 dark:bg-orange-900/20 dark:text-orange-300',
-  };
-
-  return (
-    <div className={`px-3 py-1.5 rounded-md border text-xs font-medium ${toneClassMap[tone]}`}>
-      {label} {count}
     </div>
   );
 }

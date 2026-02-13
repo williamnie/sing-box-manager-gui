@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-type ApiPayload = Record<string, unknown>;
+type ApiPayload = object;
 
 const api = axios.create({
   baseURL: '/api',
