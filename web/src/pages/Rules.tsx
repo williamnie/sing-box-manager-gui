@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
   Card,
   CardBody,
@@ -18,9 +18,10 @@ import {
   useDisclosure,
   Spinner,
 } from '@nextui-org/react';
-import { Shield, Globe, Tv, MessageCircle, Github, Bot, Apple, Monitor, Plus, Pencil, Trash2, CheckCircle, XCircle } from 'lucide-react';
+import { Shield, Globe, Tv, MessageCircle, Github, Bot, Apple, Monitor, Plus, Pencil, Trash2, CheckCircle, XCircle, Search } from 'lucide-react';
 import { useStore } from '../store';
 import { ruleSetApi } from '../api';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import type { Rule, RuleGroup } from '../store';
 
 // 规则集验证结果类型
@@ -93,6 +94,8 @@ export default function Rules() {
   const [editingRule, setEditingRule] = useState<Rule | null>(null);
   const [formData, setFormData] = useState<Omit<Rule, 'id'>>(defaultRule);
   const [valuesText, setValuesText] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearchQuery = useDebouncedValue(searchQuery, 300);
 
   // 规则集验证状态
   const [validationResults, setValidationResults] = useState<Record<string, ValidationResult>>({});
@@ -270,6 +273,22 @@ export default function Rules() {
     await updateRule(rule.id, { ...rule, enabled: !rule.enabled });
   };
 
+  const filteredRules = useMemo(() => {
+    const sortedRules = [...rules].sort((left, right) => left.priority - right.priority);
+    const query = debouncedSearchQuery.trim().toLowerCase();
+
+    if (!query) {
+      return sortedRules;
+    }
+
+    return sortedRules.filter((rule) =>
+      rule.name.toLowerCase().includes(query)
+      || rule.rule_type.toLowerCase().includes(query)
+      || rule.outbound.toLowerCase().includes(query)
+      || rule.values.some((value) => value.toLowerCase().includes(query))
+    );
+  }, [debouncedSearchQuery, rules]);
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -337,25 +356,37 @@ export default function Rules() {
       <Card>
         <CardHeader className="flex justify-between items-center">
           <h2 className="text-lg font-semibold">自定义规则</h2>
-          <Button
-            color="primary"
-            size="sm"
-            startContent={<Plus className="w-4 h-4" />}
-            onPress={handleAddRule}
-          >
-            添加规则
-          </Button>
+          <div className="flex items-center gap-2">
+            <Input
+              size="sm"
+              value={searchQuery}
+              onValueChange={setSearchQuery}
+              placeholder="搜索规则..."
+              startContent={<Search className="w-4 h-4 text-gray-400" />}
+              className="w-56"
+            />
+            <Button
+              color="primary"
+              size="sm"
+              startContent={<Plus className="w-4 h-4" />}
+              onPress={handleAddRule}
+            >
+              添加规则
+            </Button>
+          </div>
         </CardHeader>
         <CardBody>
           {rules.length === 0 ? (
             <p className="text-gray-500 text-center py-8">
               暂无自定义规则，点击上方按钮添加
             </p>
+          ) : filteredRules.length === 0 ? (
+            <p className="text-gray-500 text-center py-8">
+              未找到匹配规则
+            </p>
           ) : (
             <div className="space-y-3">
-              {rules
-                .sort((a, b) => a.priority - b.priority)
-                .map((rule) => (
+              {filteredRules.map((rule) => (
                   <div
                     key={rule.id}
                     className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg"

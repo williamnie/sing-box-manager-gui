@@ -1,12 +1,14 @@
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, memo } from 'react';
 import {
   Card, CardBody, Button, Input, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter,
   useDisclosure, Chip, Accordion, AccordionItem, Spinner, Tabs, Tab, Select, SelectItem, Switch,
   Progress, Tooltip
 } from '@nextui-org/react';
 import { Plus, RefreshCw, Trash2, Globe, Pencil, Link, Filter as FilterIcon, Search, Copy, Eye } from 'lucide-react';
+import { FixedSizeList, type ListChildComponentProps } from 'react-window';
 import { useStore } from '../store';
 import { nodeApi, clashApi, subscriptionApi } from '../api';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { toast } from '../components/Toast';
 import type { Subscription, ManualNode, Node, Filter } from '../store';
 
@@ -115,6 +117,209 @@ const defaultNode: Node = {
   tag: '', type: 'shadowsocks', server: '', server_port: 443, country: 'HK', country_emoji: '🇭🇰',
 };
 
+const MAX_VIRTUAL_LIST_HEIGHT = 420;
+const CONFIRM_NODE_ITEM_HEIGHT = 68;
+const DETAIL_NODE_ITEM_HEIGHT = 56;
+
+interface SubscriptionCardProps {
+  sub: Subscription;
+  loading: boolean;
+  testing: boolean;
+  testResult?: DelayResults;
+  onTestNodes: (sub: Subscription) => void;
+  onCopyUrl: (url: string) => void;
+  onViewDetail: (sub: Subscription) => void;
+  onRefresh: (id: string) => void;
+  onEdit: (sub: Subscription) => void;
+  onDelete: (id: string) => void;
+}
+
+interface ConfirmNodeListData {
+  nodes: Node[];
+  selectedNodeIndices: Set<number>;
+  onToggleNode: (index: number, selected: boolean) => void;
+}
+
+interface DetailNodeItem {
+  node: Node;
+  index: number;
+}
+
+interface DetailNodeListData {
+  items: DetailNodeItem[];
+  onToggleNode: (index: number) => void;
+}
+
+const SubscriptionCard = memo(function SubscriptionCard({
+  sub,
+  loading,
+  testing,
+  testResult,
+  onTestNodes,
+  onCopyUrl,
+  onViewDetail,
+  onRefresh,
+  onEdit,
+  onDelete,
+}: SubscriptionCardProps) {
+  const updatedDate = useMemo(() => new Date(sub.updated_at).toLocaleDateString(), [sub.updated_at]);
+  const nodes = useMemo(() => sub.nodes || [], [sub.nodes]);
+
+  const traffic = useMemo(() => {
+    if (!sub.traffic) return null;
+    const total = sub.traffic.total || 0;
+    const percent = total > 0 ? (sub.traffic.used / total) * 100 : 0;
+    return {
+      used: formatBytes(sub.traffic.used),
+      remaining: formatBytes(sub.traffic.remaining),
+      percent,
+      color: percent > 80 ? 'danger' as const : 'primary' as const,
+      expireAt: sub.expire_at ? new Date(sub.expire_at).toLocaleDateString() : '',
+    };
+  }, [sub.expire_at, sub.traffic]);
+
+  return (
+    <Card className="relative">
+      <CardBody className="p-4">
+        <div className="absolute top-3 left-0">
+          <Chip
+            size="sm"
+            className="rounded-l-none rounded-r-full"
+            color={sub.enabled ? 'primary' : 'default'}
+          >
+            {sub.enabled ? '启用' : '禁用'}
+          </Chip>
+        </div>
+
+        <div className="mt-6 mb-3">
+          <h3 className="font-semibold text-gray-800 dark:text-white truncate" title={sub.name}>
+            {sub.name}
+          </h3>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            节点: {sub.node_count} · 更新: {updatedDate}
+          </p>
+        </div>
+
+        <NodeAvailability
+          nodes={nodes}
+          testResults={testResult}
+          onTest={() => onTestNodes(sub)}
+          testing={testing}
+        />
+
+        {traffic ? (
+          <div className="mb-4">
+            <div className="flex justify-between text-sm mb-2">
+              <span className="text-green-600">已用: {traffic.used}</span>
+              <span className="text-gray-500">剩余: {traffic.remaining}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Progress
+                size="sm"
+                value={traffic.percent}
+                color={traffic.color}
+                className="flex-1"
+                aria-label="流量使用进度"
+              />
+              <span className="text-xs text-gray-500 w-12 text-right">
+                {traffic.percent.toFixed(1)}%
+              </span>
+            </div>
+            {traffic.expireAt && (
+              <p className="text-xs text-gray-400 mt-2">到期: {traffic.expireAt}</p>
+            )}
+          </div>
+        ) : null}
+
+        <div className="flex justify-end gap-1 pt-2 border-t border-gray-100 dark:border-gray-800">
+          <Tooltip content="复制链接">
+            <Button isIconOnly size="sm" variant="light" onPress={() => onCopyUrl(sub.url)}>
+              <Copy className="w-4 h-4" />
+            </Button>
+          </Tooltip>
+          <Tooltip content="查看节点">
+            <Button isIconOnly size="sm" variant="light" onPress={() => onViewDetail(sub)}>
+              <Eye className="w-4 h-4" />
+            </Button>
+          </Tooltip>
+          <Tooltip content="刷新">
+            <Button isIconOnly size="sm" variant="light" onPress={() => onRefresh(sub.id)} isDisabled={loading}>
+              {loading ? <Spinner size="sm" /> : <RefreshCw className="w-4 h-4" />}
+            </Button>
+          </Tooltip>
+          <Tooltip content="编辑">
+            <Button isIconOnly size="sm" variant="light" onPress={() => onEdit(sub)}>
+              <Pencil className="w-4 h-4" />
+            </Button>
+          </Tooltip>
+          <Tooltip content="删除">
+            <Button isIconOnly size="sm" variant="light" color="danger" onPress={() => onDelete(sub.id)}>
+              <Trash2 className="w-4 h-4" />
+            </Button>
+          </Tooltip>
+        </div>
+      </CardBody>
+    </Card>
+  );
+}, (prev, next) => (
+  prev.sub === next.sub
+  && prev.loading === next.loading
+  && prev.testing === next.testing
+  && prev.testResult === next.testResult
+));
+
+function ConfirmNodeRow({ index, style, data }: ListChildComponentProps<ConfirmNodeListData>) {
+  const node = data.nodes[index];
+  if (!node) return null;
+
+  return (
+    <div style={style} className="pr-1">
+      <div className="flex h-[60px] items-center gap-3 px-2 rounded bg-gray-50 dark:bg-gray-800">
+        <Switch
+          size="sm"
+          isSelected={data.selectedNodeIndices.has(index)}
+          onValueChange={(selected) => data.onToggleNode(index, selected)}
+        />
+        <span className="text-xl">{node.country_emoji || '🌐'}</span>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium truncate" title={node.tag}>{node.tag}</p>
+          <p className="text-xs text-gray-500 truncate">{node.server}:{node.server_port}</p>
+        </div>
+        <Chip size="sm" variant="flat">{node.type}</Chip>
+      </div>
+    </div>
+  );
+}
+
+function DetailNodeRow({ index, style, data }: ListChildComponentProps<DetailNodeListData>) {
+  const item = data.items[index];
+  if (!item) return null;
+
+  const { node } = item;
+  return (
+    <div style={style} className="pr-1">
+      <div
+        className={`flex h-[48px] items-center gap-2 px-2 rounded text-sm transition-colors ${
+          node.disabled
+            ? 'bg-gray-100 dark:bg-gray-900 opacity-50'
+            : 'bg-gray-50 dark:bg-gray-800'
+        }`}
+      >
+        <Switch
+          size="sm"
+          isSelected={!node.disabled}
+          onValueChange={() => data.onToggleNode(item.index)}
+        />
+        <span className="text-base">{node.country_emoji || '🌐'}</span>
+        <span className={`truncate flex-1 ${node.disabled ? 'line-through' : ''}`} title={node.tag}>
+          {node.tag}
+        </span>
+        <Chip size="sm" variant="flat">{node.type}</Chip>
+      </div>
+    </div>
+  );
+}
+
 export default function Subscriptions() {
   const {
     subscriptions, manualNodes, countryGroups, filters, loading, settings,
@@ -142,6 +347,7 @@ export default function Subscriptions() {
   const [parseError, setParseError] = useState('');
   const [editingFilter, setEditingFilter] = useState<Filter | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearchQuery = useDebouncedValue(searchQuery, 300);
   const [selectedSub, setSelectedSub] = useState<Subscription | null>(null);
   const [confirmingSub, setConfirmingSub] = useState<Subscription | null>(null);
   const [selectedNodeIndices, setSelectedNodeIndices] = useState<Set<number>>(new Set());
@@ -225,22 +431,22 @@ export default function Subscriptions() {
 
   // 搜索过滤
   const filteredSubscriptions = useMemo(() => {
-    if (!searchQuery.trim()) return subscriptions;
-    const q = searchQuery.toLowerCase();
+    if (!debouncedSearchQuery.trim()) return subscriptions;
+    const q = debouncedSearchQuery.toLowerCase();
     return subscriptions.filter(s => s.name.toLowerCase().includes(q) || s.url.toLowerCase().includes(q));
-  }, [subscriptions, searchQuery]);
+  }, [debouncedSearchQuery, subscriptions]);
 
   const filteredManualNodes = useMemo(() => {
-    if (!searchQuery.trim()) return manualNodes;
-    const q = searchQuery.toLowerCase();
+    if (!debouncedSearchQuery.trim()) return manualNodes;
+    const q = debouncedSearchQuery.toLowerCase();
     return manualNodes.filter(n => n.node.tag.toLowerCase().includes(q) || n.node.server.toLowerCase().includes(q));
-  }, [manualNodes, searchQuery]);
+  }, [debouncedSearchQuery, manualNodes]);
 
   const filteredFilters = useMemo(() => {
-    if (!searchQuery.trim()) return filters;
-    const q = searchQuery.toLowerCase();
+    if (!debouncedSearchQuery.trim()) return filters;
+    const q = debouncedSearchQuery.toLowerCase();
     return filters.filter(f => f.name.toLowerCase().includes(q));
-  }, [filters, searchQuery]);
+  }, [debouncedSearchQuery, filters]);
 
   const selectableNodeTags = useMemo(() => {
     const subscriptionTags = subscriptions.flatMap((sub) =>
@@ -253,10 +459,21 @@ export default function Subscriptions() {
     return Array.from(new Set([...subscriptionTags, ...manualTags])).sort();
   }, [subscriptions, manualNodes]);
 
-  const handleOpenAddSubscription = () => { setEditingSubscription(null); setName(''); setUrl(''); onSubOpen(); };
-  const handleOpenEditSubscription = (sub: Subscription) => { setEditingSubscription(sub); setName(sub.name); setUrl(sub.url); onSubOpen(); };
+  const handleOpenAddSubscription = useCallback(() => {
+    setEditingSubscription(null);
+    setName('');
+    setUrl('');
+    onSubOpen();
+  }, [onSubOpen]);
 
-  const openConfirmForSub = (sub: Subscription) => {
+  const handleOpenEditSubscription = useCallback((sub: Subscription) => {
+    setEditingSubscription(sub);
+    setName(sub.name);
+    setUrl(sub.url);
+    onSubOpen();
+  }, [onSubOpen]);
+
+  const openConfirmForSub = useCallback((sub: Subscription) => {
     const initialSelected = new Set<number>();
     (sub.nodes || []).forEach((node, index) => {
       if (!node.disabled) {
@@ -286,7 +503,7 @@ export default function Subscriptions() {
     setConfirmingSub(sub);
     setSelectedNodeIndices(initialSelected);
     onConfirmOpen();
-  };
+  }, [logConfirmNodeDebug, onConfirmOpen]);
 
   const handleSaveSubscription = async () => {
     if (!name || !url) return;
@@ -304,15 +521,20 @@ export default function Subscriptions() {
     } finally { setIsSubmitting(false); }
   };
 
-  const handleRefresh = async (id: string) => {
+  const handleRefresh = useCallback(async (id: string) => {
     const refreshed = await refreshSubscription(id);
     if (refreshed?.nodes?.length) {
       openConfirmForSub(refreshed);
     }
-  };
-  const handleDeleteSubscription = async (id: string) => { if (confirm('确定删除？')) await deleteSubscription(id); };
+  }, [openConfirmForSub, refreshSubscription]);
 
-  const handleSetConfirmNodeSelected = (index: number, selected: boolean) => {
+  const handleDeleteSubscription = useCallback(async (id: string) => {
+    if (confirm('确定删除？')) {
+      await deleteSubscription(id);
+    }
+  }, [deleteSubscription]);
+
+  const handleSetConfirmNodeSelected = useCallback((index: number, selected: boolean) => {
     const nodeTag = confirmingSub?.nodes?.[index]?.tag || '';
     setSelectedNodeIndices(prev => {
       const beforeIndices = Array.from(prev).sort((a, b) => a - b);
@@ -335,7 +557,7 @@ export default function Subscriptions() {
       });
       return next;
     });
-  };
+  }, [confirmingSub, logConfirmNodeDebug]);
 
   const handleSelectAllConfirmNodes = () => {
     if (!confirmingSub?.nodes?.length) return;
@@ -480,8 +702,71 @@ export default function Subscriptions() {
   const handleDeleteFilter = async (id: string) => { if (confirm('确定删除？')) await deleteFilter(id); };
   const handleToggleFilter = async (filter: Filter) => { await toggleFilter(filter.id, !filter.enabled); };
 
-  const handleViewDetail = (sub: Subscription) => { setSelectedSub(sub); onDetailOpen(); };
-  const handleCopyUrl = (url: string) => { navigator.clipboard.writeText(url); toast.success('已复制到剪贴板'); };
+  const handleViewDetail = useCallback((sub: Subscription) => {
+    setSelectedSub(sub);
+    onDetailOpen();
+  }, [onDetailOpen]);
+
+  const handleCopyUrl = useCallback((url: string) => {
+    navigator.clipboard.writeText(url);
+    toast.success('已复制到剪贴板');
+  }, []);
+
+  const confirmNodes = useMemo(() => confirmingSub?.nodes || [], [confirmingSub]);
+  const confirmNodeListHeight = useMemo(() => {
+    const totalHeight = confirmNodes.length * CONFIRM_NODE_ITEM_HEIGHT;
+    return Math.min(MAX_VIRTUAL_LIST_HEIGHT, Math.max(totalHeight, CONFIRM_NODE_ITEM_HEIGHT));
+  }, [confirmNodes.length]);
+  const confirmNodeListData = useMemo<ConfirmNodeListData>(() => ({
+    nodes: confirmNodes,
+    selectedNodeIndices,
+    onToggleNode: handleSetConfirmNodeSelected,
+  }), [confirmNodes, handleSetConfirmNodeSelected, selectedNodeIndices]);
+
+  const detailNodeItems = useMemo<DetailNodeItem[]>(() => {
+    if (!selectedSub?.nodes?.length) return [];
+    return selectedSub.nodes.map((node, index) => ({ node, index }));
+  }, [selectedSub]);
+
+  const detailCountryStats = useMemo(() => {
+    const stats = new Map<string, { key: string; emoji: string; enabled: number; total: number }>();
+    detailNodeItems.forEach(({ node }) => {
+      const country = node.country || 'OTHER';
+      const current = stats.get(country) || {
+        key: country,
+        emoji: node.country_emoji || '🌐',
+        enabled: 0,
+        total: 0,
+      };
+      current.total += 1;
+      if (!node.disabled) {
+        current.enabled += 1;
+      }
+      stats.set(country, current);
+    });
+
+    return Array.from(stats.values()).sort((left, right) => right.total - left.total);
+  }, [detailNodeItems]);
+
+  const detailNodeListHeight = useMemo(() => {
+    const totalHeight = detailNodeItems.length * DETAIL_NODE_ITEM_HEIGHT;
+    return Math.min(MAX_VIRTUAL_LIST_HEIGHT, Math.max(totalHeight, DETAIL_NODE_ITEM_HEIGHT));
+  }, [detailNodeItems.length]);
+
+  const handleToggleDetailNode = useCallback(async (nodeIndex: number) => {
+    if (!selectedSub) return;
+    try {
+      await subscriptionApi.toggleNodeDisabled(selectedSub.id, nodeIndex);
+      await fetchSubscriptions();
+    } catch {
+      toast.error('切换失败');
+    }
+  }, [fetchSubscriptions, selectedSub]);
+
+  const detailNodeListData = useMemo<DetailNodeListData>(() => ({
+    items: detailNodeItems,
+    onToggleNode: handleToggleDetailNode,
+  }), [detailNodeItems, handleToggleDetailNode]);
 
   return (
     <div className="space-y-6">
@@ -530,92 +815,19 @@ export default function Subscriptions() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {filteredSubscriptions.map((sub) => (
-              <Card key={sub.id} className="relative">
-                <CardBody className="p-4">
-                  {/* 标签 */}
-                  <div className="absolute top-3 left-0">
-                    <Chip
-                      size="sm"
-                      className="rounded-l-none rounded-r-full"
-                      color={sub.enabled ? 'primary' : 'default'}
-                    >
-                      {sub.enabled ? '启用' : '禁用'}
-                    </Chip>
-                  </div>
-
-                  {/* 标题 */}
-                  <div className="mt-6 mb-3">
-                    <h3 className="font-semibold text-gray-800 dark:text-white truncate" title={sub.name}>
-                      {sub.name}
-                    </h3>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      节点: {sub.node_count} · 更新: {new Date(sub.updated_at).toLocaleDateString()}
-                    </p>
-                  </div>
-
-                  {/* 节点可用性 */}
-                  <NodeAvailability 
-                    nodes={sub.nodes || []}
-                    testResults={testResults[sub.id]}
-                    onTest={() => handleTestNodes(sub)}
-                    testing={testingSubId === sub.id}
-                  />
-
-                  {/* 流量统计 */}
-                  {sub.traffic ? (
-                    <div className="mb-4">
-                      <div className="flex justify-between text-sm mb-2">
-                        <span className="text-green-600">已用: {formatBytes(sub.traffic.used)}</span>
-                        <span className="text-gray-500">剩余: {formatBytes(sub.traffic.remaining)}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Progress
-                          size="sm"
-                          value={(sub.traffic.used / sub.traffic.total) * 100}
-                          color={sub.traffic.used / sub.traffic.total > 0.8 ? 'danger' : 'primary'}
-                          className="flex-1"
-                          aria-label="流量使用进度"
-                        />
-                        <span className="text-xs text-gray-500 w-12 text-right">
-                          {((sub.traffic.used / sub.traffic.total) * 100).toFixed(1)}%
-                        </span>
-                      </div>
-                      {sub.expire_at && (
-                        <p className="text-xs text-gray-400 mt-2">到期: {new Date(sub.expire_at).toLocaleDateString()}</p>
-                      )}
-                    </div>
-                  ) : null}
-
-                  {/* 操作按钮 */}
-                  <div className="flex justify-end gap-1 pt-2 border-t border-gray-100 dark:border-gray-800">
-                    <Tooltip content="复制链接">
-                      <Button isIconOnly size="sm" variant="light" onPress={() => handleCopyUrl(sub.url)}>
-                        <Copy className="w-4 h-4" />
-                      </Button>
-                    </Tooltip>
-                    <Tooltip content="查看节点">
-                      <Button isIconOnly size="sm" variant="light" onPress={() => handleViewDetail(sub)}>
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                    </Tooltip>
-                    <Tooltip content="刷新">
-                      <Button isIconOnly size="sm" variant="light" onPress={() => handleRefresh(sub.id)} isDisabled={loading}>
-                        {loading ? <Spinner size="sm" /> : <RefreshCw className="w-4 h-4" />}
-                      </Button>
-                    </Tooltip>
-                    <Tooltip content="编辑">
-                      <Button isIconOnly size="sm" variant="light" onPress={() => handleOpenEditSubscription(sub)}>
-                        <Pencil className="w-4 h-4" />
-                      </Button>
-                    </Tooltip>
-                    <Tooltip content="删除">
-                      <Button isIconOnly size="sm" variant="light" color="danger" onPress={() => handleDeleteSubscription(sub.id)}>
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </Tooltip>
-                  </div>
-                </CardBody>
-              </Card>
+              <SubscriptionCard
+                key={sub.id}
+                sub={sub}
+                loading={loading}
+                testing={testingSubId === sub.id}
+                testResult={testResults[sub.id]}
+                onTestNodes={handleTestNodes}
+                onCopyUrl={handleCopyUrl}
+                onViewDetail={handleViewDetail}
+                onRefresh={handleRefresh}
+                onEdit={handleOpenEditSubscription}
+                onDelete={handleDeleteSubscription}
+              />
             ))}
           </div>
         )}
@@ -843,24 +1055,22 @@ export default function Subscriptions() {
                 全不选
               </Button>
             </div>
-            <div className="max-h-[420px] overflow-y-auto space-y-2 pr-1">
-              {(confirmingSub?.nodes || []).map((node, index) => (
-                <div key={`${node.tag}-${index}`} className="flex items-center gap-3 p-2 rounded bg-gray-50 dark:bg-gray-800">
-                  <Switch
-                    size="sm"
-                    isSelected={selectedNodeIndices.has(index)}
-                    onValueChange={(selected) => handleSetConfirmNodeSelected(index, selected)}
-                  />
-                  <span className="text-xl">{node.country_emoji || '🌐'}</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate" title={node.tag}>{node.tag}</p>
-                    <p className="text-xs text-gray-500 truncate">{node.server}:{node.server_port}</p>
-                  </div>
-                  <Chip size="sm" variant="flat">{node.type}</Chip>
-                </div>
-              ))}
+            <div>
+              {confirmNodes.length > 0 ? (
+                <FixedSizeList
+                  height={confirmNodeListHeight}
+                  width="100%"
+                  itemCount={confirmNodes.length}
+                  itemSize={CONFIRM_NODE_ITEM_HEIGHT}
+                  itemData={confirmNodeListData}
+                >
+                  {ConfirmNodeRow}
+                </FixedSizeList>
+              ) : (
+                <p className="text-sm text-gray-400 py-6 text-center">暂无可选节点</p>
+              )}
             </div>
-            <p className="text-xs text-gray-500">已选择 {selectedNodeIndices.size} / {(confirmingSub?.nodes || []).length}</p>
+            <p className="text-xs text-gray-500">已选择 {selectedNodeIndices.size} / {confirmNodes.length}</p>
           </ModalBody>
           <ModalFooter>
             <Button
@@ -949,60 +1159,30 @@ export default function Subscriptions() {
             <div className="flex-1 overflow-y-auto p-4">
               {selectedSub && (
                 <div className="space-y-4">
-                  {(() => {
-                    const nodes = selectedSub.nodes || [];
-                    // 保留原始索引
-                    const nodesWithIndex = nodes.map((node, index) => ({ node, index }));
-                    const nodesByCountry = nodesWithIndex.reduce((acc, item) => {
-                      const country = item.node.country || 'OTHER';
-                      if (!acc[country]) acc[country] = { emoji: item.node.country_emoji || '🌐', nodes: [] };
-                      acc[country].nodes.push(item);
-                      return acc;
-                    }, {} as Record<string, { emoji: string; nodes: { node: Node; index: number }[] }>);
+                  {detailCountryStats.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {detailCountryStats.map((country) => (
+                        <Chip key={country.key} size="sm" variant="flat">
+                          <span className="mr-1">{country.emoji}</span>
+                          {country.key} {country.enabled}/{country.total}
+                        </Chip>
+                      ))}
+                    </div>
+                  )}
 
-                    const handleToggleNode = async (nodeIndex: number) => {
-                      try {
-                        await subscriptionApi.toggleNodeDisabled(selectedSub.id, nodeIndex);
-                        fetchSubscriptions(); // useEffect 会自动同步 selectedSub
-                      } catch {
-                        toast.error('切换失败');
-                      }
-                    };
-
-                    return Object.entries(nodesByCountry).map(([country, data]) => (
-                      <div key={country}>
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="text-xl">{data.emoji}</span>
-                          <span className="font-medium">{country}</span>
-                          <Chip size="sm" variant="flat">
-                            {data.nodes.filter(n => !n.node.disabled).length}/{data.nodes.length}
-                          </Chip>
-                        </div>
-                        <div className="space-y-1">
-                          {data.nodes.map(({ node, index }) => (
-                            <div 
-                              key={index} 
-                              className={`flex items-center gap-2 p-2 rounded text-sm transition-colors ${
-                                node.disabled 
-                                  ? 'bg-gray-100 dark:bg-gray-900 opacity-50' 
-                                  : 'bg-gray-50 dark:bg-gray-800'
-                              }`}
-                            >
-                              <Switch 
-                                size="sm" 
-                                isSelected={!node.disabled}
-                                onValueChange={() => handleToggleNode(index)}
-                              />
-                              <span className={`truncate flex-1 ${node.disabled ? 'line-through' : ''}`}>
-                                {node.tag}
-                              </span>
-                              <Chip size="sm" variant="flat">{node.type}</Chip>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ));
-                  })()}
+                  {detailNodeItems.length > 0 ? (
+                    <FixedSizeList
+                      height={detailNodeListHeight}
+                      width="100%"
+                      itemCount={detailNodeItems.length}
+                      itemSize={DETAIL_NODE_ITEM_HEIGHT}
+                      itemData={detailNodeListData}
+                    >
+                      {DetailNodeRow}
+                    </FixedSizeList>
+                  ) : (
+                    <p className="text-sm text-gray-400 py-8 text-center">暂无节点</p>
+                  )}
                 </div>
               )}
             </div>

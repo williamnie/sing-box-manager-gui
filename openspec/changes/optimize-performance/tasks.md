@@ -16,15 +16,17 @@
   - 优化渲染性能,避免无关状态更新触发重渲染
   - ✅ 已完成
 
-- [ ] **T1.3**: 订阅卡片添加 React.memo
+- [x] **T1.3**: 订阅卡片添加 React.memo
   - 文件: `web/src/pages/Subscriptions.tsx`
   - 提取订阅卡片为独立组件
   - 使用 `React.memo` 包裹
+  - ✅ 已完成 - `SubscriptionCard` 抽离并基于关键 props 进行 memo 比较
   - 估时: 1h
 
-- [ ] **T1.4**: 格式化函数使用 useMemo
+- [x] **T1.4**: 格式化函数使用 useMemo
   - 文件: `web/src/pages/*.tsx`
   - 日期格式化、流量转换等使用 `useMemo`
+  - ✅ 已完成 - 订阅卡片内更新时间、流量统计与到期时间均改为 `useMemo`
   - 估时: 1h
 
 ### 后端快速优化
@@ -49,20 +51,23 @@
 ## 阶段 2: 中等复杂度优化
 
 ### 前端渲染优化
-- [ ] **T2.1**: 安装并集成 react-window
+- [x] **T2.1**: 安装并集成 react-window
   - 依赖: `npm install react-window`
+  - ✅ 已完成 - 已安装 `react-window` 与 `@types/react-window`
   - 估时: 0.5h
 
-- [ ] **T2.2**: 节点列表虚拟化
+- [x] **T2.2**: 节点列表虚拟化
   - 文件: `web/src/pages/Subscriptions.tsx`
   - 使用 `FixedSizeList` 替换原始列表
   - 处理选中状态和操作按钮
+  - ✅ 已完成 - 节点确认弹窗与详情抽屉均已切换为 `FixedSizeList`
   - 估时: 4h
 
-- [ ] **T2.3**: 搜索输入防抖
+- [x] **T2.3**: 搜索输入防抖
   - 文件: `web/src/pages/Subscriptions.tsx`, `Rules.tsx`
   - 添加 debounce hook
   - 应用于搜索框
+  - ✅ 已完成 - 新增 `useDebouncedValue` 并接入订阅页/规则页搜索
   - 估时: 2h
 
 ### 后端并发优化
@@ -81,12 +86,12 @@
   - 添加 `Shutdown()` 优雅关闭方法
   - ✅ 已完成 - API 响应不再阻塞
 
-- [ ] **T2.6**: 配置缓存机制
+- [x] **T2.6**: 配置缓存机制
   - 文件: `internal/api/router.go`, `internal/storage/json_store.go`
   - 添加数据版本号(atomic.Uint64)
   - 实现缓存结构
   - CRUD 操作自动失效缓存
-  - 估时: 3h
+  - ✅ 已完成 - 基于 `JSONStore` 版本号的配置缓存
 
 **阶段 2 总估时: 16.5 小时**
 
@@ -95,33 +100,33 @@
 ## 阶段 3: 高收益优化(高复杂度)
 
 ### 存储层优化
-- [ ] **T3.1**: Copy-on-Write 存储模式
+- [x] **T3.1**: Copy-on-Write 存储模式
   - 文件: `internal/storage/json_store.go`
   - 使用 `atomic.Value` 存储数据指针
   - 实现数据浅拷贝函数
   - 更新所有读写方法
-  - 估时: 6h
+  - ✅ 已完成 - 全部读写路径切换为 COW 快照
 
-- [ ] **T3.2**: 写入缓冲队列
+- [x] **T3.2**: 写入缓冲队列
   - 文件: `internal/storage/json_store.go`
   - 添加保存通道和后台协程
   - 实现定时刷盘逻辑
   - 应用退出时强制刷盘
-  - 估时: 4h
+  - ✅ 已完成 - 1s 定时刷盘 + `Close()` 强制落盘
 
-- [ ] **T3.3**: 原子写入保护
+- [x] **T3.3**: 原子写入保护
   - 文件: `internal/storage/json_store.go`
   - 写入临时文件后 rename
   - 备份机制
-  - 估时: 2h
+  - ✅ 已完成 - `data.json.tmp` 原子替换 + `data.json.bak` 备份
 
 ### 性能测试与验证
-- [ ] **T3.4**: 编写性能基准测试
+- [x] **T3.4**: 编写性能基准测试
   - 文件: `internal/storage/*_test.go`, `internal/api/*_test.go`
   - 并发读写基准
   - 内存分配测试
   - race detector 验证
-  - 估时: 4h
+  - ✅ 已完成 - 新增 storage/api benchmark，并执行 storage race 测试
 
 - [ ] **T3.5**: 前端性能测试
   - 使用 Lighthouse 测试

@@ -20,18 +20,12 @@ interface LayoutProps {
 
 export default function Layout({ children }: LayoutProps) {
   const location = useLocation();
-  const { settings, fetchSettings, serviceStatus, fetchServiceStatus } = useStore();
+  const { serviceStatus, fetchServiceStatus } = useStore();
   const { theme, setTheme, isDark } = useTheme();
 
   useEffect(() => {
-    // 并行请求，加速初始化
-    Promise.all([
-      !settings && fetchSettings(),
-      !serviceStatus && fetchServiceStatus(),
-    ]);
-  }, [fetchServiceStatus, fetchSettings, serviceStatus, settings]);
-
-  const clashApiPort = settings?.clash_api_port || 9091;
+    if (!serviceStatus) fetchServiceStatus();
+  }, [fetchServiceStatus, serviceStatus]);
 
   const themeIcon = theme === 'system' ? Monitor : isDark ? Moon : Sun;
 
@@ -70,31 +64,12 @@ export default function Layout({ children }: LayoutProps) {
 
         {/* 底部链接 */}
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-          <div className="flex items-center justify-between mb-3">
-            <a
-              href={(() => {
-                const baseUrl = `http://127.0.0.1:${clashApiPort}/ui/`;
-                const params = new URLSearchParams({
-                  hostname: '127.0.0.1',
-                  port: String(clashApiPort),
-                  label: 'SingBox Manager'
-                });
-                if (settings?.clash_api_secret) {
-                  params.set('secret', settings.clash_api_secret);
-                }
-                return `${baseUrl}?${params.toString()}`;
-              })()}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-gray-500 dark:text-gray-400 hover:text-primary transition-colors"
-            >
-              打开 Zashboard
-            </a>
+          <div className="flex items-center justify-end mb-3">
             <Dropdown>
               <DropdownTrigger>
                 <Button isIconOnly size="sm" variant="light">
-                  {themeIcon === Monitor ? <Monitor className="w-4 h-4" /> : 
-                   themeIcon === Moon ? <Moon className="w-4 h-4" /> : 
+                  {themeIcon === Monitor ? <Monitor className="w-4 h-4" /> :
+                   themeIcon === Moon ? <Moon className="w-4 h-4" /> :
                    <Sun className="w-4 h-4" />}
                 </Button>
               </DropdownTrigger>
