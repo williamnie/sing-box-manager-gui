@@ -1,30 +1,35 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo, useCallback, memo } from 'react';
 import {
-  Card,
-  CardBody,
-  CardHeader,
-  Button,
-  Input,
-  Modal,
-  ModalContent,
-  ModalHeader,
-  ModalBody,
-  ModalFooter,
-  useDisclosure,
-  Chip,
-  Accordion,
-  AccordionItem,
-  Spinner,
-  Tabs,
-  Tab,
-  Select,
-  SelectItem,
-  Switch,
+  Card, CardBody, Button, Input, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter,
+  useDisclosure, Chip, Accordion, AccordionItem, Spinner, Tabs, Tab, Select, SelectItem, Switch,
+  Progress, Tooltip
 } from '@nextui-org/react';
-import { Plus, RefreshCw, Trash2, Globe, Server, Pencil, Link, Filter as FilterIcon, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, RefreshCw, Trash2, Globe, Pencil, Link, Filter as FilterIcon, Search, Copy, Eye } from 'lucide-react';
+import { FixedSizeList, type ListChildComponentProps } from 'react-window';
 import { useStore } from '../store';
-import { nodeApi } from '../api';
+import { nodeApi, clashApi, subscriptionApi } from '../api';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import { toast } from '../components/Toast';
 import type { Subscription, ManualNode, Node, Filter } from '../store';
+
+interface ApiErrorLike {
+  response?: {
+    data?: {
+      error?: string;
+    };
+  };
+}
+
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error && typeof error === 'object') {
+    const maybeError = error as ApiErrorLike;
+    return maybeError.response?.data?.error || fallback;
+  }
+  return fallback;
+};
+
+// 测速结果类型
+type DelayResults = Record<string, { delay: number; available: boolean }>;
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -59,964 +64,1221 @@ const countryOptions = [
   { code: 'CA', name: '加拿大', emoji: '🇨🇦' },
   { code: 'RU', name: '俄罗斯', emoji: '🇷🇺' },
   { code: 'IN', name: '印度', emoji: '🇮🇳' },
+  { code: 'TR', name: '土耳其', emoji: '🇹🇷' },
+  { code: 'BR', name: '巴西', emoji: '🇧🇷' },
+  { code: 'AR', name: '阿根廷', emoji: '🇦🇷' },
+  { code: 'PH', name: '菲律宾', emoji: '🇵🇭' },
+  { code: 'TH', name: '泰国', emoji: '🇹🇭' },
+  { code: 'VN', name: '越南', emoji: '🇻🇳' },
+  { code: 'MY', name: '马来西亚', emoji: '🇲🇾' },
+  { code: 'ID', name: '印度尼西亚', emoji: '🇮🇩' },
+  { code: 'IT', name: '意大利', emoji: '🇮🇹' },
+  { code: 'ES', name: '西班牙', emoji: '🇪🇸' },
+  { code: 'PL', name: '波兰', emoji: '🇵🇱' },
+  { code: 'UA', name: '乌克兰', emoji: '🇺🇦' },
+  { code: 'CH', name: '瑞士', emoji: '🇨🇭' },
+  { code: 'SE', name: '瑞典', emoji: '🇸🇪' },
+  { code: 'NO', name: '挪威', emoji: '🇳🇴' },
+  { code: 'FI', name: '芬兰', emoji: '🇫🇮' },
+  { code: 'DK', name: '丹麦', emoji: '🇩🇰' },
+  { code: 'IE', name: '爱尔兰', emoji: '🇮🇪' },
+  { code: 'ZA', name: '南非', emoji: '🇿🇦' },
+  { code: 'AE', name: '阿联酋', emoji: '🇦🇪' },
+  { code: 'IL', name: '以色列', emoji: '🇮🇱' },
+  { code: 'MX', name: '墨西哥', emoji: '🇲🇽' },
+  { code: 'CL', name: '智利', emoji: '🇨🇱' },
+  { code: 'CO', name: '哥伦比亚', emoji: '🇨🇴' },
+  { code: 'NZ', name: '新西兰', emoji: '🇳🇿' },
+  { code: 'AT', name: '奥地利', emoji: '🇦🇹' },
+  { code: 'BE', name: '比利时', emoji: '🇧🇪' },
+  { code: 'CZ', name: '捷克', emoji: '🇨🇿' },
+  { code: 'HU', name: '匈牙利', emoji: '🇭🇺' },
+  { code: 'PT', name: '葡萄牙', emoji: '🇵🇹' },
+  { code: 'GR', name: '希腊', emoji: '🇬🇷' },
+  { code: 'RO', name: '罗马尼亚', emoji: '🇷🇴' },
+  { code: 'BG', name: '保加利亚', emoji: '🇧🇬' },
+  { code: 'SK', name: '斯洛伐克', emoji: '🇸🇰' },
+  { code: 'LT', name: '立陶宛', emoji: '🇱🇹' },
+  { code: 'LV', name: '拉脱维亚', emoji: '🇱🇻' },
+  { code: 'EE', name: '爱沙尼亚', emoji: '🇪🇪' },
+  { code: 'HR', name: '克罗地亚', emoji: '🇭🇷' },
+  { code: 'SI', name: '斯洛文尼亚', emoji: '🇸🇮' },
+  { code: 'RS', name: '塞尔维亚', emoji: '🇷🇸' },
+  { code: 'KZ', name: '哈萨克斯坦', emoji: '🇰🇿' },
+  { code: 'PK', name: '巴基斯坦', emoji: '🇵🇰' },
+  { code: 'BD', name: '孟加拉国', emoji: '🇧🇩' },
+  { code: 'EG', name: '埃及', emoji: '🇪🇬' },
+  { code: 'NG', name: '尼日利亚', emoji: '🇳🇬' },
+  { code: 'KE', name: '肯尼亚', emoji: '🇰🇪' },
+  { code: 'OTHER', name: '其他', emoji: '🌐' },
 ];
 
 const defaultNode: Node = {
-  tag: '',
-  type: 'shadowsocks',
-  server: '',
-  server_port: 443,
-  country: 'HK',
-  country_emoji: '🇭🇰',
+  tag: '', type: 'shadowsocks', server: '', server_port: 443, country: 'HK', country_emoji: '🇭🇰',
 };
+
+const MAX_VIRTUAL_LIST_HEIGHT = 420;
+const CONFIRM_NODE_ITEM_HEIGHT = 68;
+const DETAIL_NODE_ITEM_HEIGHT = 56;
+
+interface SubscriptionCardProps {
+  sub: Subscription;
+  loading: boolean;
+  testing: boolean;
+  testResult?: DelayResults;
+  onTestNodes: (sub: Subscription) => void;
+  onCopyUrl: (url: string) => void;
+  onViewDetail: (sub: Subscription) => void;
+  onRefresh: (id: string) => void;
+  onEdit: (sub: Subscription) => void;
+  onDelete: (id: string) => void;
+}
+
+interface ConfirmNodeListData {
+  nodes: Node[];
+  selectedNodeIndices: Set<number>;
+  onToggleNode: (index: number, selected: boolean) => void;
+}
+
+interface DetailNodeItem {
+  node: Node;
+  index: number;
+}
+
+interface DetailNodeListData {
+  items: DetailNodeItem[];
+  onToggleNode: (index: number) => void;
+}
+
+const SubscriptionCard = memo(function SubscriptionCard({
+  sub,
+  loading,
+  testing,
+  testResult,
+  onTestNodes,
+  onCopyUrl,
+  onViewDetail,
+  onRefresh,
+  onEdit,
+  onDelete,
+}: SubscriptionCardProps) {
+  const updatedDate = useMemo(() => new Date(sub.updated_at).toLocaleDateString(), [sub.updated_at]);
+  const nodes = useMemo(() => sub.nodes || [], [sub.nodes]);
+
+  const traffic = useMemo(() => {
+    if (!sub.traffic) return null;
+    const total = sub.traffic.total || 0;
+    const percent = total > 0 ? (sub.traffic.used / total) * 100 : 0;
+    return {
+      used: formatBytes(sub.traffic.used),
+      remaining: formatBytes(sub.traffic.remaining),
+      percent,
+      color: percent > 80 ? 'danger' as const : 'primary' as const,
+      expireAt: sub.expire_at ? new Date(sub.expire_at).toLocaleDateString() : '',
+    };
+  }, [sub.expire_at, sub.traffic]);
+
+  return (
+    <Card className="relative">
+      <CardBody className="p-4">
+        <div className="absolute top-3 left-0">
+          <Chip
+            size="sm"
+            className="rounded-l-none rounded-r-full"
+            color={sub.enabled ? 'primary' : 'default'}
+          >
+            {sub.enabled ? '启用' : '禁用'}
+          </Chip>
+        </div>
+
+        <div className="mt-6 mb-3">
+          <h3 className="font-semibold text-gray-800 dark:text-white truncate" title={sub.name}>
+            {sub.name}
+          </h3>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            节点: {sub.node_count} · 更新: {updatedDate}
+          </p>
+        </div>
+
+        <NodeAvailability
+          nodes={nodes}
+          testResults={testResult}
+          onTest={() => onTestNodes(sub)}
+          testing={testing}
+        />
+
+        {traffic ? (
+          <div className="mb-4">
+            <div className="flex justify-between text-sm mb-2">
+              <span className="text-green-600">已用: {traffic.used}</span>
+              <span className="text-gray-500">剩余: {traffic.remaining}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Progress
+                size="sm"
+                value={traffic.percent}
+                color={traffic.color}
+                className="flex-1"
+                aria-label="流量使用进度"
+              />
+              <span className="text-xs text-gray-500 w-12 text-right">
+                {traffic.percent.toFixed(1)}%
+              </span>
+            </div>
+            {traffic.expireAt && (
+              <p className="text-xs text-gray-400 mt-2">到期: {traffic.expireAt}</p>
+            )}
+          </div>
+        ) : null}
+
+        <div className="flex justify-end gap-1 pt-2 border-t border-gray-100 dark:border-gray-800">
+          <Tooltip content="复制链接">
+            <Button isIconOnly size="sm" variant="light" onPress={() => onCopyUrl(sub.url)}>
+              <Copy className="w-4 h-4" />
+            </Button>
+          </Tooltip>
+          <Tooltip content="查看节点">
+            <Button isIconOnly size="sm" variant="light" onPress={() => onViewDetail(sub)}>
+              <Eye className="w-4 h-4" />
+            </Button>
+          </Tooltip>
+          <Tooltip content="刷新">
+            <Button isIconOnly size="sm" variant="light" onPress={() => onRefresh(sub.id)} isDisabled={loading}>
+              {loading ? <Spinner size="sm" /> : <RefreshCw className="w-4 h-4" />}
+            </Button>
+          </Tooltip>
+          <Tooltip content="编辑">
+            <Button isIconOnly size="sm" variant="light" onPress={() => onEdit(sub)}>
+              <Pencil className="w-4 h-4" />
+            </Button>
+          </Tooltip>
+          <Tooltip content="删除">
+            <Button isIconOnly size="sm" variant="light" color="danger" onPress={() => onDelete(sub.id)}>
+              <Trash2 className="w-4 h-4" />
+            </Button>
+          </Tooltip>
+        </div>
+      </CardBody>
+    </Card>
+  );
+}, (prev, next) => (
+  prev.sub === next.sub
+  && prev.loading === next.loading
+  && prev.testing === next.testing
+  && prev.testResult === next.testResult
+));
+
+function ConfirmNodeRow({ index, style, data }: ListChildComponentProps<ConfirmNodeListData>) {
+  const node = data.nodes[index];
+  if (!node) return null;
+
+  return (
+    <div style={style} className="pr-1">
+      <div className="flex h-[60px] items-center gap-3 px-2 rounded bg-gray-50 dark:bg-gray-800">
+        <Switch
+          size="sm"
+          isSelected={data.selectedNodeIndices.has(index)}
+          onValueChange={(selected) => data.onToggleNode(index, selected)}
+        />
+        <span className="text-xl">{node.country_emoji || '🌐'}</span>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium truncate" title={node.tag}>{node.tag}</p>
+          <p className="text-xs text-gray-500 truncate">{node.server}:{node.server_port}</p>
+        </div>
+        <Chip size="sm" variant="flat">{node.type}</Chip>
+      </div>
+    </div>
+  );
+}
+
+function DetailNodeRow({ index, style, data }: ListChildComponentProps<DetailNodeListData>) {
+  const item = data.items[index];
+  if (!item) return null;
+
+  const { node } = item;
+  return (
+    <div style={style} className="pr-1">
+      <div
+        className={`flex h-[48px] items-center gap-2 px-2 rounded text-sm transition-colors ${
+          node.disabled
+            ? 'bg-gray-100 dark:bg-gray-900 opacity-50'
+            : 'bg-gray-50 dark:bg-gray-800'
+        }`}
+      >
+        <Switch
+          size="sm"
+          isSelected={!node.disabled}
+          onValueChange={() => data.onToggleNode(item.index)}
+        />
+        <span className="text-base">{node.country_emoji || '🌐'}</span>
+        <span className={`truncate flex-1 ${node.disabled ? 'line-through' : ''}`} title={node.tag}>
+          {node.tag}
+        </span>
+        <Chip size="sm" variant="flat">{node.type}</Chip>
+      </div>
+    </div>
+  );
+}
 
 export default function Subscriptions() {
   const {
-    subscriptions,
-    manualNodes,
-    countryGroups,
-    filters,
-    loading,
-    fetchSubscriptions,
-    fetchManualNodes,
-    fetchCountryGroups,
-    fetchFilters,
-    addSubscription,
-    updateSubscription,
-    deleteSubscription,
-    refreshSubscription,
-    toggleSubscription,
-    addManualNode,
-    updateManualNode,
-    deleteManualNode,
-    addFilter,
-    updateFilter,
-    deleteFilter,
-    toggleFilter,
+    subscriptions, manualNodes, countryGroups, filters, loading, settings,
+    fetchSubscriptions, fetchManualNodes, fetchCountryGroups, fetchFilters, fetchSettings,
+    addSubscription, updateSubscription, deleteSubscription, refreshSubscription,
+    addManualNode, updateManualNode, deleteManualNode,
+    addFilter, updateFilter, deleteFilter, toggleFilter,
   } = useStore();
 
   const { isOpen: isSubOpen, onOpen: onSubOpen, onClose: onSubClose } = useDisclosure();
   const { isOpen: isNodeOpen, onOpen: onNodeOpen, onClose: onNodeClose } = useDisclosure();
   const { isOpen: isFilterOpen, onOpen: onFilterOpen, onClose: onFilterClose } = useDisclosure();
+  const { isOpen: isDetailOpen, onOpen: onDetailOpen, onClose: onDetailClose } = useDisclosure();
+  const { isOpen: isConfirmOpen, onOpen: onConfirmOpen, onClose: onConfirmClose } = useDisclosure();
+  
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingSubscription, setEditingSubscription] = useState<Subscription | null>(null);
-
-  // 手动节点表单
   const [editingNode, setEditingNode] = useState<ManualNode | null>(null);
   const [nodeForm, setNodeForm] = useState<Node>(defaultNode);
   const [nodeEnabled, setNodeEnabled] = useState(true);
   const [nodeUrl, setNodeUrl] = useState('');
   const [isParsing, setIsParsing] = useState(false);
   const [parseError, setParseError] = useState('');
-
-  // 过滤器表单
   const [editingFilter, setEditingFilter] = useState<Filter | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearchQuery = useDebouncedValue(searchQuery, 300);
+  const [selectedSub, setSelectedSub] = useState<Subscription | null>(null);
+  const [confirmingSub, setConfirmingSub] = useState<Subscription | null>(null);
+  const [selectedNodeIndices, setSelectedNodeIndices] = useState<Set<number>>(new Set());
+  const [confirmSubmitting, setConfirmSubmitting] = useState(false);
+  
+  // 测速相关状态
+  const [testResults, setTestResults] = useState<Record<string, DelayResults>>({});
+  const [testingSubId, setTestingSubId] = useState<string | null>(null);
+  
   const defaultFilterForm: Omit<Filter, 'id'> = {
     name: '',
-    include: [],
-    exclude: [],
-    include_countries: [],
-    exclude_countries: [],
-    mode: 'urltest',
-    urltest_config: {
-      url: 'https://www.gstatic.com/generate_204',
-      interval: '5m',
-      tolerance: 50,
-    },
-    subscriptions: [],
-    all_nodes: true,
-    enabled: true,
+    mode: 'urltest', urltest_config: { url: 'https://www.gstatic.com/generate_204', interval: '5m', tolerance: 50 },
+    subscriptions: [], all_nodes: true, selected_nodes: [], enabled: true,
   };
   const [filterForm, setFilterForm] = useState<Omit<Filter, 'id'>>(defaultFilterForm);
 
-  useEffect(() => {
-    fetchSubscriptions();
-    fetchManualNodes();
-    fetchCountryGroups();
-    fetchFilters();
+  const logConfirmNodeDebug = useCallback((event: string, detail?: unknown) => {
+    const timestamp = new Date().toISOString();
+    const prefix = `[确认节点调试][${timestamp}] ${event}`;
+    if (detail === undefined) {
+      console.log(prefix);
+      return;
+    }
+    console.log(prefix, detail);
   }, []);
 
-  const handleOpenAddSubscription = () => {
+  useEffect(() => {
+    fetchSubscriptions(); fetchManualNodes(); fetchCountryGroups(); fetchFilters(); fetchSettings();
+  }, [fetchCountryGroups, fetchFilters, fetchManualNodes, fetchSettings, fetchSubscriptions]);
+
+  // 同步 selectedSub 与 subscriptions
+  useEffect(() => {
+    if (selectedSub) {
+      const updated = subscriptions.find(s => s.id === selectedSub.id);
+      if (updated && JSON.stringify(updated) !== JSON.stringify(selectedSub)) {
+        setSelectedSub(updated);
+      }
+    }
+  }, [selectedSub, subscriptions]);
+
+  // 测速功能
+  const handleTestNodes = useCallback(async (sub: Subscription) => {
+    if (!settings || !sub.nodes?.length) return;
+    
+    const port = settings.clash_api_port || 9091;
+    const secret = settings.clash_api_secret || '';
+    const nodeNames = sub.nodes.map(n => n.tag);
+    
+    setTestingSubId(sub.id);
+    setTestResults(prev => ({ ...prev, [sub.id]: {} }));
+    
+    const allResults: DelayResults = {};
+    
+    try {
+      // 逐批测试并实时更新结果
+      for (let i = 0; i < nodeNames.length; i += 5) {
+        const batch = nodeNames.slice(i, i + 5);
+        const batchResults = await Promise.all(
+          batch.map(name => 
+            clashApi.testDelay(port, name, secret, 5000)
+              .then(r => ({ name, ...r }))
+          )
+        );
+        
+        batchResults.forEach(r => {
+          allResults[r.name] = { delay: r.delay, available: r.available };
+        });
+        
+        setTestResults(prev => ({ ...prev, [sub.id]: { ...allResults } }));
+      }
+      
+      // 统计结果
+      const available = Object.values(allResults).filter(r => r.available).length;
+      toast.success(`测速完成: ${available}/${nodeNames.length} 可用`);
+    } catch {
+      toast.error('测速失败');
+    } finally {
+      setTestingSubId(null);
+    }
+  }, [settings]);
+
+  // 搜索过滤
+  const filteredSubscriptions = useMemo(() => {
+    if (!debouncedSearchQuery.trim()) return subscriptions;
+    const q = debouncedSearchQuery.toLowerCase();
+    return subscriptions.filter(s => s.name.toLowerCase().includes(q) || s.url.toLowerCase().includes(q));
+  }, [debouncedSearchQuery, subscriptions]);
+
+  const filteredManualNodes = useMemo(() => {
+    if (!debouncedSearchQuery.trim()) return manualNodes;
+    const q = debouncedSearchQuery.toLowerCase();
+    return manualNodes.filter(n => n.node.tag.toLowerCase().includes(q) || n.node.server.toLowerCase().includes(q));
+  }, [debouncedSearchQuery, manualNodes]);
+
+  const filteredFilters = useMemo(() => {
+    if (!debouncedSearchQuery.trim()) return filters;
+    const q = debouncedSearchQuery.toLowerCase();
+    return filters.filter(f => f.name.toLowerCase().includes(q));
+  }, [debouncedSearchQuery, filters]);
+
+  const selectableNodeTags = useMemo(() => {
+    const subscriptionTags = subscriptions.flatMap((sub) =>
+      (sub.nodes || []).filter((node) => !node.disabled).map((node) => node.tag)
+    );
+    const manualTags = manualNodes
+      .filter((manualNode) => manualNode.enabled)
+      .map((manualNode) => manualNode.node.tag);
+
+    return Array.from(new Set([...subscriptionTags, ...manualTags])).sort();
+  }, [subscriptions, manualNodes]);
+
+  const handleOpenAddSubscription = useCallback(() => {
     setEditingSubscription(null);
     setName('');
     setUrl('');
     onSubOpen();
-  };
+  }, [onSubOpen]);
 
-  const handleOpenEditSubscription = (sub: Subscription) => {
+  const handleOpenEditSubscription = useCallback((sub: Subscription) => {
     setEditingSubscription(sub);
     setName(sub.name);
     setUrl(sub.url);
     onSubOpen();
-  };
+  }, [onSubOpen]);
+
+  const openConfirmForSub = useCallback((sub: Subscription) => {
+    const initialSelected = new Set<number>();
+    (sub.nodes || []).forEach((node, index) => {
+      if (!node.disabled) {
+        initialSelected.add(index);
+      }
+    });
+
+    const initialSelectedIndices = Array.from(initialSelected).sort((a, b) => a - b);
+    const totalIndices = (sub.nodes || []).map((_, index) => index);
+    const initialUnselectedIndices = totalIndices.filter(index => !initialSelected.has(index));
+    logConfirmNodeDebug('打开确认弹窗', {
+      subscription_id: sub.id,
+      subscription_name: sub.name,
+      modal_total_nodes: (sub.nodes || []).length,
+      initial_selected_count: initialSelectedIndices.length,
+      initial_unselected_count: initialUnselectedIndices.length,
+      initial_selected_indices: initialSelectedIndices,
+      initial_unselected_indices: initialUnselectedIndices,
+      modal_nodes: (sub.nodes || []).map((node, index) => ({
+        index,
+        tag: node.tag,
+        disabled: !!node.disabled,
+        server: `${node.server}:${node.server_port}`,
+      })),
+    });
+
+    setConfirmingSub(sub);
+    setSelectedNodeIndices(initialSelected);
+    onConfirmOpen();
+  }, [logConfirmNodeDebug, onConfirmOpen]);
 
   const handleSaveSubscription = async () => {
     if (!name || !url) return;
-
     setIsSubmitting(true);
     try {
       if (editingSubscription) {
         await updateSubscription(editingSubscription.id, name, url);
       } else {
-        await addSubscription(name, url);
+        const newSub = await addSubscription(name, url);
+        if (newSub?.nodes?.length) {
+          openConfirmForSub(newSub);
+        }
       }
-      setName('');
-      setUrl('');
-      setEditingSubscription(null);
-      onSubClose();
-    } catch (error) {
-      console.error(editingSubscription ? '更新订阅失败:' : '添加订阅失败:', error);
-    } finally {
-      setIsSubmitting(false);
+      setName(''); setUrl(''); setEditingSubscription(null); onSubClose();
+    } finally { setIsSubmitting(false); }
+  };
+
+  const handleRefresh = useCallback(async (id: string) => {
+    const refreshed = await refreshSubscription(id);
+    if (refreshed?.nodes?.length) {
+      openConfirmForSub(refreshed);
     }
-  };
+  }, [openConfirmForSub, refreshSubscription]);
 
-  const handleRefresh = async (id: string) => {
-    await refreshSubscription(id);
-  };
-
-  const handleDeleteSubscription = async (id: string) => {
-    if (confirm('确定要删除这个订阅吗？')) {
+  const handleDeleteSubscription = useCallback(async (id: string) => {
+    if (confirm('确定删除？')) {
       await deleteSubscription(id);
     }
+  }, [deleteSubscription]);
+
+  const handleSetConfirmNodeSelected = useCallback((index: number, selected: boolean) => {
+    const nodeTag = confirmingSub?.nodes?.[index]?.tag || '';
+    setSelectedNodeIndices(prev => {
+      const beforeIndices = Array.from(prev).sort((a, b) => a - b);
+      const next = new Set(prev);
+      if (selected) {
+        next.add(index);
+      } else {
+        next.delete(index);
+      }
+      const afterIndices = Array.from(next).sort((a, b) => a - b);
+      logConfirmNodeDebug('切换节点勾选', {
+        subscription_id: confirmingSub?.id,
+        index,
+        selected,
+        tag: nodeTag,
+        before_count: beforeIndices.length,
+        after_count: afterIndices.length,
+        before_selected_indices: beforeIndices,
+        after_selected_indices: afterIndices,
+      });
+      return next;
+    });
+  }, [confirmingSub, logConfirmNodeDebug]);
+
+  const handleSelectAllConfirmNodes = () => {
+    if (!confirmingSub?.nodes?.length) return;
+    const selectedIndices = confirmingSub.nodes.map((_, index) => index);
+    logConfirmNodeDebug('点击全选', {
+      subscription_id: confirmingSub.id,
+      selected_count: selectedIndices.length,
+      selected_indices: selectedIndices,
+    });
+    setSelectedNodeIndices(new Set(selectedIndices));
   };
 
-  const handleToggleSubscription = async (sub: Subscription) => {
-    await toggleSubscription(sub.id, !sub.enabled);
+  const handleClearConfirmNodes = () => {
+    logConfirmNodeDebug('点击全不选', {
+      subscription_id: confirmingSub?.id,
+      before_selected_count: selectedNodeIndices.size,
+      before_selected_indices: Array.from(selectedNodeIndices).sort((a, b) => a - b),
+    });
+    setSelectedNodeIndices(new Set());
   };
 
-  // 手动节点操作
-  const handleOpenAddNode = () => {
-    setEditingNode(null);
-    setNodeForm(defaultNode);
-    setNodeEnabled(true);
-    setNodeUrl('');
-    setParseError('');
-    onNodeOpen();
+  const handleConfirmNodes = async () => {
+    if (!confirmingSub) return;
+    setConfirmSubmitting(true);
+    try {
+      const selectedIndices = Array.from(selectedNodeIndices).sort((a, b) => a - b);
+      const selectedSet = new Set(selectedIndices);
+      const unselectedIndices = (confirmingSub.nodes || [])
+        .map((_, index) => index)
+        .filter(index => !selectedSet.has(index));
+      const selectedNodes = selectedIndices.map(index => ({
+        index,
+        tag: confirmingSub.nodes?.[index]?.tag || '',
+      }));
+      const unselectedNodes = unselectedIndices.map(index => ({
+        index,
+        tag: confirmingSub.nodes?.[index]?.tag || '',
+      }));
+
+      logConfirmNodeDebug('点击确认并继续-提交前', {
+        subscription_id: confirmingSub.id,
+        subscription_name: confirmingSub.name,
+        modal_total_nodes: (confirmingSub.nodes || []).length,
+        selected_count: selectedIndices.length,
+        unselected_count: unselectedIndices.length,
+        payload: { selected_indices: selectedIndices },
+        selected_nodes: selectedNodes,
+        unselected_nodes: unselectedNodes,
+      });
+
+      const response = await subscriptionApi.confirmNodes(confirmingSub.id, selectedIndices);
+      logConfirmNodeDebug('确认接口响应', {
+        subscription_id: confirmingSub.id,
+        http_status: response.status,
+        response_data: response.data,
+      });
+
+      await fetchSubscriptions();
+      await fetchCountryGroups();
+
+      const updatedSub = useStore.getState().subscriptions.find(sub => sub.id === confirmingSub.id);
+      logConfirmNodeDebug('确认后刷新订阅', {
+        subscription_id: confirmingSub.id,
+        subscription_found: !!updatedSub,
+        node_count: updatedSub?.node_count,
+        nodes_length: updatedSub?.nodes?.length,
+        updated_nodes: (updatedSub?.nodes || []).map((node, index) => ({
+          index,
+          tag: node.tag,
+          disabled: !!node.disabled,
+          server: `${node.server}:${node.server_port}`,
+        })),
+      });
+
+      const savedCount = Number(response?.data?.node_count);
+      toast.success(`已保留 ${Number.isFinite(savedCount) ? savedCount : selectedIndices.length} 个节点`);
+      onConfirmClose();
+      setConfirmingSub(null);
+      setSelectedNodeIndices(new Set());
+    } catch (error) {
+      logConfirmNodeDebug('确认接口异常', {
+        subscription_id: confirmingSub.id,
+        error,
+      });
+      toast.error(getErrorMessage(error, '确认节点失败'));
+    } finally {
+      setConfirmSubmitting(false);
+    }
   };
 
-  const handleOpenEditNode = (mn: ManualNode) => {
-    setEditingNode(mn);
-    setNodeForm(mn.node);
-    setNodeEnabled(mn.enabled);
-    setNodeUrl('');
-    setParseError('');
-    onNodeOpen();
-  };
+  const handleOpenAddNode = () => { setEditingNode(null); setNodeForm(defaultNode); setNodeEnabled(true); setNodeUrl(''); setParseError(''); onNodeOpen(); };
+  const handleOpenEditNode = (mn: ManualNode) => { setEditingNode(mn); setNodeForm(mn.node); setNodeEnabled(mn.enabled); setNodeUrl(''); setParseError(''); onNodeOpen(); };
 
-  // 解析节点链接
   const handleParseUrl = async () => {
     if (!nodeUrl.trim()) return;
-
-    setIsParsing(true);
-    setParseError('');
-
+    setIsParsing(true); setParseError('');
     try {
       const response = await nodeApi.parse(nodeUrl.trim());
-      const parsedNode = response.data.data as Node;
-      setNodeForm(parsedNode);
-    } catch (error: any) {
-      const message = error.response?.data?.error || '解析失败，请检查链接格式';
-      setParseError(message);
-    } finally {
-      setIsParsing(false);
-    }
+      setNodeForm(response.data.data as Node);
+    } catch (error) {
+      setParseError(getErrorMessage(error, '解析失败'));
+    } finally { setIsParsing(false); }
   };
 
   const handleSaveNode = async () => {
     if (!nodeForm.tag || !nodeForm.server) return;
-
     setIsSubmitting(true);
     try {
       const country = countryOptions.find(c => c.code === nodeForm.country);
-      const nodeData = {
-        ...nodeForm,
-        country_emoji: country?.emoji || '🌐',
-      };
-
-      if (editingNode) {
-        await updateManualNode(editingNode.id, { node: nodeData, enabled: nodeEnabled });
-      } else {
-        await addManualNode({ node: nodeData, enabled: nodeEnabled });
-      }
+      const nodeData = { ...nodeForm, country_emoji: country?.emoji || '🌐' };
+      if (editingNode) await updateManualNode(editingNode.id, { node: nodeData, enabled: nodeEnabled });
+      else await addManualNode({ node: nodeData, enabled: nodeEnabled });
       onNodeClose();
-    } catch (error) {
-      console.error('保存节点失败:', error);
-    } finally {
-      setIsSubmitting(false);
-    }
+    } finally { setIsSubmitting(false); }
   };
 
-  const handleDeleteNode = async (id: string) => {
-    if (confirm('确定要删除这个节点吗？')) {
-      await deleteManualNode(id);
-    }
-  };
+  const handleDeleteNode = async (id: string) => { if (confirm('确定删除？')) await deleteManualNode(id); };
+  const handleToggleNode = async (mn: ManualNode) => { await updateManualNode(mn.id, { ...mn, enabled: !mn.enabled }); };
 
-  const handleToggleNode = async (mn: ManualNode) => {
-    await updateManualNode(mn.id, { ...mn, enabled: !mn.enabled });
-  };
-
-  // 过滤器操作
-  const handleOpenAddFilter = () => {
-    setEditingFilter(null);
-    setFilterForm(defaultFilterForm);
-    onFilterOpen();
-  };
-
+  const handleOpenAddFilter = () => { setEditingFilter(null); setFilterForm(defaultFilterForm); onFilterOpen(); };
   const handleOpenEditFilter = (filter: Filter) => {
     setEditingFilter(filter);
     setFilterForm({
       name: filter.name,
-      include: filter.include || [],
-      exclude: filter.exclude || [],
-      include_countries: filter.include_countries || [],
-      exclude_countries: filter.exclude_countries || [],
       mode: filter.mode || 'urltest',
-      urltest_config: filter.urltest_config || {
-        url: 'https://www.gstatic.com/generate_204',
-        interval: '5m',
-        tolerance: 50,
-      },
-      subscriptions: filter.subscriptions || [],
-      all_nodes: filter.all_nodes ?? true,
-      enabled: filter.enabled,
+      urltest_config: filter.urltest_config || { url: 'https://www.gstatic.com/generate_204', interval: '5m', tolerance: 50 },
+      subscriptions: filter.subscriptions || [], all_nodes: filter.all_nodes ?? true, selected_nodes: filter.selected_nodes || [], enabled: filter.enabled,
     });
     onFilterOpen();
   };
 
   const handleSaveFilter = async () => {
     if (!filterForm.name) return;
-
     setIsSubmitting(true);
     try {
-      if (editingFilter) {
-        await updateFilter(editingFilter.id, filterForm);
-      } else {
-        await addFilter(filterForm);
-      }
+      if (editingFilter) await updateFilter(editingFilter.id, filterForm);
+      else await addFilter(filterForm);
       onFilterClose();
-    } catch (error) {
-      console.error('保存过滤器失败:', error);
-    } finally {
-      setIsSubmitting(false);
-    }
+    } finally { setIsSubmitting(false); }
   };
 
-  const handleDeleteFilter = async (id: string) => {
-    if (confirm('确定要删除这个过滤器吗？')) {
-      await deleteFilter(id);
-    }
-  };
+  const handleDeleteFilter = async (id: string) => { if (confirm('确定删除？')) await deleteFilter(id); };
+  const handleToggleFilter = async (filter: Filter) => { await toggleFilter(filter.id, !filter.enabled); };
 
-  const handleToggleFilter = async (filter: Filter) => {
-    await toggleFilter(filter.id, !filter.enabled);
-  };
+  const handleViewDetail = useCallback((sub: Subscription) => {
+    setSelectedSub(sub);
+    onDetailOpen();
+  }, [onDetailOpen]);
+
+  const handleCopyUrl = useCallback((url: string) => {
+    navigator.clipboard.writeText(url);
+    toast.success('已复制到剪贴板');
+  }, []);
+
+  const confirmNodes = useMemo(() => confirmingSub?.nodes || [], [confirmingSub]);
+  const confirmNodeListHeight = useMemo(() => {
+    const totalHeight = confirmNodes.length * CONFIRM_NODE_ITEM_HEIGHT;
+    return Math.min(MAX_VIRTUAL_LIST_HEIGHT, Math.max(totalHeight, CONFIRM_NODE_ITEM_HEIGHT));
+  }, [confirmNodes.length]);
+  const confirmNodeListData = useMemo<ConfirmNodeListData>(() => ({
+    nodes: confirmNodes,
+    selectedNodeIndices,
+    onToggleNode: handleSetConfirmNodeSelected,
+  }), [confirmNodes, handleSetConfirmNodeSelected, selectedNodeIndices]);
+
+  const detailNodeItems = useMemo<DetailNodeItem[]>(() => {
+    if (!selectedSub?.nodes?.length) return [];
+    return selectedSub.nodes.map((node, index) => ({ node, index }));
+  }, [selectedSub]);
+
+  const detailCountryStats = useMemo(() => {
+    const stats = new Map<string, { key: string; emoji: string; enabled: number; total: number }>();
+    detailNodeItems.forEach(({ node }) => {
+      const country = node.country || 'OTHER';
+      const current = stats.get(country) || {
+        key: country,
+        emoji: node.country_emoji || '🌐',
+        enabled: 0,
+        total: 0,
+      };
+      current.total += 1;
+      if (!node.disabled) {
+        current.enabled += 1;
+      }
+      stats.set(country, current);
+    });
+
+    return Array.from(stats.values()).sort((left, right) => right.total - left.total);
+  }, [detailNodeItems]);
+
+  const detailNodeListHeight = useMemo(() => {
+    const totalHeight = detailNodeItems.length * DETAIL_NODE_ITEM_HEIGHT;
+    return Math.min(MAX_VIRTUAL_LIST_HEIGHT, Math.max(totalHeight, DETAIL_NODE_ITEM_HEIGHT));
+  }, [detailNodeItems.length]);
+
+  const handleToggleDetailNode = useCallback(async (nodeIndex: number) => {
+    if (!selectedSub) return;
+    try {
+      await subscriptionApi.toggleNodeDisabled(selectedSub.id, nodeIndex);
+      await fetchSubscriptions();
+    } catch {
+      toast.error('切换失败');
+    }
+  }, [fetchSubscriptions, selectedSub]);
+
+  const detailNodeListData = useMemo<DetailNodeListData>(() => ({
+    items: detailNodeItems,
+    onToggleNode: handleToggleDetailNode,
+  }), [detailNodeItems, handleToggleDetailNode]);
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-800 dark:text-white">节点管理</h1>
-        <div className="flex gap-2">
-          <Button
-            color="secondary"
-            variant="flat"
-            startContent={<FilterIcon className="w-4 h-4" />}
-            onPress={handleOpenAddFilter}
-          >
-            添加过滤器
-          </Button>
-          <Button
-            color="primary"
-            variant="flat"
-            startContent={<Plus className="w-4 h-4" />}
-            onPress={handleOpenAddNode}
-          >
-            添加节点
-          </Button>
-          <Button
-            color="primary"
-            startContent={<Plus className="w-4 h-4" />}
-            onPress={handleOpenAddSubscription}
-          >
-            添加订阅
+      {/* 顶部标签和搜索 */}
+      <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
+        <Tabs aria-label="节点管理" variant="light" color="primary" classNames={{ tabList: "gap-2 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg" }}>
+          <Tab key="all" title={<span className="text-sm px-2">全部</span>} />
+          <Tab key="subscriptions" title={<span className="text-sm px-2">订阅 {subscriptions.length}</span>} />
+          <Tab key="manual" title={<span className="text-sm px-2">手动 {manualNodes.length}</span>} />
+          <Tab key="filters" title={<span className="text-sm px-2">过滤器 {filters.length}</span>} />
+        </Tabs>
+        <div className="flex gap-2 items-center">
+          <Input
+            placeholder="搜索..."
+            value={searchQuery}
+            onValueChange={setSearchQuery}
+            startContent={<Search className="w-4 h-4 text-gray-400" />}
+            size="sm"
+            className="w-48"
+          />
+          <Button size="sm" variant="flat" startContent={<Plus className="w-4 h-4" />} onPress={handleOpenAddSubscription}>
+            订阅
           </Button>
         </div>
       </div>
 
-      <Tabs aria-label="节点管理">
-        <Tab key="subscriptions" title="订阅管理">
-          {subscriptions.length === 0 ? (
-            <Card className="mt-4">
-              <CardBody className="py-12 text-center">
-                <Globe className="w-12 h-12 mx-auto text-gray-300 mb-4" />
-                <p className="text-gray-500">暂无订阅，点击上方按钮添加</p>
-              </CardBody>
-            </Card>
-          ) : (
-            <div className="space-y-4 mt-4">
-              {subscriptions.map((sub) => (
-                <SubscriptionCard
-                  key={sub.id}
-                  subscription={sub}
-                  onRefresh={() => handleRefresh(sub.id)}
-                  onEdit={() => handleOpenEditSubscription(sub)}
-                  onDelete={() => handleDeleteSubscription(sub.id)}
-                  onToggle={() => handleToggleSubscription(sub)}
-                  loading={loading}
-                />
-              ))}
-            </div>
-          )}
-        </Tab>
+      {/* 订阅卡片网格 */}
+      <div>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold text-gray-800 dark:text-white">订阅 ({filteredSubscriptions.length})</h2>
+          <div className="flex gap-2">
+            <Button size="sm" variant="flat" startContent={<FilterIcon className="w-4 h-4" />} onPress={handleOpenAddFilter}>
+              过滤器
+            </Button>
+            <Button size="sm" variant="flat" startContent={<Plus className="w-4 h-4" />} onPress={handleOpenAddNode}>
+              节点
+            </Button>
+          </div>
+        </div>
 
-        <Tab key="manual" title="手动节点">
-          {manualNodes.length === 0 ? (
-            <Card className="mt-4">
-              <CardBody className="py-12 text-center">
-                <Server className="w-12 h-12 mx-auto text-gray-300 mb-4" />
-                <p className="text-gray-500">暂无手动节点，点击上方按钮添加</p>
-              </CardBody>
-            </Card>
-          ) : (
-            <div className="space-y-3 mt-4">
-              {manualNodes.map((mn) => (
-                <Card key={mn.id}>
-                  <CardBody className="flex flex-row items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-xl">{mn.node.country_emoji || '🌐'}</span>
-                      <div>
-                        <h3 className="font-medium">{mn.node.tag}</h3>
-                        <p className="text-sm text-gray-500">
-                          {mn.node.type} · {mn.node.server}:{mn.node.server_port}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        isIconOnly
-                        size="sm"
-                        variant="light"
-                        onPress={() => handleOpenEditNode(mn)}
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        isIconOnly
-                        size="sm"
-                        variant="light"
-                        color="danger"
-                        onPress={() => handleDeleteNode(mn.id)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                      <Switch
-                        isSelected={mn.enabled}
-                        onValueChange={() => handleToggleNode(mn)}
-                      />
-                    </div>
-                  </CardBody>
-                </Card>
-              ))}
-            </div>
-          )}
-        </Tab>
+        {filteredSubscriptions.length === 0 ? (
+          <Card><CardBody className="py-12 text-center text-gray-400">
+            <Globe className="w-12 h-12 mx-auto mb-3 opacity-50" />
+            <p>暂无订阅</p>
+          </CardBody></Card>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {filteredSubscriptions.map((sub) => (
+              <SubscriptionCard
+                key={sub.id}
+                sub={sub}
+                loading={loading}
+                testing={testingSubId === sub.id}
+                testResult={testResults[sub.id]}
+                onTestNodes={handleTestNodes}
+                onCopyUrl={handleCopyUrl}
+                onViewDetail={handleViewDetail}
+                onRefresh={handleRefresh}
+                onEdit={handleOpenEditSubscription}
+                onDelete={handleDeleteSubscription}
+              />
+            ))}
+          </div>
+        )}
+      </div>
 
-        <Tab key="filters" title="过滤器">
-          {filters.length === 0 ? (
-            <Card className="mt-4">
-              <CardBody className="py-12 text-center">
-                <FilterIcon className="w-12 h-12 mx-auto text-gray-300 mb-4" />
-                <p className="text-gray-500">暂无过滤器，点击上方按钮添加</p>
-                <p className="text-xs text-gray-400 mt-2">
-                  过滤器可以根据国家或关键字筛选节点，创建自定义节点分组
-                </p>
-              </CardBody>
-            </Card>
-          ) : (
-            <div className="space-y-3 mt-4">
-              {filters.map((filter) => (
-                <Card key={filter.id}>
-                  <CardBody className="flex flex-row items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <FilterIcon className="w-5 h-5 text-secondary" />
-                      <div>
-                        <h3 className="font-medium">{filter.name}</h3>
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {filter.include_countries?.length > 0 && (
-                            <Chip size="sm" variant="flat" color="success">
-                              {filter.include_countries.map(code =>
-                                countryOptions.find(c => c.code === code)?.emoji || code
-                              ).join(' ')} 包含
-                            </Chip>
-                          )}
-                          {filter.exclude_countries?.length > 0 && (
-                            <Chip size="sm" variant="flat" color="danger">
-                              {filter.exclude_countries.map(code =>
-                                countryOptions.find(c => c.code === code)?.emoji || code
-                              ).join(' ')} 排除
-                            </Chip>
-                          )}
-                          {filter.include?.length > 0 && (
-                            <Chip size="sm" variant="flat">
-                              关键字: {filter.include.join('|')}
-                            </Chip>
-                          )}
-                          <Chip size="sm" variant="flat" color="secondary">
-                            {filter.mode === 'urltest' ? '自动测速' : '手动选择'}
-                          </Chip>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        isIconOnly
-                        size="sm"
-                        variant="light"
-                        onPress={() => handleOpenEditFilter(filter)}
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        isIconOnly
-                        size="sm"
-                        variant="light"
-                        color="danger"
-                        onPress={() => handleDeleteFilter(filter.id)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                      <Switch
-                        isSelected={filter.enabled}
-                        onValueChange={() => handleToggleFilter(filter)}
-                      />
-                    </div>
-                  </CardBody>
-                </Card>
-              ))}
-            </div>
-          )}
-        </Tab>
-
-        <Tab key="countries" title="按国家/地区">
-          {countryGroups.length === 0 ? (
-            <Card className="mt-4">
-              <CardBody className="py-12 text-center">
-                <Globe className="w-12 h-12 mx-auto text-gray-300 mb-4" />
-                <p className="text-gray-500">暂无节点，请先添加订阅或手动添加节点</p>
-              </CardBody>
-            </Card>
-          ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mt-4">
-              {countryGroups.map((group) => (
-                <Card key={group.code} className="hover:shadow-md transition-shadow">
-                  <CardBody className="flex flex-row items-center gap-3">
-                    <span className="text-3xl">{group.emoji}</span>
+      {/* 手动节点 */}
+      {filteredManualNodes.length > 0 && (
+        <div>
+          <h2 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">手动节点 ({filteredManualNodes.length})</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {filteredManualNodes.map((mn) => (
+              <Card key={mn.id}>
+                <CardBody className="p-4">
+                  <div className="absolute top-3 left-0">
+                    <Chip size="sm" className="rounded-l-none rounded-r-full" color={mn.enabled ? 'success' : 'default'}>
+                      {mn.node.type}
+                    </Chip>
+                  </div>
+                  <div className="mt-6 mb-3 flex items-center gap-2">
+                    <span className="text-2xl">{mn.node.country_emoji || '🌐'}</span>
                     <div>
-                      <h3 className="font-semibold">{group.name}</h3>
-                      <p className="text-sm text-gray-500">{group.node_count} 个节点</p>
+                      <h3 className="font-semibold">{mn.node.tag}</h3>
+                      <p className="text-xs text-gray-500">{mn.node.server}:{mn.node.server_port}</p>
                     </div>
-                  </CardBody>
-                </Card>
-              ))}
-            </div>
-          )}
-        </Tab>
-      </Tabs>
+                  </div>
+                  <div className="flex justify-end gap-1 pt-2 border-t border-gray-100 dark:border-gray-800">
+                    <Tooltip content="编辑">
+                      <Button isIconOnly size="sm" variant="light" onPress={() => handleOpenEditNode(mn)}>
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                    </Tooltip>
+                    <Tooltip content={mn.enabled ? '禁用' : '启用'}>
+                      <Button isIconOnly size="sm" variant="light" color={mn.enabled ? 'success' : 'default'} onPress={() => handleToggleNode(mn)}>
+                        <Globe className="w-4 h-4" />
+                      </Button>
+                    </Tooltip>
+                    <Tooltip content="删除">
+                      <Button isIconOnly size="sm" variant="light" color="danger" onPress={() => handleDeleteNode(mn.id)}>
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </Tooltip>
+                  </div>
+                </CardBody>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
 
-      {/* 添加/编辑订阅弹窗 */}
+      {/* 过滤器 */}
+      {filteredFilters.length > 0 && (
+        <div>
+          <h2 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">过滤器 ({filteredFilters.length})</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {filteredFilters.map((filter) => (
+              <Card key={filter.id}>
+                <CardBody className="p-4">
+                  <div className="absolute top-3 left-0">
+                    <Chip size="sm" className="rounded-l-none rounded-r-full" color={filter.enabled ? 'secondary' : 'default'}>
+                      {filter.mode === 'urltest' ? '测速' : '选择'}
+                    </Chip>
+                  </div>
+                  <div className="mt-6 mb-3">
+                    <h3 className="font-semibold">{filter.name}</h3>
+                    <div className="flex gap-1 mt-2 flex-wrap">
+                      {filter.selected_nodes?.length ? (
+                        <Chip size="sm" variant="flat" className="h-5 text-xs" color="secondary">
+                          直选 {filter.selected_nodes.length} 个节点
+                        </Chip>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-1 pt-2 border-t border-gray-100 dark:border-gray-800">
+                    <Tooltip content="编辑">
+                      <Button isIconOnly size="sm" variant="light" onPress={() => handleOpenEditFilter(filter)}>
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                    </Tooltip>
+                    <Tooltip content={filter.enabled ? '禁用' : '启用'}>
+                      <Button isIconOnly size="sm" variant="light" color={filter.enabled ? 'secondary' : 'default'} onPress={() => handleToggleFilter(filter)}>
+                        <FilterIcon className="w-4 h-4" />
+                      </Button>
+                    </Tooltip>
+                    <Tooltip content="删除">
+                      <Button isIconOnly size="sm" variant="light" color="danger" onPress={() => handleDeleteFilter(filter.id)}>
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </Tooltip>
+                  </div>
+                </CardBody>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 按地区统计 */}
+      {countryGroups.length > 0 && (
+        <div>
+          <h2 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">按地区 ({countryGroups.length})</h2>
+          <div className="flex flex-wrap gap-3">
+            {countryGroups.map((group) => (
+              <Chip key={group.code} variant="flat" size="lg" className="px-3 py-2">
+                <span className="mr-1">{group.emoji}</span>
+                <span className="font-medium">{group.name}</span>
+                <span className="ml-2 text-gray-500">{group.node_count}</span>
+              </Chip>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 订阅弹窗 */}
       <Modal isOpen={isSubOpen} onClose={onSubClose}>
         <ModalContent>
           <ModalHeader>{editingSubscription ? '编辑订阅' : '添加订阅'}</ModalHeader>
           <ModalBody>
-            <Input
-              label="订阅名称"
-              placeholder="输入订阅名称"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-            <Input
-              label="订阅地址"
-              placeholder="输入订阅 URL"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-            />
+            <Input label="名称" placeholder="订阅名称" value={name} onChange={(e) => setName(e.target.value)} />
+            <Input label="地址" placeholder="订阅 URL" value={url} onChange={(e) => setUrl(e.target.value)} />
           </ModalBody>
           <ModalFooter>
-            <Button variant="flat" onPress={onSubClose}>
-              取消
-            </Button>
-            <Button
-              color="primary"
-              onPress={handleSaveSubscription}
-              isLoading={isSubmitting}
-              isDisabled={!name || !url}
-            >
+            <Button variant="flat" onPress={onSubClose}>取消</Button>
+            <Button color="primary" onPress={handleSaveSubscription} isLoading={isSubmitting} isDisabled={!name || !url}>
               {editingSubscription ? '保存' : '添加'}
             </Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
 
-      {/* 添加/编辑节点弹窗 */}
+      {/* 节点弹窗 */}
       <Modal isOpen={isNodeOpen} onClose={onNodeClose} size="lg">
         <ModalContent>
           <ModalHeader>{editingNode ? '编辑节点' : '添加节点'}</ModalHeader>
           <ModalBody>
-            <div className="space-y-4">
-              {/* 节点链接输入 - 仅在添加模式显示 */}
-              {!editingNode && (
-                <div className="space-y-2">
-                  <div className="flex gap-2">
-                    <Input
-                      label="节点链接"
-                      placeholder="粘贴节点链接，如 hysteria2://... vmess://... ss://... socks://..."
-                      value={nodeUrl}
-                      onChange={(e) => setNodeUrl(e.target.value)}
-                      startContent={<Link className="w-4 h-4 text-gray-400" />}
-                      className="flex-1"
-                    />
-                    <Button
-                      color="primary"
-                      variant="flat"
-                      onPress={handleParseUrl}
-                      isLoading={isParsing}
-                      isDisabled={!nodeUrl.trim()}
-                      className="self-end"
-                    >
-                      解析
-                    </Button>
-                  </div>
-                  {parseError && (
-                    <p className="text-sm text-danger">{parseError}</p>
-                  )}
-                  <p className="text-xs text-gray-400">
-                    支持的协议: ss://, vmess://, vless://, trojan://, hysteria2://, tuic://, socks://
-                  </p>
+            {!editingNode && (
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <Input placeholder="粘贴节点链接" value={nodeUrl} onChange={(e) => setNodeUrl(e.target.value)}
+                    startContent={<Link className="w-4 h-4 text-gray-400" />} className="flex-1" />
+                  <Button color="primary" variant="flat" onPress={handleParseUrl} isLoading={isParsing} isDisabled={!nodeUrl.trim()}>
+                    解析
+                  </Button>
                 </div>
-              )}
-
-              {/* 解析后显示节点信息 */}
-              {nodeForm.tag && (
-                <Card className="bg-default-100">
-                  <CardBody className="py-3">
-                    <div className="flex items-center gap-3">
-                      <span className="text-2xl">{nodeForm.country_emoji || '🌐'}</span>
-                      <div className="flex-1">
-                        <h4 className="font-medium">{nodeForm.tag}</h4>
-                        <p className="text-sm text-gray-500">
-                          {nodeForm.type} · {nodeForm.server}:{nodeForm.server_port}
-                        </p>
-                      </div>
-                      <Chip size="sm" variant="flat" color="success">已解析</Chip>
-                    </div>
-                  </CardBody>
-                </Card>
-              )}
-
-              {/* 手动编辑区域 - 可折叠 */}
-              <Accordion variant="bordered" selectionMode="multiple">
-                <AccordionItem key="manual" aria-label="手动编辑" title="手动编辑节点信息">
-                  <div className="space-y-4 pb-2">
-                    <Input
-                      label="节点名称"
-                      placeholder="例如：香港-01"
-                      value={nodeForm.tag}
-                      onChange={(e) => setNodeForm({ ...nodeForm, tag: e.target.value })}
-                    />
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <Select
-                        label="节点类型"
-                        selectedKeys={[nodeForm.type]}
-                        onChange={(e) => setNodeForm({ ...nodeForm, type: e.target.value })}
-                      >
-                        {nodeTypeOptions.map((opt) => (
-                          <SelectItem key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </SelectItem>
-                        ))}
-                      </Select>
-
-                      <Select
-                        label="国家/地区"
-                        selectedKeys={[nodeForm.country || 'HK']}
-                        onChange={(e) => {
-                          const country = countryOptions.find(c => c.code === e.target.value);
-                          setNodeForm({
-                            ...nodeForm,
-                            country: e.target.value,
-                            country_emoji: country?.emoji || '🌐',
-                          });
-                        }}
-                      >
-                        {countryOptions.map((opt) => (
-                          <SelectItem key={opt.code} value={opt.code}>
-                            {opt.emoji} {opt.name}
-                          </SelectItem>
-                        ))}
-                      </Select>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <Input
-                        label="服务器地址"
-                        placeholder="example.com"
-                        value={nodeForm.server}
-                        onChange={(e) => setNodeForm({ ...nodeForm, server: e.target.value })}
-                      />
-
-                      <Input
-                        type="number"
-                        label="端口"
-                        placeholder="443"
-                        value={String(nodeForm.server_port)}
-                        onChange={(e) => setNodeForm({ ...nodeForm, server_port: parseInt(e.target.value) || 443 })}
-                      />
-                    </div>
-                  </div>
-                </AccordionItem>
-              </Accordion>
-
-              <div className="flex items-center justify-between">
-                <span>启用节点</span>
-                <Switch
-                  isSelected={nodeEnabled}
-                  onValueChange={setNodeEnabled}
-                />
+                {parseError && <p className="text-sm text-danger">{parseError}</p>}
               </div>
+            )}
+            {nodeForm.tag && (
+              <Card className="bg-default-100">
+                <CardBody className="p-3 flex flex-row items-center gap-3">
+                  <span className="text-2xl">{nodeForm.country_emoji || '🌐'}</span>
+                  <div className="flex-1">
+                    <h4 className="font-medium">{nodeForm.tag}</h4>
+                    <p className="text-sm text-gray-500">{nodeForm.type} · {nodeForm.server}:{nodeForm.server_port}</p>
+                  </div>
+                </CardBody>
+              </Card>
+            )}
+            <Accordion variant="bordered">
+              <AccordionItem key="manual" title="手动编辑">
+                <div className="space-y-3 pb-2">
+                  <Input label="名称" value={nodeForm.tag} onChange={(e) => setNodeForm({ ...nodeForm, tag: e.target.value })} />
+                  <div className="grid grid-cols-2 gap-3">
+                    <Select label="类型" selectedKeys={[nodeForm.type]} onChange={(e) => setNodeForm({ ...nodeForm, type: e.target.value })}>
+                      {nodeTypeOptions.map((o) => <SelectItem key={o.value}>{o.label}</SelectItem>)}
+                    </Select>
+                    <Select label="地区" selectedKeys={[nodeForm.country || 'HK']} onChange={(e) => {
+                      const c = countryOptions.find(x => x.code === e.target.value);
+                      setNodeForm({ ...nodeForm, country: e.target.value, country_emoji: c?.emoji || '🌐' });
+                    }}>
+                      {countryOptions.map((o) => <SelectItem key={o.code}>{o.emoji} {o.name}</SelectItem>)}
+                    </Select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Input label="服务器" value={nodeForm.server} onChange={(e) => setNodeForm({ ...nodeForm, server: e.target.value })} />
+                    <Input type="number" label="端口" value={String(nodeForm.server_port)} onChange={(e) => setNodeForm({ ...nodeForm, server_port: parseInt(e.target.value) || 443 })} />
+                  </div>
+                </div>
+              </AccordionItem>
+            </Accordion>
+            <div className="flex justify-between items-center">
+              <span className="text-sm">启用</span>
+              <Switch isSelected={nodeEnabled} onValueChange={setNodeEnabled} />
             </div>
           </ModalBody>
           <ModalFooter>
-            <Button variant="flat" onPress={onNodeClose}>
-              取消
-            </Button>
-            <Button
-              color="primary"
-              onPress={handleSaveNode}
-              isLoading={isSubmitting}
-              isDisabled={!nodeForm.tag || !nodeForm.server}
-            >
+            <Button variant="flat" onPress={onNodeClose}>取消</Button>
+            <Button color="primary" onPress={handleSaveNode} isLoading={isSubmitting} isDisabled={!nodeForm.tag || !nodeForm.server}>
               {editingNode ? '保存' : '添加'}
             </Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
 
-      {/* 添加/编辑过滤器弹窗 */}
-      <Modal isOpen={isFilterOpen} onClose={onFilterClose} size="2xl">
+      {/* 拉取后节点确认弹窗 */}
+      <Modal
+        isOpen={isConfirmOpen}
+        onClose={() => {
+          if (confirmSubmitting) return;
+          onConfirmClose();
+        }}
+        size="2xl"
+      >
+        <ModalContent>
+          <ModalHeader>确认本次订阅节点</ModalHeader>
+          <ModalBody>
+            <p className="text-sm text-gray-500">
+              已拉取 <span className="font-medium text-foreground">{confirmingSub?.name || '订阅'}</span> 的节点，
+              请勾选要保留的节点后继续。
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button
+                size="sm"
+                variant="flat"
+                onPress={handleSelectAllConfirmNodes}
+                isDisabled={confirmSubmitting || !(confirmingSub?.nodes?.length)}
+              >
+                全选
+              </Button>
+              <Button
+                size="sm"
+                variant="flat"
+                onPress={handleClearConfirmNodes}
+                isDisabled={confirmSubmitting || selectedNodeIndices.size === 0}
+              >
+                全不选
+              </Button>
+            </div>
+            <div>
+              {confirmNodes.length > 0 ? (
+                <FixedSizeList
+                  height={confirmNodeListHeight}
+                  width="100%"
+                  itemCount={confirmNodes.length}
+                  itemSize={CONFIRM_NODE_ITEM_HEIGHT}
+                  itemData={confirmNodeListData}
+                >
+                  {ConfirmNodeRow}
+                </FixedSizeList>
+              ) : (
+                <p className="text-sm text-gray-400 py-6 text-center">暂无可选节点</p>
+              )}
+            </div>
+            <p className="text-xs text-gray-500">已选择 {selectedNodeIndices.size} / {confirmNodes.length}</p>
+          </ModalBody>
+          <ModalFooter>
+            <Button
+              variant="flat"
+              onPress={() => {
+                onConfirmClose();
+                setConfirmingSub(null);
+                setSelectedNodeIndices(new Set());
+              }}
+              isDisabled={confirmSubmitting}
+            >
+              稍后处理
+            </Button>
+            <Button color="primary" onPress={handleConfirmNodes} isLoading={confirmSubmitting}>
+              确认并继续
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* 过滤器弹窗 */}
+      <Modal isOpen={isFilterOpen} onClose={onFilterClose} size="xl">
         <ModalContent>
           <ModalHeader>{editingFilter ? '编辑过滤器' : '添加过滤器'}</ModalHeader>
           <ModalBody>
-            <div className="space-y-4">
-              {/* 过滤器名称 */}
-              <Input
-                label="过滤器名称"
-                placeholder="例如：日本高速节点、TikTok专用"
-                value={filterForm.name}
-                onChange={(e) => setFilterForm({ ...filterForm, name: e.target.value })}
-                isRequired
-              />
-              {/* 包含国家 */}
-              <Select
-                label="包含国家"
-                placeholder="选择要包含的国家（可多选）"
-                selectionMode="multiple"
-                selectedKeys={filterForm.include_countries}
-                onSelectionChange={(keys) => {
-                  setFilterForm({
-                    ...filterForm,
-                    include_countries: Array.from(keys) as string[]
-                  })
-                }}
-              >
-                {countryOptions.map((opt) => (
-                  <SelectItem key={opt.code} value={opt.code}>
-                    {opt.name}
-                  </SelectItem>
-                ))}
-              </Select>
+            <Input label="名称" placeholder="如：日本高速" value={filterForm.name} onChange={(e) => setFilterForm({ ...filterForm, name: e.target.value })} isRequired />
 
-              {/* 排除国家 */}
-              <Select
-                label="排除国家"
-                placeholder="选择要排除的国家（可多选）"
-                selectionMode="multiple"
-                selectedKeys={filterForm.exclude_countries}
-                onSelectionChange={(keys) => setFilterForm({
-                  ...filterForm,
-                  exclude_countries: Array.from(keys) as string[]
-                })}
-              >
-                {countryOptions.map((opt) => (
-                  <SelectItem key={opt.code} value={opt.code}>
-                    {opt.name}
-                  </SelectItem>
-                ))}
-              </Select>
-
-              {/* 包含关键字 */}
-              <Input
-                label="包含关键字"
-                placeholder="用 | 分隔，如：高速|IPLC|专线"
-                value={filterForm.include.join('|')}
-                onChange={(e) => setFilterForm({
-                  ...filterForm,
-                  include: e.target.value ? e.target.value.split('|').filter(Boolean) : []
-                })}
-              />
-
-              {/* 排除关键字 */}
-              <Input
-                label="排除关键字"
-                placeholder="用 | 分隔，如：过期|维护|低速"
-                value={filterForm.exclude.join('|')}
-                onChange={(e) => setFilterForm({
-                  ...filterForm,
-                  exclude: e.target.value ? e.target.value.split('|').filter(Boolean) : []
-                })}
-              />
-
-              {/* 全部节点开关 */}
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="font-medium">应用于全部节点</span>
-                  <p className="text-xs text-gray-400">启用后将匹配所有订阅的节点</p>
+            <Select
+              label="直选节点（可选，设置后优先生效）"
+              selectionMode="multiple"
+              selectedKeys={new Set(filterForm.selected_nodes || [])}
+              onSelectionChange={(keys) => setFilterForm({ ...filterForm, selected_nodes: Array.from(keys) as string[] })}
+              renderValue={(items) => (
+                <div className="flex flex-wrap gap-1">
+                  {items.slice(0, 8).map(item => (
+                    <Chip key={String(item.key)} size="sm" variant="flat" className="h-5 text-xs">{String(item.key)}</Chip>
+                  ))}
+                  {items.length > 8 ? <Chip size="sm" variant="flat" className="h-5 text-xs">+{items.length - 8}</Chip> : null}
                 </div>
-                <Switch
-                  isSelected={filterForm.all_nodes}
-                  onValueChange={(checked) => setFilterForm({ ...filterForm, all_nodes: checked })}
-                />
-              </div>
-
-              {/* 模式选择 */}
-              <Select
-                label="模式"
-                selectedKeys={[filterForm.mode]}
-                onChange={(e) => setFilterForm({ ...filterForm, mode: e.target.value })}
-              >
-                <SelectItem key="urltest" value="urltest">
-                  自动测速 (urltest)
-                </SelectItem>
-                <SelectItem key="selector" value="selector">
-                  手动选择 (selector)
-                </SelectItem>
-              </Select>
-
-              {/* urltest 配置 */}
-              {filterForm.mode === 'urltest' && (
-                <Card className="bg-default-50">
-                  <CardBody className="space-y-3">
-                    <h4 className="font-medium text-sm">测速配置</h4>
-                    <Input
-                      label="测速 URL"
-                      placeholder="https://www.gstatic.com/generate_204"
-                      value={filterForm.urltest_config?.url || ''}
-                      onChange={(e) => setFilterForm({
-                        ...filterForm,
-                        urltest_config: { ...filterForm.urltest_config!, url: e.target.value }
-                      })}
-                      size="sm"
-                    />
-                    <div className="grid grid-cols-2 gap-3">
-                      <Input
-                        label="测速间隔"
-                        placeholder="5m"
-                        value={filterForm.urltest_config?.interval || ''}
-                        onChange={(e) => setFilterForm({
-                          ...filterForm,
-                          urltest_config: { ...filterForm.urltest_config!, interval: e.target.value }
-                        })}
-                        size="sm"
-                      />
-                      <Input
-                        type="number"
-                        label="容差阈值 (ms)"
-                        placeholder="50"
-                        value={String(filterForm.urltest_config?.tolerance || 50)}
-                        onChange={(e) => setFilterForm({
-                          ...filterForm,
-                          urltest_config: { ...filterForm.urltest_config!, tolerance: parseInt(e.target.value) || 50 }
-                        })}
-                        size="sm"
-                      />
-                    </div>
-                  </CardBody>
-                </Card>
               )}
+            >
+              {selectableNodeTags.map(tag => (
+                <SelectItem key={tag} textValue={tag}>{tag}</SelectItem>
+              ))}
+            </Select>
 
-              {/* 启用开关 */}
-              <div className="flex items-center justify-between">
-                <span>启用过滤器</span>
-                <Switch
-                  isSelected={filterForm.enabled}
-                  onValueChange={(checked) => setFilterForm({ ...filterForm, enabled: checked })}
-                />
+            <Select label="模式" selectedKeys={[filterForm.mode]} onChange={(e) => setFilterForm({ ...filterForm, mode: e.target.value })}>
+              <SelectItem key="urltest">自动测速</SelectItem>
+              <SelectItem key="selector">手动选择</SelectItem>
+            </Select>
+            {filterForm.mode === 'urltest' && (
+              <div className="grid grid-cols-3 gap-3">
+                <Input label="测速URL" size="sm" value={filterForm.urltest_config?.url || ''}
+                  onChange={(e) => setFilterForm({ ...filterForm, urltest_config: { ...filterForm.urltest_config!, url: e.target.value } })} />
+                <Input label="间隔" size="sm" value={filterForm.urltest_config?.interval || ''}
+                  onChange={(e) => setFilterForm({ ...filterForm, urltest_config: { ...filterForm.urltest_config!, interval: e.target.value } })} />
+                <Input type="number" label="容差(ms)" size="sm" value={String(filterForm.urltest_config?.tolerance || 50)}
+                  onChange={(e) => setFilterForm({ ...filterForm, urltest_config: { ...filterForm.urltest_config!, tolerance: parseInt(e.target.value) || 50 } })} />
               </div>
+            )}
+            <div className="flex justify-between items-center">
+              <span className="text-sm">启用</span>
+              <Switch isSelected={filterForm.enabled} onValueChange={(v) => setFilterForm({ ...filterForm, enabled: v })} />
             </div>
           </ModalBody>
           <ModalFooter>
-            <Button variant="flat" onPress={onFilterClose}>
-              取消
-            </Button>
-            <Button
-              color="primary"
-              onPress={handleSaveFilter}
-              isLoading={isSubmitting}
-              isDisabled={!filterForm.name}
-            >
+            <Button variant="flat" onPress={onFilterClose}>取消</Button>
+            <Button color="primary" onPress={handleSaveFilter} isLoading={isSubmitting} isDisabled={!filterForm.name}>
               {editingFilter ? '保存' : '添加'}
             </Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
+
+      {/* 节点详情抽屉 */}
+      {isDetailOpen && (
+        <>
+          <div className="fixed inset-0 bg-black/50 z-40" onClick={onDetailClose} />
+          <div className="fixed top-0 right-0 h-full w-full max-w-lg bg-white dark:bg-gray-900 shadow-xl z-50 flex flex-col animate-slide-in-right">
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+              <h2 className="text-lg font-semibold">{selectedSub?.name}</h2>
+              <Button isIconOnly size="sm" variant="light" onPress={onDetailClose}>
+                <span className="text-xl">&times;</span>
+              </Button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              {selectedSub && (
+                <div className="space-y-4">
+                  {detailCountryStats.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {detailCountryStats.map((country) => (
+                        <Chip key={country.key} size="sm" variant="flat">
+                          <span className="mr-1">{country.emoji}</span>
+                          {country.key} {country.enabled}/{country.total}
+                        </Chip>
+                      ))}
+                    </div>
+                  )}
+
+                  {detailNodeItems.length > 0 ? (
+                    <FixedSizeList
+                      height={detailNodeListHeight}
+                      width="100%"
+                      itemCount={detailNodeItems.length}
+                      itemSize={DETAIL_NODE_ITEM_HEIGHT}
+                      itemData={detailNodeListData}
+                    >
+                      {DetailNodeRow}
+                    </FixedSizeList>
+                  ) : (
+                    <p className="text-sm text-gray-400 py-8 text-center">暂无节点</p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
 
-interface SubscriptionCardProps {
-  subscription: Subscription;
-  onRefresh: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-  onToggle: () => void;
-  loading: boolean;
-}
+// 节点可用性展示组件
+function NodeAvailability({ 
+  nodes, 
+  testResults,
+  onTest,
+  testing 
+}: { 
+  nodes: Node[];
+  testResults?: Record<string, { delay: number; available: boolean }>;
+  onTest?: () => void;
+  testing?: boolean;
+}) {
+  const total = nodes.length;
+  if (total === 0) return null;
 
-function SubscriptionCard({ subscription: sub, onRefresh, onEdit, onDelete, onToggle, loading }: SubscriptionCardProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
-
-  // 确保 nodes 是数组，处理 null 或 undefined 情况
-  const nodes = sub.nodes || [];
-
-  // 按国家分组节点
-  const nodesByCountry = nodes.reduce((acc, node) => {
-    const country = node.country || 'OTHER';
-    if (!acc[country]) {
-      acc[country] = {
-        emoji: node.country_emoji || '🌐',
-        nodes: [],
-      };
-    }
-    acc[country].nodes.push(node);
-    return acc;
-  }, {} as Record<string, { emoji: string; nodes: Node[] }>);
-
+  // 计算可用/不可用数量
+  const tested = testResults ? Object.keys(testResults).length : 0;
+  const available = testResults ? Object.values(testResults).filter(r => r.available).length : 0;
+  const unavailable = tested - available;
+  const percentage = tested > 0 ? (available / tested) * 100 : 0;
+  
+  // 生成进度条块
+  const blocks = Math.min(20, total);
+  const testedBlocks = tested > 0 ? Math.round((tested / total) * blocks) : 0;
+  const availableRatio = tested > 0 ? available / tested : 0;
+  
   return (
-    <Card>
-      <CardHeader
-        className="flex justify-between items-start cursor-pointer"
-        onClick={(e) => {
-          // 如果点击的是按钮区域，不触发展开
-          if ((e.target as HTMLElement).closest('button')) return;
-          setIsExpanded(!isExpanded);
-        }}
-      >
-        <div className="flex items-center gap-3">
-          <Chip
-            color={sub.enabled ? 'success' : 'default'}
-            variant="flat"
-            size="sm"
+    <div className="mb-4">
+      <div className="flex items-center gap-2 mb-2">
+        {tested > 0 ? (
+          <>
+            <Chip size="sm" variant="flat" className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+              可用: {available}
+            </Chip>
+            {unavailable > 0 && (
+              <Chip size="sm" variant="flat" className="bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400">
+                失败: {unavailable}
+              </Chip>
+            )}
+          </>
+        ) : (
+          <span className="text-xs text-gray-400">共 {total} 个节点</span>
+        )}
+        {onTest && (
+          <Button 
+            size="sm" 
+            variant="flat" 
+            className="ml-auto h-6 min-w-0 px-2"
+            onPress={onTest}
+            isLoading={testing}
           >
-            {sub.enabled ? '已启用' : '已禁用'}
+            {testing ? `${tested}/${total}` : '测速'}
+          </Button>
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        <div className="flex gap-0.5 flex-1">
+          {Array.from({ length: blocks }).map((_, i) => {
+            let colorClass = 'bg-gray-200 dark:bg-gray-700'; // 未测试
+            if (i < testedBlocks) {
+              // 根据可用比例决定颜色
+              const blockAvailableRatio = (i + 1) / testedBlocks;
+              if (blockAvailableRatio <= availableRatio) {
+                colorClass = 'bg-green-400'; // 可用
+              } else {
+                colorClass = 'bg-red-400'; // 不可用
+              }
+            }
+            return <div key={i} className={`h-2 flex-1 rounded-sm ${colorClass}`} />;
+          })}
+        </div>
+        {tested > 0 && (
+          <Chip 
+            size="sm" 
+            variant="flat" 
+            className={percentage >= 80 
+              ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+              : percentage >= 50
+              ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
+              : "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400"
+            }
+          >
+            {percentage.toFixed(1)}%
           </Chip>
-          <div>
-            <h3 className="text-lg font-semibold">{sub.name}</h3>
-            <p className="text-sm text-gray-500">
-              {sub.node_count} 个节点 · 更新于 {new Date(sub.updated_at).toLocaleString()}
-            </p>
-          </div>
-        </div>
-        <div className="flex gap-2 items-center">
-          <Button
-            size="sm"
-            variant="flat"
-            startContent={loading ? <Spinner size="sm" /> : <RefreshCw className="w-4 h-4" />}
-            onPress={onRefresh}
-            isDisabled={loading}
-          >
-            刷新
-          </Button>
-          <Button
-            size="sm"
-            variant="flat"
-            startContent={<Pencil className="w-4 h-4" />}
-            onPress={onEdit}
-          >
-            编辑
-          </Button>
-          <Button
-            size="sm"
-            variant="flat"
-            color="danger"
-            startContent={<Trash2 className="w-4 h-4" />}
-            onPress={onDelete}
-          >
-            删除
-          </Button>
-          <Button
-            isIconOnly
-            size="sm"
-            variant="light"
-            onPress={() => setIsExpanded(!isExpanded)}
-          >
-            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-          </Button>
-          <Switch
-            isSelected={sub.enabled}
-            onValueChange={onToggle}
-          />
-        </div>
-      </CardHeader>
-
-      {isExpanded && (
-        <CardBody className="pt-0">
-          {/* 流量信息 */}
-          {sub.traffic && (
-            <div className="flex gap-4 text-sm mb-4">
-              <span>已用: {formatBytes(sub.traffic.used)}</span>
-              <span>剩余: {formatBytes(sub.traffic.remaining)}</span>
-              <span>总计: {formatBytes(sub.traffic.total)}</span>
-              {sub.expire_at && (
-                <span>到期: {new Date(sub.expire_at).toLocaleDateString()}</span>
-              )}
-            </div>
-          )}
-
-          {/* 按国家分组的节点列表 */}
-          <Accordion variant="bordered" selectionMode="multiple">
-            {Object.entries(nodesByCountry).map(([country, data]) => (
-              <AccordionItem
-                key={country}
-                aria-label={country}
-                title={
-                  <div className="flex items-center gap-2">
-                    <span>{data.emoji}</span>
-                    <span>{country}</span>
-                    <Chip size="sm" variant="flat">{data.nodes.length}</Chip>
-                  </div>
-                }
-              >
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                  {data.nodes.map((node, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-800 rounded text-sm"
-                    >
-                      <span className="truncate flex-1">{node.tag}</span>
-                      <Chip size="sm" variant="flat">
-                        {node.type}
-                      </Chip>
-                    </div>
-                  ))}
-                </div>
-              </AccordionItem>
-            ))}
-          </Accordion>
-        </CardBody>
-      )}
-    </Card>
+        )}
+      </div>
+    </div>
   );
 }

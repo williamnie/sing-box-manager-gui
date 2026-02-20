@@ -5,6 +5,8 @@ import Subscriptions from './pages/Subscriptions';
 import Rules from './pages/Rules';
 import Settings from './pages/Settings';
 import Logs from './pages/Logs';
+import Connections from './pages/Connections';
+import Topology from './pages/Topology';
 import { ToastContainer } from './components/Toast';
 
 function App() {
@@ -15,9 +17,11 @@ function App() {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/subscriptions" element={<Subscriptions />} />
+          <Route path="/connections" element={<Connections />} />
           <Route path="/rules" element={<Rules />} />
           <Route path="/logs" element={<Logs />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/topology" element={<Topology />} />
         </Routes>
       </Layout>
     </BrowserRouter>

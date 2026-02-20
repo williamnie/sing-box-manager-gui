@@ -17,41 +17,45 @@ type ClashConfig struct {
 
 // ClashProxy Clash 代理配置
 type ClashProxy struct {
-	Name           string                 `yaml:"name"`
-	Type           string                 `yaml:"type"`
-	Server         string                 `yaml:"server"`
-	Port           int                    `yaml:"port"`
-	Password       string                 `yaml:"password,omitempty"`
-	Username       string                 `yaml:"username,omitempty"` // SOCKS 用户名
-	UUID           string                 `yaml:"uuid,omitempty"`
-	Cipher         string                 `yaml:"cipher,omitempty"`
-	AlterId        int                    `yaml:"alterId,omitempty"`
-	Network        string                 `yaml:"network,omitempty"`
-	TLS            bool                   `yaml:"tls,omitempty"`
-	SkipCertVerify bool                   `yaml:"skip-cert-verify,omitempty"`
-	SNI            string                 `yaml:"sni,omitempty"`
-	Servername     string                 `yaml:"servername,omitempty"` // Clash 格式的 SNI 字段
-	ALPN           []string               `yaml:"alpn,omitempty"`
-	Fingerprint    string                 `yaml:"fingerprint,omitempty"`
-	Flow           string                 `yaml:"flow,omitempty"`
-	UDP            bool                   `yaml:"udp,omitempty"`
-	Plugin         string                 `yaml:"plugin,omitempty"`
-	PluginOpts     map[string]interface{} `yaml:"plugin-opts,omitempty"`
-	WSOpts         *WSOpts                `yaml:"ws-opts,omitempty"`
-	H2Opts         *H2Opts                `yaml:"h2-opts,omitempty"`
-	HTTPOpts       *HTTPOpts              `yaml:"http-opts,omitempty"`
-	GrpcOpts       *GrpcOpts              `yaml:"grpc-opts,omitempty"`
-	RealityOpts    *RealityOpts           `yaml:"reality-opts,omitempty"`
+	Name              string                 `yaml:"name"`
+	Type              string                 `yaml:"type"`
+	Server            string                 `yaml:"server"`
+	Port              int                    `yaml:"port"`
+	Password          string                 `yaml:"password,omitempty"`
+	Username          string                 `yaml:"username,omitempty"` // SOCKS 用户名
+	UUID              string                 `yaml:"uuid,omitempty"`
+	Cipher            string                 `yaml:"cipher,omitempty"`
+	AlterId           int                    `yaml:"alterId,omitempty"`
+	Network           string                 `yaml:"network,omitempty"`
+	TLS               bool                   `yaml:"tls,omitempty"`
+	SkipCertVerify    bool                   `yaml:"skip-cert-verify,omitempty"`
+	SNI               string                 `yaml:"sni,omitempty"`
+	Servername        string                 `yaml:"servername,omitempty"` // Clash 格式的 SNI 字段
+	ALPN              []string               `yaml:"alpn,omitempty"`
+	Fingerprint       string                 `yaml:"fingerprint,omitempty"`
+	ClientFingerprint string                 `yaml:"client-fingerprint,omitempty"`
+	Flow              string                 `yaml:"flow,omitempty"`
+	UDP               bool                   `yaml:"udp,omitempty"`
+	Plugin            string                 `yaml:"plugin,omitempty"`
+	PluginOpts        map[string]interface{} `yaml:"plugin-opts,omitempty"`
+	WSOpts            *WSOpts                `yaml:"ws-opts,omitempty"`
+	H2Opts            *H2Opts                `yaml:"h2-opts,omitempty"`
+	HTTPOpts          *HTTPOpts              `yaml:"http-opts,omitempty"`
+	GrpcOpts          *GrpcOpts              `yaml:"grpc-opts,omitempty"`
+	RealityOpts       *RealityOpts           `yaml:"reality-opts,omitempty"`
 	// Hysteria2 特有
 	Auth         string `yaml:"auth,omitempty"`
 	Obfs         string `yaml:"obfs,omitempty"`
 	ObfsPassword string `yaml:"obfs-password,omitempty"`
 	Up           string `yaml:"up,omitempty"`
 	Down         string `yaml:"down,omitempty"`
+	Ports        string `yaml:"ports,omitempty"`
+	HopInterval  any    `yaml:"hop-interval,omitempty"`
 	// TUIC 特有
 	CongestionController string `yaml:"congestion-controller,omitempty"`
 	UDPRelayMode         string `yaml:"udp-relay-mode,omitempty"`
 	ReduceRTT            bool   `yaml:"reduce-rtt,omitempty"`
+	Token                string `yaml:"token,omitempty"`
 }
 
 // WSOpts WebSocket 选项
@@ -166,6 +170,12 @@ func convertClashProxy(proxy ClashProxy) (*storage.Node, error) {
 				extra["down_mbps"] = mbps
 			}
 		}
+		if serverPorts := parseServerPorts(proxy.Ports); len(serverPorts) > 0 {
+			extra["server_ports"] = serverPorts
+		}
+		if hopInterval := normalizeHopInterval(proxy.HopInterval); hopInterval != "" {
+			extra["hop_interval"] = hopInterval
+		}
 		// Hysteria2 必须启用 TLS
 		tls := map[string]interface{}{
 			"enabled": true,
@@ -188,7 +198,11 @@ func convertClashProxy(proxy ClashProxy) (*storage.Node, error) {
 	case "tuic":
 		nodeType = "tuic"
 		extra["uuid"] = proxy.UUID
-		extra["password"] = proxy.Password
+		if proxy.Password != "" {
+			extra["password"] = proxy.Password
+		} else if proxy.Token != "" {
+			extra["password"] = proxy.Token
+		}
 		if proxy.CongestionController != "" {
 			extra["congestion_control"] = proxy.CongestionController
 		}
@@ -301,10 +315,15 @@ func convertClashProxy(proxy ClashProxy) (*storage.Node, error) {
 			tls["alpn"] = proxy.ALPN
 		}
 
-		if proxy.Fingerprint != "" {
+		utlsFingerprint := strings.TrimSpace(proxy.ClientFingerprint)
+		if utlsFingerprint == "" {
+			// 兼容旧订阅：若未提供 client-fingerprint，则退回 fingerprint
+			utlsFingerprint = strings.TrimSpace(proxy.Fingerprint)
+		}
+		if utlsFingerprint != "" {
 			tls["utls"] = map[string]interface{}{
 				"enabled":     true,
-				"fingerprint": proxy.Fingerprint,
+				"fingerprint": utlsFingerprint,
 			}
 		}
 
@@ -340,8 +359,8 @@ func convertClashProxy(proxy ClashProxy) (*storage.Node, error) {
 	// 解析国家信息
 	var country, countryEmoji string
 	if countryInfo := utils.ParseCountryFromNodeName(proxy.Name); countryInfo != nil {
-		country = countryInfo.Code
-		countryEmoji = countryInfo.Emoji
+		country = utils.InternCountry(countryInfo.Code)
+		countryEmoji = utils.InternEmoji(countryInfo.Emoji)
 	}
 
 	node := &storage.Node{
@@ -368,4 +387,96 @@ func parseBandwidthClash(s string) int {
 		return v
 	}
 	return 0
+}
+
+// parseServerPorts 解析 Clash ports 字段到 sing-box server_ports
+// 支持输入如: "1000,2000-3000,5000"，转换为 ["1000","2000:3000","5000"]
+func parseServerPorts(s string) []string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+
+	parts := strings.Split(s, ",")
+	serverPorts := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		// sing-box 文档示例使用冒号表示端口范围
+		part = strings.ReplaceAll(part, "-", ":")
+		serverPorts = append(serverPorts, part)
+	}
+
+	if len(serverPorts) == 0 {
+		return nil
+	}
+
+	return serverPorts
+}
+
+// normalizeHopInterval 规范化 hop-interval 为 sing-box duration 字符串
+// 15 -> "15s"; "15" -> "15s"; "15s" -> "15s"
+func normalizeHopInterval(v any) string {
+	switch value := v.(type) {
+	case int:
+		if value > 0 {
+			return fmt.Sprintf("%ds", value)
+		}
+	case int8:
+		if value > 0 {
+			return fmt.Sprintf("%ds", value)
+		}
+	case int16:
+		if value > 0 {
+			return fmt.Sprintf("%ds", value)
+		}
+	case int32:
+		if value > 0 {
+			return fmt.Sprintf("%ds", value)
+		}
+	case int64:
+		if value > 0 {
+			return fmt.Sprintf("%ds", value)
+		}
+	case uint:
+		if value > 0 {
+			return fmt.Sprintf("%ds", value)
+		}
+	case uint8:
+		if value > 0 {
+			return fmt.Sprintf("%ds", value)
+		}
+	case uint16:
+		if value > 0 {
+			return fmt.Sprintf("%ds", value)
+		}
+	case uint32:
+		if value > 0 {
+			return fmt.Sprintf("%ds", value)
+		}
+	case uint64:
+		if value > 0 {
+			return fmt.Sprintf("%ds", value)
+		}
+	case float64:
+		if value > 0 {
+			if value == float64(int64(value)) {
+				return fmt.Sprintf("%ds", int64(value))
+			}
+			return fmt.Sprintf("%gs", value)
+		}
+	case string:
+		s := strings.TrimSpace(value)
+		if s == "" {
+			return ""
+		}
+		if _, err := strconv.Atoi(s); err == nil {
+			return s + "s"
+		}
+		return s
+	}
+
+	return ""
 }

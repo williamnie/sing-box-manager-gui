@@ -3,19 +3,23 @@ package api
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"io/fs"
 	"net/http"
 	"os"
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/shirou/gopsutil/v3/process"
 	"github.com/xiaobei/singbox-manager/internal/builder"
 	"github.com/xiaobei/singbox-manager/internal/daemon"
 	"github.com/xiaobei/singbox-manager/internal/kernel"
@@ -23,6 +27,8 @@ import (
 	"github.com/xiaobei/singbox-manager/internal/parser"
 	"github.com/xiaobei/singbox-manager/internal/service"
 	"github.com/xiaobei/singbox-manager/internal/storage"
+	"github.com/xiaobei/singbox-manager/pkg/procmon"
+	"github.com/xiaobei/singbox-manager/pkg/utils"
 	"github.com/xiaobei/singbox-manager/web"
 )
 
@@ -45,10 +51,24 @@ type Server struct {
 	systemdManager *daemon.SystemdManager
 	kernelManager  *kernel.Manager
 	scheduler      *service.Scheduler
+	healthChecker  *daemon.HealthChecker
 	router         *gin.Engine
 	sbmPath        string // sbm 可执行文件路径
 	port           int    // Web 服务端口
 	version        string // sbm 版本号
+
+	// 异步配置应用
+	configQueue    chan struct{}
+	configDone     chan struct{}
+	configPending  atomic.Bool // 标记是否有待处理的配置更新
+	lastApplyError error
+	lastApplyMu    sync.RWMutex
+
+	// 配置缓存
+	configCacheMu               sync.RWMutex
+	configCacheVersion          uint64
+	configCacheRuleSetSignature string
+	configCacheJSON             string
 }
 
 // NewServer 创建 API 服务器
@@ -60,6 +80,9 @@ func NewServer(store *storage.JSONStore, processManager *daemon.ProcessManager, 
 	// 创建内核管理器
 	kernelManager := kernel.NewManager(store.GetDataDir(), store.GetSettings)
 
+	// 创建健康检查器
+	healthChecker := daemon.NewHealthChecker(processManager)
+
 	s := &Server{
 		store:          store,
 		subService:     subService,
@@ -68,14 +91,31 @@ func NewServer(store *storage.JSONStore, processManager *daemon.ProcessManager, 
 		systemdManager: systemdManager,
 		kernelManager:  kernelManager,
 		scheduler:      service.NewScheduler(store, subService),
+		healthChecker:  healthChecker,
 		router:         gin.Default(),
 		sbmPath:        sbmPath,
 		port:           port,
 		version:        version,
+		configQueue:    make(chan struct{}, 1), // 缓冲区为 1 实现去重
+		configDone:     make(chan struct{}),
 	}
 
 	// 设置调度器的更新回调
 	s.scheduler.SetUpdateCallback(s.autoApplyConfig)
+
+	// 启动异步配置应用 worker
+	go s.configApplyWorker()
+
+	// 配置并启动健康检查器
+	settings := store.GetSettings()
+	healthChecker.Configure(
+		settings.HealthCheckEnabled,
+		settings.HealthCheckInterval,
+		settings.AutoRestart,
+		settings.ClashAPIPort,
+		settings.ClashAPISecret,
+	)
+	healthChecker.Start()
 
 	s.setupRoutes()
 	return s
@@ -113,6 +153,8 @@ func (s *Server) setupRoutes() {
 		api.DELETE("/subscriptions/:id", s.deleteSubscription)
 		api.POST("/subscriptions/:id/refresh", s.refreshSubscription)
 		api.POST("/subscriptions/refresh-all", s.refreshAllSubscriptions)
+		api.POST("/subscriptions/:id/nodes/:nodeIndex/toggle", s.toggleNodeDisabled)
+		api.POST("/subscriptions/:id/nodes/confirm", s.confirmSubscriptionNodes)
 
 		// 过滤器管理
 		api.GET("/filters", s.getFilters)
@@ -220,6 +262,14 @@ func (s *Server) Run(addr string) error {
 	return s.router.Run(addr)
 }
 
+// RunServer 返回 http.Server 用于优雅退出
+func (s *Server) RunServer(addr string) *http.Server {
+	return &http.Server{
+		Addr:    addr,
+		Handler: s.router,
+	}
+}
+
 // ==================== 订阅 API ====================
 
 func (s *Server) getSubscriptions(c *gin.Context) {
@@ -324,6 +374,104 @@ func (s *Server) refreshAllSubscriptions(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "刷新成功"})
+}
+
+// toggleNodeDisabled 切换节点禁用状态
+func (s *Server) toggleNodeDisabled(c *gin.Context) {
+	subID := c.Param("id")
+	nodeIndexStr := c.Param("nodeIndex")
+
+	nodeIndex, err := strconv.Atoi(nodeIndexStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的节点索引"})
+		return
+	}
+
+	sub := s.store.GetSubscription(subID)
+	if sub == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "订阅不存在"})
+		return
+	}
+
+	if nodeIndex < 0 || nodeIndex >= len(sub.Nodes) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "节点索引越界"})
+		return
+	}
+
+	// 切换禁用状态
+	sub.Nodes[nodeIndex].Disabled = !sub.Nodes[nodeIndex].Disabled
+
+	// 保存更新后的节点列表
+	if err := s.store.SaveSubscriptionNodes(subID, sub.Nodes); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":  "已更新",
+		"disabled": sub.Nodes[nodeIndex].Disabled,
+	})
+}
+
+// confirmSubscriptionNodes 按用户确认结果批量设置节点启用状态
+func (s *Server) confirmSubscriptionNodes(c *gin.Context) {
+	subID := c.Param("id")
+
+	var req struct {
+		SelectedIndices []int `json:"selected_indices"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	logger.Printf("[ConfirmNodes] sub=%s received selected_indices=%v (count=%d)", subID, req.SelectedIndices, len(req.SelectedIndices))
+
+	sub := s.store.GetSubscription(subID)
+	if sub == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "订阅不存在"})
+		return
+	}
+
+	// 拷贝一份，避免直接修改共享对象
+	updatedSub := *sub
+
+	selectedIndexSet := make(map[int]struct{}, len(req.SelectedIndices))
+	for _, idx := range req.SelectedIndices {
+		if idx < 0 || idx >= len(updatedSub.Nodes) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "存在无效的节点索引"})
+			return
+		}
+		selectedIndexSet[idx] = struct{}{}
+	}
+
+	selectedNodes := make([]storage.Node, 0, len(selectedIndexSet))
+	for idx, node := range updatedSub.Nodes {
+		if _, selected := selectedIndexSet[idx]; !selected {
+			continue
+		}
+		node.Disabled = false
+		selectedNodes = append(selectedNodes, node)
+	}
+
+	updatedSub.Nodes = selectedNodes
+	updatedSub.NodeCount = len(selectedNodes)
+	updatedSub.UpdatedAt = time.Now()
+
+	logger.Printf("[ConfirmNodes] sub=%s deduplicated_count=%d saved_count=%d", subID, len(selectedIndexSet), len(selectedNodes))
+
+	if err := s.store.UpdateSubscription(updatedSub); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := s.autoApplyConfig(); err != nil {
+		c.JSON(http.StatusOK, gin.H{"message": "节点确认成功，但自动应用配置失败: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "节点确认成功", "node_count": updatedSub.NodeCount})
 }
 
 // ==================== 过滤器 API ====================
@@ -537,7 +685,8 @@ func (s *Server) validateRuleSet(c *gin.Context) {
 
 	// 发送 HEAD 请求检查文件是否存在
 	client := &http.Client{
-		Timeout: 10 * time.Second,
+		Timeout:   10 * time.Second,
+		Transport: utils.GetHTTPClient().Transport,
 	}
 
 	resp, err := client.Head(url)
@@ -573,7 +722,8 @@ func (s *Server) validateRuleSet(c *gin.Context) {
 
 func (s *Server) getSettings(c *gin.Context) {
 	settings := s.store.GetSettings()
-	settings.WebPort = s.port
+	// 不再覆盖 WebPort，使用 data.json 中存储的值
+	// settings.WebPort = s.port
 	c.JSON(http.StatusOK, gin.H{"data": settings})
 }
 
@@ -605,6 +755,17 @@ func (s *Server) updateSettings(c *gin.Context) {
 
 	// 重启调度器（可能更新了定时间隔）
 	s.scheduler.Restart()
+
+	// 更新健康检查器配置
+	s.healthChecker.Stop()
+	s.healthChecker.Configure(
+		settings.HealthCheckEnabled,
+		settings.HealthCheckInterval,
+		settings.AutoRestart,
+		settings.ClashAPIPort,
+		settings.ClashAPISecret,
+	)
+	s.healthChecker.Start()
 
 	// 自动应用配置
 	if err := s.autoApplyConfig(); err != nil {
@@ -662,39 +823,167 @@ func (s *Server) applyConfig(c *gin.Context) {
 		return
 	}
 
-	// 保存配置文件
-	settings := s.store.GetSettings()
-	if err := s.saveConfigFile(s.resolvePath(settings.ConfigPath), configJSON); err != nil {
+	message, err := s.applyConfigWithStrategy(configJSON)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": message})
+}
+
+// applyConfigWithStrategy 统一执行配置保存、检查和应用策略
+func (s *Server) applyConfigWithStrategy(configJSON string) (string, error) {
+	// 读取旧配置（用于判断是否需要硬重启）
+	settings := s.store.GetSettings()
+	configPath := s.resolvePath(settings.ConfigPath)
+	oldConfig, _ := os.ReadFile(configPath)
+
+	// 保存新配置文件
+	if err := s.saveConfigFile(configPath, configJSON); err != nil {
+		return "", err
 	}
 
 	// 检查配置
 	if err := s.processManager.Check(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+		return "", err
 	}
 
-	// 重启服务
-	if s.processManager.IsRunning() {
+	if !s.processManager.IsRunning() {
+		return "配置已保存", nil
+	}
+
+	// 判断是否需要硬重启
+	if s.needHardRestart(oldConfig, []byte(configJSON)) {
+		logger.Printf("配置变更需要硬重启")
 		if err := s.processManager.Restart(); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
+			return "", err
+		}
+		return "配置已应用（硬重启）", nil
+	}
+
+	logger.Printf("配置变更使用软重载")
+	if err := s.processManager.Reload(); err != nil {
+		// 软重载失败，尝试硬重启
+		logger.Printf("软重载失败，尝试硬重启: %v", err)
+		if err := s.processManager.Restart(); err != nil {
+			return "", err
+		}
+		return "配置已应用（软重载失败，已硬重启）", nil
+	}
+
+	return "配置已应用（软重载）", nil
+}
+
+// needHardRestart 判断配置变更是否需要硬重启
+// 需要硬重启的情况：inbounds、experimental、log 配置变化
+func (s *Server) needHardRestart(oldConfig, newConfig []byte) bool {
+	if len(oldConfig) == 0 {
+		return true // 没有旧配置，需要硬重启
+	}
+
+	var oldCfg, newCfg map[string]interface{}
+	if err := json.Unmarshal(oldConfig, &oldCfg); err != nil {
+		return true
+	}
+	if err := json.Unmarshal(newConfig, &newCfg); err != nil {
+		return true
+	}
+
+	// 检查需要硬重启的字段
+	hardRestartFields := []string{"inbounds", "experimental", "log"}
+	for _, field := range hardRestartFields {
+		oldVal, _ := json.Marshal(oldCfg[field])
+		newVal, _ := json.Marshal(newCfg[field])
+		if string(oldVal) != string(newVal) {
+			logger.Printf("字段 %s 变更，需要硬重启", field)
+			return true
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "配置已应用"})
+	return false
 }
 
 func (s *Server) buildConfig() (string, error) {
+	dataVersion := s.store.GetVersion()
 	settings := s.store.GetSettings()
-	nodes := s.store.GetAllNodes()
+	nodes := s.store.GetAllNodesPtr()
 	filters := s.store.GetFilters()
 	rules := s.store.GetRules()
 	ruleGroups := s.store.GetRuleGroups()
 
-	b := builder.NewConfigBuilder(settings, nodes, filters, rules, ruleGroups)
-	return b.BuildJSON()
+	// 创建规则集服务并确保所有需要的规则集已下载
+	ruleSetService := service.NewRuleSetService(s.store, s.store.GetDataDir())
+	missing, err := ruleSetService.EnsureRuleSets(ruleGroups, rules)
+	if err != nil {
+		// 下载失败时给出详细提示
+		logger.Printf("警告: %v", err)
+		logger.Printf("  - 缺失的规则集将使用远程 URL（需要网络直连 GitHub）")
+		if settings.GithubProxy == "" {
+			logger.Printf("  - 提示: 建议配置 GitHub 代理以加速下载 (设置 -> GitHub 代理)")
+		}
+		// 继续生成配置，缺失的规则集会使用远程 URL
+	}
+
+	// 获取已存在的本地规则集
+	available := ruleSetService.GetAvailableRuleSets()
+	ruleSetSignature := buildRuleSetSignature(available)
+	if cached, ok := s.getCachedConfig(dataVersion, ruleSetSignature); ok {
+		return cached, nil
+	}
+
+	// 统计使用情况
+	localCount := len(available)
+	remoteCount := len(missing)
+	if localCount > 0 || remoteCount > 0 {
+		logger.Printf("配置生成: 本地规则集 %d 个，远程规则集 %d 个", localCount, remoteCount)
+	}
+
+	// 构建配置（本地存在的用本地，不存在的用远程）
+	b := builder.NewConfigBuilder(settings, nodes, filters, rules, ruleGroups).
+		WithLocalRuleSet(ruleSetService.GetRuleSetDir(), available)
+
+	configJSON, err := b.BuildJSON()
+	if err != nil {
+		return "", err
+	}
+
+	s.setCachedConfig(dataVersion, ruleSetSignature, configJSON)
+	return configJSON, nil
+}
+
+func buildRuleSetSignature(available map[string]bool) string {
+	if len(available) == 0 {
+		return ""
+	}
+
+	tags := make([]string, 0, len(available))
+	for tag := range available {
+		tags = append(tags, tag)
+	}
+	sort.Strings(tags)
+
+	return strings.Join(tags, ",")
+}
+
+func (s *Server) getCachedConfig(version uint64, ruleSetSignature string) (string, bool) {
+	s.configCacheMu.RLock()
+	defer s.configCacheMu.RUnlock()
+
+	if s.configCacheVersion == version && s.configCacheRuleSetSignature == ruleSetSignature && s.configCacheJSON != "" {
+		return s.configCacheJSON, true
+	}
+
+	return "", false
+}
+
+func (s *Server) setCachedConfig(version uint64, ruleSetSignature string, config string) {
+	s.configCacheMu.Lock()
+	defer s.configCacheMu.Unlock()
+
+	s.configCacheVersion = version
+	s.configCacheRuleSetSignature = ruleSetSignature
+	s.configCacheJSON = config
 }
 
 func (s *Server) saveConfigFile(path, content string) error {
@@ -709,30 +998,84 @@ func (s *Server) resolvePath(path string) string {
 	return filepath.Join(s.store.GetDataDir(), path)
 }
 
-// autoApplyConfig 自动应用配置（如果 sing-box 正在运行）
+// autoApplyConfig 自动应用配置（异步，非阻塞）
+// 返回上次异步应用的错误（如果有），便于调用者感知历史失败
 func (s *Server) autoApplyConfig() error {
+	// 获取并清除上次的错误
+	s.lastApplyMu.Lock()
+	lastErr := s.lastApplyError
+	s.lastApplyError = nil
+	s.lastApplyMu.Unlock()
+
 	settings := s.store.GetSettings()
 	if !settings.AutoApply {
-		return nil
+		return lastErr
 	}
 
+	// 设置待处理标记，确保最新变更会被应用
+	s.configPending.Store(true)
+
+	// 非阻塞发送配置应用信号
+	select {
+	case s.configQueue <- struct{}{}:
+		// 成功发送信号，唤醒 worker
+	default:
+		// 队列已满，worker 正在处理中
+		// configPending 标记会确保 worker 处理完后再次检查
+	}
+
+	return lastErr
+}
+
+// configApplyWorker 后台配置应用 worker
+func (s *Server) configApplyWorker() {
+	for {
+		select {
+		case <-s.configQueue:
+			// 循环处理，直到没有待处理的更新
+			for s.configPending.Swap(false) {
+				s.doApplyConfig()
+			}
+		case <-s.configDone:
+			// 收到停止信号
+			return
+		}
+	}
+}
+
+// doApplyConfig 实际执行配置应用
+func (s *Server) doApplyConfig() {
 	// 生成配置
 	configJSON, err := s.buildConfig()
 	if err != nil {
-		return err
+		logger.Printf("生成配置失败: %v", err)
+		s.setLastApplyError(err)
+		return
 	}
 
-	// 保存配置文件
-	if err := s.saveConfigFile(s.resolvePath(settings.ConfigPath), configJSON); err != nil {
-		return err
+	message, err := s.applyConfigWithStrategy(configJSON)
+	if err != nil {
+		logger.Printf("自动应用配置失败: %v", err)
+		s.setLastApplyError(err)
+		return
 	}
+	logger.Printf("自动应用配置完成: %s", message)
 
-	// 如果 sing-box 正在运行，则重启
-	if s.processManager.IsRunning() {
-		return s.processManager.Restart()
-	}
+	// 成功时清除错误
+	s.setLastApplyError(nil)
+}
 
-	return nil
+// setLastApplyError 设置最后一次应用错误
+func (s *Server) setLastApplyError(err error) {
+	s.lastApplyMu.Lock()
+	s.lastApplyError = err
+	s.lastApplyMu.Unlock()
+}
+
+// Shutdown 优雅关闭服务器
+func (s *Server) Shutdown() {
+	close(s.configDone)
+	s.scheduler.Stop()
 }
 
 // ==================== 服务 API ====================
@@ -1159,42 +1502,66 @@ type ProcessStats struct {
 	MemoryMB   float64 `json:"memory_mb"`
 }
 
+// cachedSystemInfo 缓存的系统信息
+type cachedSystemInfo struct {
+	data      gin.H
+	timestamp time.Time
+	mu        sync.RWMutex
+}
+
+func (c *cachedSystemInfo) get() (gin.H, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	// 缓存有效期 2 秒
+	if time.Since(c.timestamp) < 2*time.Second && c.data != nil {
+		return c.data, true
+	}
+	return nil, false
+}
+
+func (c *cachedSystemInfo) set(data gin.H) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.data = data
+	c.timestamp = time.Now()
+}
+
+var systemInfoCache = &cachedSystemInfo{}
+
 func (s *Server) getSystemInfo(c *gin.Context) {
+	// 尝试从缓存获取
+	if cached, ok := systemInfoCache.get(); ok {
+		c.JSON(http.StatusOK, gin.H{"data": cached})
+		return
+	}
+
 	result := gin.H{}
 
 	// 获取 sbm 进程信息
-	sbmPid := int32(os.Getpid())
-	if sbmProc, err := process.NewProcess(sbmPid); err == nil {
-		cpuPercent, _ := sbmProc.CPUPercent()
-		var memoryMB float64
-		if memInfo, err := sbmProc.MemoryInfo(); err == nil && memInfo != nil {
-			memoryMB = float64(memInfo.RSS) / 1024 / 1024
-		}
-
+	sbmPid := os.Getpid()
+	if stats, err := procmon.GetProcessStats(sbmPid); err == nil {
 		result["sbm"] = ProcessStats{
-			PID:        int(sbmPid),
-			CPUPercent: cpuPercent,
-			MemoryMB:   memoryMB,
+			PID:        stats.PID,
+			CPUPercent: stats.CPUPercent,
+			MemoryMB:   stats.MemoryMB,
 		}
 	}
 
 	// 获取 sing-box 进程信息
 	if s.processManager.IsRunning() {
-		singboxPid := int32(s.processManager.GetPID())
-		if singboxProc, err := process.NewProcess(singboxPid); err == nil {
-			cpuPercent, _ := singboxProc.CPUPercent()
-			var memoryMB float64
-			if memInfo, err := singboxProc.MemoryInfo(); err == nil && memInfo != nil {
-				memoryMB = float64(memInfo.RSS) / 1024 / 1024
-			}
-
+		singboxPid := s.processManager.GetPID()
+		if stats, err := procmon.GetProcessStats(singboxPid); err == nil {
 			result["singbox"] = ProcessStats{
-				PID:        int(singboxPid),
-				CPUPercent: cpuPercent,
-				MemoryMB:   memoryMB,
+				PID:        stats.PID,
+				CPUPercent: stats.CPUPercent,
+				MemoryMB:   stats.MemoryMB,
 			}
 		}
 	}
+
+	// 更新缓存
+	systemInfoCache.set(result)
 
 	c.JSON(http.StatusOK, gin.H{"data": result})
 }

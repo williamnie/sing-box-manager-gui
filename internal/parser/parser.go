@@ -57,8 +57,8 @@ func ParseURL(rawURL string) (*storage.Node, error) {
 
 	// 解析国家信息
 	if country := utils.ParseCountryFromNodeName(node.Tag); country != nil {
-		node.Country = country.Code
-		node.CountryEmoji = country.Emoji
+		node.Country = utils.InternCountry(country.Code)
+		node.CountryEmoji = utils.InternEmoji(country.Emoji)
 	}
 
 	return node, nil

@@ -1,5 +1,11 @@
 # React + TypeScript + Vite
 
+## Requirements
+
+- Node.js >= 18
+
+If you see `crypto.getRandomValues is not a function` while running `npm run dev`, upgrade Node.js first.
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:

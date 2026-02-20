@@ -3,7 +3,9 @@ package builder
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -41,22 +43,22 @@ type DNSConfig struct {
 // DNSServer DNS 服务器 (新格式，支持 FakeIP 和 hosts)
 type DNSServer struct {
 	Tag        string         `json:"tag"`
-	Type       string         `json:"type"`                   // udp, tcp, https, tls, quic, h3, fakeip, rcode, hosts
-	Server     string         `json:"server,omitempty"`       // 服务器地址
-	Detour     string         `json:"detour,omitempty"`       // 出站代理
-	Inet4Range string         `json:"inet4_range,omitempty"`  // FakeIP IPv4 地址池
-	Inet6Range string         `json:"inet6_range,omitempty"`  // FakeIP IPv6 地址池
-	Predefined map[string]any `json:"predefined,omitempty"`   // hosts 类型专用：预定义域名映射
+	Type       string         `json:"type"`                  // udp, tcp, https, tls, quic, h3, fakeip, rcode, hosts
+	Server     string         `json:"server,omitempty"`      // 服务器地址
+	Detour     string         `json:"detour,omitempty"`      // 出站代理
+	Inet4Range string         `json:"inet4_range,omitempty"` // FakeIP IPv4 地址池
+	Inet6Range string         `json:"inet6_range,omitempty"` // FakeIP IPv6 地址池
+	Predefined map[string]any `json:"predefined,omitempty"`  // hosts 类型专用：预定义域名映射
 }
 
 // DNSRule DNS 规则
 type DNSRule struct {
-	Outbound  string   `json:"outbound,omitempty"`   // 匹配出站的 DNS 查询，如 "any" 表示代理服务器地址解析
+	Outbound  string   `json:"outbound,omitempty"` // 匹配出站的 DNS 查询，如 "any" 表示代理服务器地址解析
 	RuleSet   []string `json:"rule_set,omitempty"`
 	QueryType []string `json:"query_type,omitempty"`
-	Domain    []string `json:"domain,omitempty"`     // 完整域名匹配
+	Domain    []string `json:"domain,omitempty"` // 完整域名匹配
 	Server    string   `json:"server,omitempty"`
-	Action    string   `json:"action,omitempty"`     // route, reject 等
+	Action    string   `json:"action,omitempty"` // route, reject 等
 }
 
 // NTPConfig NTP 配置
@@ -67,16 +69,16 @@ type NTPConfig struct {
 
 // Inbound 入站配置
 type Inbound struct {
-	Type           string   `json:"type"`
-	Tag            string   `json:"tag"`
-	Listen         string   `json:"listen,omitempty"`
-	ListenPort     int      `json:"listen_port,omitempty"`
-	Address        []string `json:"address,omitempty"`
-	AutoRoute      bool     `json:"auto_route,omitempty"`
-	StrictRoute    bool     `json:"strict_route,omitempty"`
-	Stack          string   `json:"stack,omitempty"`
-	Sniff          bool     `json:"sniff,omitempty"`
-	SniffOverrideDestination bool `json:"sniff_override_destination,omitempty"`
+	Type                     string   `json:"type"`
+	Tag                      string   `json:"tag"`
+	Listen                   string   `json:"listen,omitempty"`
+	ListenPort               int      `json:"listen_port,omitempty"`
+	Address                  []string `json:"address,omitempty"`
+	AutoRoute                bool     `json:"auto_route,omitempty"`
+	StrictRoute              bool     `json:"strict_route,omitempty"`
+	Stack                    string   `json:"stack,omitempty"`
+	Sniff                    bool     `json:"sniff,omitempty"`
+	SniffOverrideDestination bool     `json:"sniff_override_destination,omitempty"`
 }
 
 // Outbound 出站配置
@@ -106,22 +108,23 @@ type RuleSet struct {
 	Type           string `json:"type"`
 	Format         string `json:"format"`
 	URL            string `json:"url,omitempty"`
+	Path           string `json:"path,omitempty"` // 本地规则集路径
 	DownloadDetour string `json:"download_detour,omitempty"`
 }
 
 // ExperimentalConfig 实验性配置
 type ExperimentalConfig struct {
-	ClashAPI *ClashAPIConfig `json:"clash_api,omitempty"`
+	ClashAPI  *ClashAPIConfig  `json:"clash_api,omitempty"`
 	CacheFile *CacheFileConfig `json:"cache_file,omitempty"`
 }
 
 // ClashAPIConfig Clash API 配置
 type ClashAPIConfig struct {
-	ExternalController string `json:"external_controller,omitempty"`
-	ExternalUI         string `json:"external_ui,omitempty"`
+	ExternalController    string `json:"external_controller,omitempty"`
+	ExternalUI            string `json:"external_ui,omitempty"`
 	ExternalUIDownloadURL string `json:"external_ui_download_url,omitempty"`
-	Secret             string `json:"secret,omitempty"`
-	DefaultMode        string `json:"default_mode,omitempty"`
+	Secret                string `json:"secret,omitempty"`
+	DefaultMode           string `json:"default_mode,omitempty"`
 }
 
 // CacheFileConfig 缓存文件配置
@@ -133,15 +136,17 @@ type CacheFileConfig struct {
 
 // ConfigBuilder 配置生成器
 type ConfigBuilder struct {
-	settings   *storage.Settings
-	nodes      []storage.Node
-	filters    []storage.Filter
-	rules      []storage.Rule
-	ruleGroups []storage.RuleGroup
+	settings          *storage.Settings
+	nodes             []*storage.Node
+	filters           []storage.Filter
+	rules             []storage.Rule
+	ruleGroups        []storage.RuleGroup
+	ruleSetDir        string          // 本地规则集目录
+	availableRuleSets map[string]bool // 已存在的本地规则集
 }
 
 // NewConfigBuilder 创建配置生成器
-func NewConfigBuilder(settings *storage.Settings, nodes []storage.Node, filters []storage.Filter, rules []storage.Rule, ruleGroups []storage.RuleGroup) *ConfigBuilder {
+func NewConfigBuilder(settings *storage.Settings, nodes []*storage.Node, filters []storage.Filter, rules []storage.Rule, ruleGroups []storage.RuleGroup) *ConfigBuilder {
 	return &ConfigBuilder{
 		settings:   settings,
 		nodes:      nodes,
@@ -151,7 +156,67 @@ func NewConfigBuilder(settings *storage.Settings, nodes []storage.Node, filters 
 	}
 }
 
+// WithLocalRuleSet 设置使用本地规则集
+// dir: 本地规则集目录
+// available: 已存在的本地规则集（可选，为 nil 时会检查文件是否存在）
+func (b *ConfigBuilder) WithLocalRuleSet(dir string, available map[string]bool) *ConfigBuilder {
+	b.ruleSetDir = dir
+	b.availableRuleSets = available
+	return b
+}
+
+// buildRuleSet 构建单个规则集配置
+// 如果本地规则集存在则使用本地文件，否则回退到远程 URL
+func (b *ConfigBuilder) buildRuleSet(tag string, isGeoIP bool) RuleSet {
+	// 检查是否可以使用本地规则集
+	useLocal := false
+	if b.ruleSetDir != "" {
+		if b.availableRuleSets != nil {
+			// 使用预先检查的结果
+			useLocal = b.availableRuleSets[tag]
+		} else {
+			// 实时检查文件是否存在
+			localPath := filepath.Join(b.ruleSetDir, tag+".srs")
+			if info, err := os.Stat(localPath); err == nil && info.Size() > 0 {
+				useLocal = true
+			}
+		}
+	}
+
+	if useLocal {
+		// 使用本地规则集
+		return RuleSet{
+			Tag:    tag,
+			Type:   "local",
+			Format: "binary",
+			Path:   filepath.Join(b.ruleSetDir, tag+".srs"),
+		}
+	}
+
+	// 使用远程规则集（本地不存在时的回退方案）
+	var url string
+	if isGeoIP {
+		// geoip 规则使用不同的路径
+		name := tag[6:] // 去掉 "geoip-" 前缀
+		url = b.buildRuleSetURL(fmt.Sprintf("%s/../rule-set-geoip/geoip-%s.srs", b.settings.RuleSetBaseURL, name))
+	} else {
+		// geosite 规则
+		name := tag[8:] // 去掉 "geosite-" 前缀
+		url = b.buildRuleSetURL(fmt.Sprintf("%s/geosite-%s.srs", b.settings.RuleSetBaseURL, name))
+	}
+
+	return RuleSet{
+		Tag:            tag,
+		Type:           "remote",
+		Format:         "binary",
+		URL:            url,
+		DownloadDetour: "DIRECT",
+	}
+}
+
 // buildRuleSetURL 构建规则集 URL（支持 GitHub 代理）
+// 注意：规则集下载在 sing-box 启动时进行，此时代理尚未建立
+// 因此 download_detour 只能是 DIRECT，需要通过 GithubProxy 配置镜像站来解决被墙问题
 func (b *ConfigBuilder) buildRuleSetURL(originalURL string) string {
 	if b.settings.GithubProxy != "" {
 		return b.settings.GithubProxy + originalURL
@@ -342,11 +407,9 @@ func (b *ConfigBuilder) buildDNS() *DNSConfig {
 }
 
 // buildNTP 构建 NTP 配置
+// 不启用 NTP，系统自带时间同步服务
 func (b *ConfigBuilder) buildNTP() *NTPConfig {
-	return &NTPConfig{
-		Enabled: true,
-		Server:  "time.apple.com",
-	}
+	return nil
 }
 
 // buildInbounds 构建入站配置
@@ -359,24 +422,24 @@ func (b *ConfigBuilder) buildInbounds() []Inbound {
 
 	inbounds := []Inbound{
 		{
-			Type:       "mixed",
-			Tag:        "mixed-in",
-			Listen:     listenAddr,
-			ListenPort: b.settings.MixedPort,
-			Sniff:      true,
+			Type:                     "mixed",
+			Tag:                      "mixed-in",
+			Listen:                   listenAddr,
+			ListenPort:               b.settings.MixedPort,
+			Sniff:                    true,
 			SniffOverrideDestination: true,
 		},
 	}
 
 	if b.settings.TunEnabled {
 		inbounds = append(inbounds, Inbound{
-			Type:        "tun",
-			Tag:         "tun-in",
-			Address:     []string{"172.19.0.1/30", "fdfe:dcba:9876::1/126"},
-			AutoRoute:   true,
-			StrictRoute: true,
-			Stack:       "system",
-			Sniff:       true,
+			Type:                     "tun",
+			Tag:                      "tun-in",
+			Address:                  []string{"172.19.0.1/30", "fdfe:dcba:9876::1/126"},
+			AutoRoute:                true,
+			StrictRoute:              true,
+			Stack:                    "system",
+			Sniff:                    true,
 			SniffOverrideDestination: true,
 		})
 	}
@@ -397,8 +460,11 @@ func (b *ConfigBuilder) buildOutbounds() []Outbound {
 	nodeTagSet := make(map[string]bool)
 	countryNodes := make(map[string][]string) // 国家代码 -> 节点标签列表
 
-	// 添加所有节点
+	// 添加所有节点（跳过禁用的）
 	for _, node := range b.nodes {
+		if node.Disabled {
+			continue // 跳过禁用的节点
+		}
 		outbound := b.nodeToOutbound(node)
 		outbounds = append(outbounds, outbound)
 		tag := node.Tag
@@ -425,9 +491,12 @@ func (b *ConfigBuilder) buildOutbounds() []Outbound {
 			continue
 		}
 
-		// 根据过滤器筛选节点
+		// 根据过滤器筛选节点（跳过禁用的）
 		var filteredTags []string
 		for _, node := range b.nodes {
+			if node.Disabled {
+				continue
+			}
 			if b.matchFilter(node, filter) {
 				filteredTags = append(filteredTags, node.Tag)
 			}
@@ -496,7 +565,8 @@ func (b *ConfigBuilder) buildOutbounds() []Outbound {
 	}
 
 	// 创建自动选择组（所有节点）
-	if len(allNodeTags) > 0 {
+	hasAuto := len(allNodeTags) > 0
+	if hasAuto {
 		outbounds = append(outbounds, Outbound{
 			"tag":       "Auto",
 			"type":      "urltest",
@@ -508,15 +578,21 @@ func (b *ConfigBuilder) buildOutbounds() []Outbound {
 	}
 
 	// 创建主选择器（精简版：只包含分组，不包含单节点）
-	proxyOutbounds := []string{"Auto"}
+	var proxyOutbounds []string
+	proxyDefault := "DIRECT"
+	if hasAuto {
+		proxyOutbounds = append(proxyOutbounds, "Auto")
+		proxyDefault = "Auto"
+	}
 	proxyOutbounds = append(proxyOutbounds, countryGroupTags...) // 添加国家分组
 	proxyOutbounds = append(proxyOutbounds, filterGroupTags...)
+	proxyOutbounds = append(proxyOutbounds, "DIRECT", "REJECT")
 
 	outbounds = append(outbounds, Outbound{
 		"tag":       "Proxy",
 		"type":      "selector",
 		"outbounds": proxyOutbounds,
-		"default":   "Auto",
+		"default":   proxyDefault,
 	})
 
 	// 为启用的规则组创建选择器
@@ -533,7 +609,10 @@ func (b *ConfigBuilder) buildOutbounds() []Outbound {
 			selectorOutbounds = []string{"DIRECT", "REJECT", "Proxy"}
 		} else {
 			// 代理规则组：提供完整选项（但不包含单节点）
-			selectorOutbounds = []string{"Proxy", "Auto", "DIRECT", "REJECT"}
+			selectorOutbounds = []string{"Proxy", "DIRECT", "REJECT"}
+			if hasAuto {
+				selectorOutbounds = append([]string{"Proxy", "Auto"}, "DIRECT", "REJECT")
+			}
 			selectorOutbounds = append(selectorOutbounds, countryGroupTags...) // 添加国家分组
 			selectorOutbounds = append(selectorOutbounds, filterGroupTags...)
 		}
@@ -561,7 +640,7 @@ func (b *ConfigBuilder) buildOutbounds() []Outbound {
 }
 
 // nodeToOutbound 将节点转换为出站配置
-func (b *ConfigBuilder) nodeToOutbound(node storage.Node) Outbound {
+func (b *ConfigBuilder) nodeToOutbound(node *storage.Node) Outbound {
 	outbound := Outbound{
 		"tag":         node.Tag,
 		"type":        node.Type,
@@ -574,56 +653,84 @@ func (b *ConfigBuilder) nodeToOutbound(node storage.Node) Outbound {
 		outbound[k] = v
 	}
 
+	// 规范化 transport 配置（处理 WebSocket early data 等）
+	b.normalizeTransport(outbound)
+
 	return outbound
 }
 
+// normalizeTransport 规范化传输层配置
+// 处理各种格式不一致的情况，如 WebSocket path 中的 early data 参数
+func (b *ConfigBuilder) normalizeTransport(outbound Outbound) {
+	transportRaw, ok := outbound["transport"]
+	if !ok {
+		return
+	}
+
+	transport, ok := transportRaw.(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	// 只处理 WebSocket 传输
+	if transport["type"] != "ws" {
+		return
+	}
+
+	// 检查 path 中是否包含 early data 参数（如 /?ed=2048）
+	pathRaw, ok := transport["path"]
+	if !ok {
+		return
+	}
+
+	path, ok := pathRaw.(string)
+	if !ok {
+		return
+	}
+
+	// 解析 path 中的 query 参数
+	queryIdx := strings.Index(path, "?")
+	if queryIdx == -1 {
+		return
+	}
+
+	cleanPath := path[:queryIdx]
+	if cleanPath == "" {
+		cleanPath = "/"
+	}
+
+	queryStr := path[queryIdx+1:]
+	params, err := url.ParseQuery(queryStr)
+	if err != nil {
+		return
+	}
+
+	// 解析 ed 参数（early data）
+	if ed := params.Get("ed"); ed != "" {
+		if v, err := strconv.Atoi(ed); err == nil && v > 0 {
+			// 更新 path 为清理后的路径
+			transport["path"] = cleanPath
+			// 设置 max_early_data（如果未设置）
+			if _, exists := transport["max_early_data"]; !exists {
+				transport["max_early_data"] = v
+			}
+			// 设置 early_data_header_name（如果未设置且有 max_early_data）
+			if _, exists := transport["early_data_header_name"]; !exists {
+				transport["early_data_header_name"] = "Sec-WebSocket-Protocol"
+			}
+		}
+	}
+}
+
 // matchFilter 检查节点是否匹配过滤器
-func (b *ConfigBuilder) matchFilter(node storage.Node, filter storage.Filter) bool {
-	name := strings.ToLower(node.Tag)
-
-	// 1. 检查国家包含条件
-	if len(filter.IncludeCountries) > 0 {
-		matched := false
-		for _, country := range filter.IncludeCountries {
-			if strings.EqualFold(node.Country, country) {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			return false
+func (b *ConfigBuilder) matchFilter(node *storage.Node, filter storage.Filter) bool {
+	for _, selectedTag := range filter.SelectedNodes {
+		if node.Tag == selectedTag {
+			return true
 		}
 	}
 
-	// 2. 检查国家排除条件
-	for _, country := range filter.ExcludeCountries {
-		if strings.EqualFold(node.Country, country) {
-			return false
-		}
-	}
-
-	// 3. 检查关键字包含条件
-	if len(filter.Include) > 0 {
-		matched := false
-		for _, keyword := range filter.Include {
-			if strings.Contains(name, strings.ToLower(keyword)) {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			return false
-		}
-	}
-
-	// 4. 检查关键字排除条件
-	for _, keyword := range filter.Exclude {
-		if strings.Contains(name, strings.ToLower(keyword)) {
-			return false
-		}
-	}
-
-	return true
+	return false
 }
 
 // buildRoute 构建路由配置
@@ -651,26 +758,14 @@ func (b *ConfigBuilder) buildRoute() *RouteConfig {
 			tag := fmt.Sprintf("geosite-%s", sr)
 			if !ruleSetMap[tag] {
 				ruleSetMap[tag] = true
-				ruleSets = append(ruleSets, RuleSet{
-					Tag:            tag,
-					Type:           "remote",
-					Format:         "binary",
-					URL:            b.buildRuleSetURL(fmt.Sprintf("%s/geosite-%s.srs", b.settings.RuleSetBaseURL, sr)),
-					DownloadDetour: "DIRECT",
-				})
+				ruleSets = append(ruleSets, b.buildRuleSet(tag, false))
 			}
 		}
 		for _, ir := range rg.IPRules {
 			tag := fmt.Sprintf("geoip-%s", ir)
 			if !ruleSetMap[tag] {
 				ruleSetMap[tag] = true
-				ruleSets = append(ruleSets, RuleSet{
-					Tag:            tag,
-					Type:           "remote",
-					Format:         "binary",
-					URL:            b.buildRuleSetURL(fmt.Sprintf("%s/../rule-set-geoip/geoip-%s.srs", b.settings.RuleSetBaseURL, ir)),
-					DownloadDetour: "DIRECT",
-				})
+				ruleSets = append(ruleSets, b.buildRuleSet(tag, true))
 			}
 		}
 	}
@@ -685,13 +780,7 @@ func (b *ConfigBuilder) buildRoute() *RouteConfig {
 				tag := fmt.Sprintf("geosite-%s", v)
 				if !ruleSetMap[tag] {
 					ruleSetMap[tag] = true
-					ruleSets = append(ruleSets, RuleSet{
-						Tag:            tag,
-						Type:           "remote",
-						Format:         "binary",
-						URL:            b.buildRuleSetURL(fmt.Sprintf("%s/geosite-%s.srs", b.settings.RuleSetBaseURL, v)),
-						DownloadDetour: "DIRECT",
-					})
+					ruleSets = append(ruleSets, b.buildRuleSet(tag, false))
 				}
 			}
 		} else if rule.RuleType == "geoip" {
@@ -699,13 +788,7 @@ func (b *ConfigBuilder) buildRoute() *RouteConfig {
 				tag := fmt.Sprintf("geoip-%s", v)
 				if !ruleSetMap[tag] {
 					ruleSetMap[tag] = true
-					ruleSets = append(ruleSets, RuleSet{
-						Tag:            tag,
-						Type:           "remote",
-						Format:         "binary",
-						URL:            b.buildRuleSetURL(fmt.Sprintf("%s/../rule-set-geoip/geoip-%s.srs", b.settings.RuleSetBaseURL, v)),
-						DownloadDetour: "DIRECT",
-					})
+					ruleSets = append(ruleSets, b.buildRuleSet(tag, true))
 				}
 			}
 		}
@@ -846,13 +929,8 @@ func (b *ConfigBuilder) buildRoute() *RouteConfig {
 
 // buildExperimental 构建实验性配置
 func (b *ConfigBuilder) buildExperimental() *ExperimentalConfig {
-	// 根据局域网访问设置决定监听地址
-	listenAddr := "127.0.0.1"
-	if b.settings.AllowLAN {
-		listenAddr = "0.0.0.0"
-	}
-
-	// 只有开启局域网访问时才设置 secret
+	// Clash API 总是绑定到 0.0.0.0，因为 sbm 可能从远程访问（软路由场景）
+	// 安全性由 secret 保证
 	secret := ""
 	if b.settings.AllowLAN {
 		secret = b.settings.ClashAPISecret
@@ -860,16 +938,15 @@ func (b *ConfigBuilder) buildExperimental() *ExperimentalConfig {
 
 	return &ExperimentalConfig{
 		ClashAPI: &ClashAPIConfig{
-			ExternalController:    fmt.Sprintf("%s:%d", listenAddr, b.settings.ClashAPIPort),
-			ExternalUI:            b.settings.ClashUIPath,
-			ExternalUIDownloadURL: "https://github.com/Zephyruso/zashboard/releases/latest/download/dist.zip",
-			Secret:                secret,
-			DefaultMode:           "rule",
+			ExternalController: fmt.Sprintf("0.0.0.0:%d", b.settings.ClashAPIPort),
+			Secret:             secret,
+			DefaultMode:        "rule",
+			// 不需要 external_ui，sbm 已接管 UI
 		},
 		CacheFile: &CacheFileConfig{
 			Enabled:     true,
 			Path:        "cache.db",
-			StoreFakeIP: true, // 持久化 FakeIP 映射，避免重启后地址变化
+			StoreFakeIP: true,
 		},
 	}
 }

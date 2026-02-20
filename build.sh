@@ -50,11 +50,11 @@ build_frontend() {
 
     cd web
 
-    # 检查 npm/pnpm
-    if command -v pnpm &> /dev/null; then
-        PKG_MGR="pnpm"
-    elif command -v npm &> /dev/null; then
+    # 检查 npm/pnpm（优先使用 npm，因为 package-lock.json 存在）
+    if command -v npm &> /dev/null; then
         PKG_MGR="npm"
+    elif command -v pnpm &> /dev/null; then
+        PKG_MGR="pnpm"
     else
         error "需要安装 npm 或 pnpm"
     fi
