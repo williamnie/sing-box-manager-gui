@@ -574,7 +574,32 @@ func (b *ConfigBuilder) nodeToOutbound(node storage.Node) Outbound {
 		outbound[k] = v
 	}
 
+	if node.Type == "tuic" {
+		b.ensureTUICOutboundTLS(outbound)
+	}
+
 	return outbound
+}
+
+func (b *ConfigBuilder) ensureTUICOutboundTLS(outbound Outbound) {
+	tlsValue, exists := outbound["tls"]
+	if !exists || tlsValue == nil {
+		outbound["tls"] = map[string]interface{}{
+			"enabled": true,
+		}
+		return
+	}
+
+	switch tls := tlsValue.(type) {
+	case map[string]interface{}:
+		tls["enabled"] = true
+	case Outbound:
+		tls["enabled"] = true
+	default:
+		outbound["tls"] = map[string]interface{}{
+			"enabled": true,
+		}
+	}
 }
 
 // matchFilter 检查节点是否匹配过滤器
