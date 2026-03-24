@@ -198,6 +198,21 @@ func convertClashProxy(proxy ClashProxy) (*storage.Node, error) {
 		if proxy.ReduceRTT {
 			extra["zero_rtt_handshake"] = true
 		}
+		tls := map[string]interface{}{
+			"enabled": true,
+		}
+		if proxy.SNI != "" {
+			tls["server_name"] = proxy.SNI
+		} else if proxy.Servername != "" {
+			tls["server_name"] = proxy.Servername
+		}
+		if proxy.SkipCertVerify {
+			tls["insecure"] = true
+		}
+		if len(proxy.ALPN) > 0 {
+			tls["alpn"] = proxy.ALPN
+		}
+		extra["tls"] = tls
 
 	case "socks", "socks5":
 		nodeType = "socks"
