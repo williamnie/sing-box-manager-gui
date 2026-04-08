@@ -694,6 +694,9 @@ func (s *Server) buildConfig() (string, error) {
 	ruleGroups := s.store.GetRuleGroups()
 
 	b := builder.NewConfigBuilder(settings, nodes, filters, rules, ruleGroups)
+	if version, err := s.processManager.Version(); err == nil {
+		b = b.WithSingBoxVersion(version)
+	}
 	return b.BuildJSON()
 }
 

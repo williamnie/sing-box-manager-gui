@@ -13,9 +13,11 @@ import (
 )
 
 var (
-	version = "0.2.13"
-	dataDir string
-	port    int
+	Version   = "0.2.14-compat-test"
+	BuildTime = "unknown"
+	GitCommit = "unknown"
+	dataDir   string
+	port      int
 )
 
 func init() {
@@ -53,7 +55,7 @@ func main() {
 	}
 
 	// 打印启动信息
-	logger.Printf("singbox-manager v%s", version)
+	logger.Printf("singbox-manager v%s", Version)
 	logger.Printf("数据目录: %s", dataDir)
 	logger.Printf("Web 端口: %d", port)
 
@@ -83,7 +85,7 @@ func main() {
 	}
 
 	// 创建 API 服务器
-	server := api.NewServer(store, processManager, launchdManager, systemdManager, execPath, port, version)
+	server := api.NewServer(store, processManager, launchdManager, systemdManager, execPath, port, Version)
 
 	// 启动定时任务调度器
 	server.StartScheduler()

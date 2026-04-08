@@ -138,6 +138,7 @@ type ConfigBuilder struct {
 	filters    []storage.Filter
 	rules      []storage.Rule
 	ruleGroups []storage.RuleGroup
+	profile    CompatProfile
 }
 
 // NewConfigBuilder 创建配置生成器
@@ -148,7 +149,14 @@ func NewConfigBuilder(settings *storage.Settings, nodes []storage.Node, filters 
 		filters:    filters,
 		rules:      rules,
 		ruleGroups: ruleGroups,
+		profile:    DefaultCompatProfile(),
 	}
+}
+
+// WithSingBoxVersion 根据 sing-box version 输出应用兼容配置。
+func (b *ConfigBuilder) WithSingBoxVersion(versionOutput string) *ConfigBuilder {
+	b.profile = CompatProfileFromVersion(versionOutput)
+	return b
 }
 
 // buildRuleSetURL 构建规则集 URL（支持 GitHub 代理）
@@ -363,22 +371,28 @@ func (b *ConfigBuilder) buildInbounds() []Inbound {
 			Tag:        "mixed-in",
 			Listen:     listenAddr,
 			ListenPort: b.settings.MixedPort,
-			Sniff:      true,
-			SniffOverrideDestination: true,
 		},
 	}
 
+	if b.profile.LegacyInboundFields {
+		inbounds[0].Sniff = true
+		inbounds[0].SniffOverrideDestination = true
+	}
+
 	if b.settings.TunEnabled {
-		inbounds = append(inbounds, Inbound{
+		tunInbound := Inbound{
 			Type:        "tun",
 			Tag:         "tun-in",
 			Address:     []string{"172.19.0.1/30", "fdfe:dcba:9876::1/126"},
 			AutoRoute:   true,
 			StrictRoute: true,
 			Stack:       "system",
-			Sniff:       true,
-			SniffOverrideDestination: true,
-		})
+		}
+		if b.profile.LegacyInboundFields {
+			tunInbound.Sniff = true
+			tunInbound.SniffOverrideDestination = true
+		}
+		inbounds = append(inbounds, tunInbound)
 	}
 
 	return inbounds
