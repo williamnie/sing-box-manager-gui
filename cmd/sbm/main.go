@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	Version   = "0.2.14-compat-test"
+	Version   = "0.2.13"
 	BuildTime = "unknown"
 	GitCommit = "unknown"
 	dataDir   string
