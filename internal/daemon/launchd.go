@@ -133,10 +133,36 @@ func (lm *LaunchdManager) Install(config LaunchdConfig) error {
 		return fmt.Errorf("写入 plist 失败: %w", err)
 	}
 
-	// 加载服务
-	cmd := exec.Command("launchctl", "load", lm.plistPath)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("加载服务失败: %s", string(output))
+	// 先尝试卸载旧服务（忽略错误，可能从未加载过）
+	_ = exec.Command("launchctl", "unload", lm.plistPath).Run()
+	if uid := os.Getuid(); uid > 0 {
+		target := fmt.Sprintf("gui/%d/%s", uid, lm.label)
+		_ = exec.Command("launchctl", "bootout", target).Run()
+		// 清除持久化的 disabled 标记（unload/disable 会写入该标记，
+		// 不清除的话即使 bootstrap 成功，重启后 launchd 也会跳过该服务）
+		_ = exec.Command("launchctl", "enable", target).Run()
+	}
+
+	// 使用 launchctl bootstrap 加载服务（推荐方式，比 load 更可靠）
+	// 如果 bootstrap 失败，回退到 launchctl load
+	loaded := false
+	if uid := os.Getuid(); uid > 0 {
+		domain := fmt.Sprintf("gui/%d", uid)
+		cmd := exec.Command("launchctl", "bootstrap", domain, lm.plistPath)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			// bootstrap 失败（例如旧 macOS 不支持），回退到 load
+			if out, err2 := exec.Command("launchctl", "load", lm.plistPath).CombinedOutput(); err2 != nil {
+				return fmt.Errorf("加载服务失败: bootstrap=%s, load=%s", string(output), string(out))
+			}
+		}
+		loaded = true
+	}
+	if !loaded {
+		// uid == 0 的极端情况，直接 load
+		cmd := exec.Command("launchctl", "load", lm.plistPath)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("加载服务失败: %s", string(output))
+		}
 	}
 
 	return nil
@@ -147,9 +173,11 @@ func (lm *LaunchdManager) Uninstall() error {
 	// 先停止服务
 	lm.Stop()
 
-	// 卸载服务
-	cmd := exec.Command("launchctl", "unload", lm.plistPath)
-	cmd.Run() // 忽略错误，可能服务未加载
+	// 卸载服务（先 bootout，再 unload，忽略错误）
+	if uid := os.Getuid(); uid > 0 {
+		_ = exec.Command("launchctl", "bootout", fmt.Sprintf("gui/%d/%s", uid, lm.label)).Run()
+	}
+	_ = exec.Command("launchctl", "unload", lm.plistPath).Run()
 
 	// 删除 plist 文件
 	if err := os.Remove(lm.plistPath); err != nil && !os.IsNotExist(err) {
