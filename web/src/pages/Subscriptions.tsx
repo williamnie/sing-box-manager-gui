@@ -1,8 +1,9 @@
+import { toast } from '../components/Toast';
+import { errorMessage } from '../api';
 import { useEffect, useState } from 'react';
 import {
   Card,
   CardBody,
-  CardHeader,
   Button,
   Input,
   Modal,
@@ -17,14 +18,14 @@ import {
   Spinner,
   Tabs,
   Tab,
-  Select,
-  SelectItem,
   Switch,
 } from '@nextui-org/react';
+import { AppSelect, SelectItem } from '../components/AppSelect';
 import { Plus, RefreshCw, Trash2, Globe, Server, Pencil, Link, Filter as FilterIcon, ChevronDown, ChevronUp } from 'lucide-react';
 import { useStore } from '../store';
 import { nodeApi } from '../api';
 import type { Subscription, ManualNode, Node, Filter } from '../store';
+import ConfirmModal from '../components/ConfirmModal';
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -71,11 +72,13 @@ const defaultNode: Node = {
 };
 
 export default function Subscriptions() {
+  const [deleteTarget, setDeleteTarget] = useState<{ type: 'subscription' | 'node' | 'filter'; id: string } | null>(null);
   const {
     subscriptions,
     manualNodes,
     countryGroups,
     filters,
+    settings,
     loading,
     fetchSubscriptions,
     fetchManualNodes,
@@ -167,7 +170,7 @@ export default function Subscriptions() {
       setEditingSubscription(null);
       onSubClose();
     } catch (error) {
-      console.error(editingSubscription ? '更新订阅失败:' : '添加订阅失败:', error);
+      toast.error(errorMessage(error, '请求失败，请检查管理服务'));
     } finally {
       setIsSubmitting(false);
     }
@@ -178,9 +181,7 @@ export default function Subscriptions() {
   };
 
   const handleDeleteSubscription = async (id: string) => {
-    if (confirm('确定要删除这个订阅吗？')) {
-      await deleteSubscription(id);
-    }
+    setDeleteTarget({ type: 'subscription', id });
   };
 
   const handleToggleSubscription = async (sub: Subscription) => {
@@ -243,16 +244,14 @@ export default function Subscriptions() {
       }
       onNodeClose();
     } catch (error) {
-      console.error('保存节点失败:', error);
+      toast.error(errorMessage(error, '请求失败，请检查管理服务'));
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleDeleteNode = async (id: string) => {
-    if (confirm('确定要删除这个节点吗？')) {
-      await deleteManualNode(id);
-    }
+    setDeleteTarget({ type: 'node', id });
   };
 
   const handleToggleNode = async (mn: ManualNode) => {
@@ -299,16 +298,14 @@ export default function Subscriptions() {
       }
       onFilterClose();
     } catch (error) {
-      console.error('保存过滤器失败:', error);
+      toast.error(errorMessage(error, '请求失败，请检查管理服务'));
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleDeleteFilter = async (id: string) => {
-    if (confirm('确定要删除这个过滤器吗？')) {
-      await deleteFilter(id);
-    }
+    setDeleteTarget({ type: 'filter', id });
   };
 
   const handleToggleFilter = async (filter: Filter) => {
@@ -317,28 +314,46 @@ export default function Subscriptions() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-800 dark:text-white">节点管理</h1>
-        <div className="flex gap-2">
+      <ConfirmModal isOpen={!!deleteTarget} title="确认删除" onClose={() => setDeleteTarget(null)} onConfirm={async () => {
+        if (!deleteTarget) return;
+        if (deleteTarget.type === 'subscription') await deleteSubscription(deleteTarget.id);
+        else if (deleteTarget.type === 'node') await deleteManualNode(deleteTarget.id);
+        else await deleteFilter(deleteTarget.id);
+        setDeleteTarget(null);
+      }} confirmLabel="删除"><p>删除所选{deleteTarget?.type === 'subscription' ? '订阅及其节点' : deleteTarget?.type === 'node' ? '节点' : '过滤器'}？启用自动应用时会触发配置校验与应用。</p></ConfirmModal>
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-zinc-200/80 dark:border-white/[0.08] pb-5">
+        <div>
+          <div className="flex items-center gap-2 mb-1.5 font-mono text-[11px] text-[#ff5722] tracking-wider uppercase font-semibold">
+            <span>[ NETWORK // PROXIES & NODES ]</span>
+            <span className="text-zinc-400 dark:text-zinc-600">--</span>
+            <span className="text-zinc-500 dark:text-zinc-400">SUBSCRIPTION POOL</span>
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white font-sans flex items-center gap-3">
+            节点与订阅管理
+          </h1>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2.5 font-mono text-xs">
           <Button
-            color="secondary"
-            variant="flat"
-            startContent={<FilterIcon className="w-4 h-4" />}
+            size="sm"
+            className="rounded-[3px] font-mono text-xs border border-zinc-200 dark:border-white/[0.1] bg-white dark:bg-[#12141d] hover:bg-zinc-100 dark:hover:bg-[#181c28] text-zinc-700 dark:text-zinc-300 shadow-2xs"
+            startContent={<FilterIcon className="size-3.5 text-[#ff5722]" />}
             onPress={handleOpenAddFilter}
           >
             添加过滤器
           </Button>
           <Button
-            color="primary"
-            variant="flat"
-            startContent={<Plus className="w-4 h-4" />}
+            size="sm"
+            className="rounded-[3px] font-mono text-xs border border-zinc-200 dark:border-white/[0.1] bg-white dark:bg-[#12141d] hover:bg-zinc-100 dark:hover:bg-[#181c28] text-zinc-700 dark:text-zinc-300 shadow-2xs"
+            startContent={<Plus className="size-3.5 text-zinc-400" />}
             onPress={handleOpenAddNode}
           >
             添加节点
           </Button>
           <Button
-            color="primary"
-            startContent={<Plus className="w-4 h-4" />}
+            size="sm"
+            className="rounded-[3px] font-mono text-xs bg-[#ff5722] hover:bg-[#ff6e40] text-black font-semibold uppercase tracking-wider shadow-geek-glow"
+            startContent={<Plus className="size-3.5 fill-current" />}
             onPress={handleOpenAddSubscription}
           >
             添加订阅
@@ -346,15 +361,30 @@ export default function Subscriptions() {
         </div>
       </div>
 
-      <Tabs aria-label="节点管理">
-        <Tab key="subscriptions" title="订阅管理">
+      {settings?.imported_policy ? (
+        <div className="relative rounded-[3px] border border-cyan-200 dark:border-cyan-500/20 bg-cyan-50 dark:bg-cyan-500/5 p-3.5 text-sm text-cyan-950 dark:text-cyan-200/90 leading-6 overflow-hidden">
+          <div className="absolute left-0 top-0 bottom-0 w-1 bg-cyan-400"></div>
+          <span className="font-semibold text-cyan-800 dark:text-cyan-300 mr-2">[POLICY_INFO]</span>
+          当前保留导入配置的原有选择组及其成员。这里新增或启用的节点可通过 Managed Proxy / Managed Auto 使用，也可在规则页直接指定节点、国家组或过滤器；存在可用原生节点时才生成 Managed 组。同名节点或自定义组冲突会在配置校验时提示。
+        </div>
+      ) : null}
+
+      <Tabs
+        aria-label="节点管理"
+        variant="underlined"
+        classNames={{
+          tabList: "gap-6 border-b border-zinc-200 dark:border-white/[0.08] p-0 font-mono text-xs",
+          cursor: "w-full bg-[#ff5722]",
+          tab: "max-w-fit px-0 h-10 data-[selected=true]:font-semibold",
+          tabContent: "text-slate-600 dark:text-zinc-400 group-data-[selected=true]:text-slate-950 dark:group-data-[selected=true]:text-white font-mono text-xs",
+        }}
+      >
+        <Tab key="subscriptions" title="// 订阅管理 (SUBS)">
           {subscriptions.length === 0 ? (
-            <Card className="mt-4">
-              <CardBody className="py-12 text-center">
-                <Globe className="w-12 h-12 mx-auto text-gray-300 mb-4" />
-                <p className="text-gray-500">暂无订阅，点击上方按钮添加</p>
-              </CardBody>
-            </Card>
+            <div className="mt-4 p-12 rounded-[4px] border border-white/[0.08] bg-[#0b0c10] text-center font-mono">
+              <Globe className="size-10 mx-auto text-zinc-700 mb-3 stroke-[1.5]" />
+              <p className="text-zinc-500 text-xs">暂无订阅源，点击右上角「添加订阅」配置</p>
+            </div>
           ) : (
             <div className="space-y-4 mt-4">
               {subscriptions.map((sub) => (
@@ -372,154 +402,153 @@ export default function Subscriptions() {
           )}
         </Tab>
 
-        <Tab key="manual" title="手动节点">
+        <Tab key="manual" title="// 手动节点 (CUSTOM)">
           {manualNodes.length === 0 ? (
-            <Card className="mt-4">
-              <CardBody className="py-12 text-center">
-                <Server className="w-12 h-12 mx-auto text-gray-300 mb-4" />
-                <p className="text-gray-500">暂无手动节点，点击上方按钮添加</p>
-              </CardBody>
-            </Card>
+            <div className="mt-4 p-12 rounded-[4px] border border-white/[0.08] bg-[#0b0c10] text-center font-mono">
+              <Server className="size-10 mx-auto text-zinc-700 mb-3 stroke-[1.5]" />
+              <p className="text-zinc-500 text-xs">暂无手动节点，可从单个分享链接解析添加</p>
+            </div>
           ) : (
             <div className="space-y-3 mt-4">
               {manualNodes.map((mn) => (
-                <Card key={mn.id}>
-                  <CardBody className="flex flex-row items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-xl">{mn.node.country_emoji || '🌐'}</span>
-                      <div>
-                        <h3 className="font-medium">{mn.node.tag}</h3>
-                        <p className="text-sm text-gray-500">
-                          {mn.node.type} · {mn.node.server}:{mn.node.server_port}
-                        </p>
+                <div
+                  key={mn.id}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-[3px] border border-white/[0.08] bg-[#0b0c10] hover:border-white/[0.15] transition-all gap-3"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl p-1 bg-white/[0.04] rounded-[2px]">{mn.node.country_emoji || '🌐'}</span>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-mono text-sm font-semibold text-white">{mn.node.tag}</h3>
+                        <span className="font-mono text-[10px] px-1.5 py-0.5 rounded-[2px] bg-[#ff5722]/10 border border-[#ff5722]/30 text-[#ff5722] uppercase">
+                          {mn.node.type}
+                        </span>
                       </div>
+                      <p className="text-xs font-mono text-zinc-500 mt-0.5">
+                        {mn.node.server}:{mn.node.server_port}
+                      </p>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        isIconOnly
-                        size="sm"
-                        variant="light"
-                        onPress={() => handleOpenEditNode(mn)}
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        isIconOnly
-                        size="sm"
-                        variant="light"
-                        color="danger"
-                        onPress={() => handleDeleteNode(mn.id)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                      <Switch
-                        isSelected={mn.enabled}
-                        onValueChange={() => handleToggleNode(mn)}
-                      />
-                    </div>
-                  </CardBody>
-                </Card>
+                  </div>
+                  <div className="flex items-center gap-2 self-end sm:self-auto font-mono">
+                    <Button
+                      isIconOnly
+                      size="sm"
+                      className="size-7 rounded-[2px] bg-white/[0.05] border border-white/[0.08] text-zinc-300 hover:text-white"
+                      onPress={() => handleOpenEditNode(mn)}
+                    >
+                      <Pencil className="size-3.5" />
+                    </Button>
+                    <Button
+                      isIconOnly
+                      size="sm"
+                      className="size-7 rounded-[2px] bg-rose-500/10 border border-rose-500/20 text-rose-700 dark:text-rose-400 hover:bg-rose-500/20"
+                      onPress={() => handleDeleteNode(mn.id)}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                    <Switch
+                      size="sm"
+                      isSelected={mn.enabled}
+                      onValueChange={() => handleToggleNode(mn)}
+                      classNames={{ wrapper: "group-data-[selected=true]:bg-[#ff5722]" }}
+                    />
+                  </div>
+                </div>
               ))}
             </div>
           )}
         </Tab>
 
-        <Tab key="filters" title="过滤器">
+        <Tab key="filters" title="// 过滤器 (FILTERS)">
           {filters.length === 0 ? (
-            <Card className="mt-4">
-              <CardBody className="py-12 text-center">
-                <FilterIcon className="w-12 h-12 mx-auto text-gray-300 mb-4" />
-                <p className="text-gray-500">暂无过滤器，点击上方按钮添加</p>
-                <p className="text-xs text-gray-400 mt-2">
-                  过滤器可以根据国家或关键字筛选节点，创建自定义节点分组
-                </p>
-              </CardBody>
-            </Card>
+            <div className="mt-4 p-12 rounded-[4px] border border-white/[0.08] bg-[#0b0c10] text-center font-mono">
+              <FilterIcon className="size-10 mx-auto text-zinc-700 mb-3 stroke-[1.5]" />
+              <p className="text-zinc-500 text-xs">暂无过滤器，可根据国家或关键字筛选节点创建动态组</p>
+            </div>
           ) : (
             <div className="space-y-3 mt-4">
               {filters.map((filter) => (
-                <Card key={filter.id}>
-                  <CardBody className="flex flex-row items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <FilterIcon className="w-5 h-5 text-secondary" />
-                      <div>
-                        <h3 className="font-medium">{filter.name}</h3>
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {filter.include_countries?.length > 0 && (
-                            <Chip size="sm" variant="flat" color="success">
-                              {filter.include_countries.map(code =>
-                                countryOptions.find(c => c.code === code)?.emoji || code
-                              ).join(' ')} 包含
-                            </Chip>
-                          )}
-                          {filter.exclude_countries?.length > 0 && (
-                            <Chip size="sm" variant="flat" color="danger">
-                              {filter.exclude_countries.map(code =>
-                                countryOptions.find(c => c.code === code)?.emoji || code
-                              ).join(' ')} 排除
-                            </Chip>
-                          )}
-                          {filter.include?.length > 0 && (
-                            <Chip size="sm" variant="flat">
-                              关键字: {filter.include.join('|')}
-                            </Chip>
-                          )}
-                          <Chip size="sm" variant="flat" color="secondary">
-                            {filter.mode === 'urltest' ? '自动测速' : '手动选择'}
-                          </Chip>
-                        </div>
+                <div
+                  key={filter.id}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-[3px] border border-white/[0.08] bg-[#0b0c10] hover:border-white/[0.15] transition-all gap-3"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="size-8 rounded-[2px] bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
+                      <FilterIcon className="size-4" />
+                    </div>
+                    <div>
+                      <h3 className="font-mono text-sm font-semibold text-white">{filter.name}</h3>
+                      <div className="flex flex-wrap gap-1.5 mt-1 font-mono text-[10px]">
+                        {filter.include_countries?.length > 0 && (
+                          <span className="px-1.5 py-0.5 rounded-[2px] bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+                            + {filter.include_countries.map(code => countryOptions.find(c => c.code === code)?.emoji || code).join(' ')}
+                          </span>
+                        )}
+                        {filter.exclude_countries?.length > 0 && (
+                          <span className="px-1.5 py-0.5 rounded-[2px] bg-rose-500/10 border border-rose-500/30 text-rose-400">
+                            - {filter.exclude_countries.map(code => countryOptions.find(c => c.code === code)?.emoji || code).join(' ')}
+                          </span>
+                        )}
+                        {filter.include?.length > 0 && (
+                          <span className="px-1.5 py-0.5 rounded-[2px] bg-white/[0.05] border border-white/[0.08] text-zinc-300">
+                            MATCH: {filter.include.join('|')}
+                          </span>
+                        )}
+                        <span className="px-1.5 py-0.5 rounded-[2px] bg-[#ff5722]/10 border border-[#ff5722]/30 text-[#ff5722] uppercase">
+                          MODE: {filter.mode === 'urltest' ? 'URLTEST (自动测速)' : 'SELECTOR (手动)'}
+                        </span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        isIconOnly
-                        size="sm"
-                        variant="light"
-                        onPress={() => handleOpenEditFilter(filter)}
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        isIconOnly
-                        size="sm"
-                        variant="light"
-                        color="danger"
-                        onPress={() => handleDeleteFilter(filter.id)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                      <Switch
-                        isSelected={filter.enabled}
-                        onValueChange={() => handleToggleFilter(filter)}
-                      />
-                    </div>
-                  </CardBody>
-                </Card>
+                  </div>
+                  <div className="flex items-center gap-2 self-end sm:self-auto font-mono">
+                    <Button
+                      isIconOnly
+                      size="sm"
+                      className="size-7 rounded-[2px] bg-white/[0.05] border border-white/[0.08] text-zinc-300 hover:text-white"
+                      onPress={() => handleOpenEditFilter(filter)}
+                    >
+                      <Pencil className="size-3.5" />
+                    </Button>
+                    <Button
+                      isIconOnly
+                      size="sm"
+                      className="size-7 rounded-[2px] bg-rose-500/10 border border-rose-500/20 text-rose-700 dark:text-rose-400 hover:bg-rose-500/20"
+                      onPress={() => handleDeleteFilter(filter.id)}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                    <Switch
+                      size="sm"
+                      isSelected={filter.enabled}
+                      onValueChange={() => handleToggleFilter(filter)}
+                      classNames={{ wrapper: "group-data-[selected=true]:bg-[#ff5722]" }}
+                    />
+                  </div>
+                </div>
               ))}
             </div>
           )}
         </Tab>
 
-        <Tab key="countries" title="按国家/地区">
+        <Tab key="countries" title="// 按国家分组 (GEO)">
           {countryGroups.length === 0 ? (
-            <Card className="mt-4">
-              <CardBody className="py-12 text-center">
-                <Globe className="w-12 h-12 mx-auto text-gray-300 mb-4" />
-                <p className="text-gray-500">暂无节点，请先添加订阅或手动添加节点</p>
-              </CardBody>
-            </Card>
+            <div className="mt-4 p-12 rounded-[4px] border border-white/[0.08] bg-[#0b0c10] text-center font-mono">
+              <Globe className="size-10 mx-auto text-zinc-700 mb-3 stroke-[1.5]" />
+              <p className="text-zinc-500 text-xs">暂无可用节点，请先添加订阅</p>
+            </div>
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mt-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mt-4 font-mono">
               {countryGroups.map((group) => (
-                <Card key={group.code} className="hover:shadow-md transition-shadow">
-                  <CardBody className="flex flex-row items-center gap-3">
-                    <span className="text-3xl">{group.emoji}</span>
-                    <div>
-                      <h3 className="font-semibold">{group.name}</h3>
-                      <p className="text-sm text-gray-500">{group.node_count} 个节点</p>
-                    </div>
-                  </CardBody>
-                </Card>
+                <div
+                  key={group.code}
+                  className="p-3.5 rounded-[3px] border border-white/[0.08] bg-[#0b0c10] hover:border-white/[0.15] transition-all flex items-center gap-3"
+                >
+                  <span className="text-3xl p-1 bg-white/[0.03] rounded-[2px]">{group.emoji}</span>
+                  <div>
+                    <h3 className="font-sans font-semibold text-sm text-white">{group.name}</h3>
+                    <p className="font-mono text-xs text-zinc-500">{group.node_count} 节点</p>
+                  </div>
+                </div>
               ))}
             </div>
           )}
@@ -628,7 +657,7 @@ export default function Subscriptions() {
                     />
 
                     <div className="grid grid-cols-2 gap-4">
-                      <Select
+                      <AppSelect
                         label="节点类型"
                         selectedKeys={[nodeForm.type]}
                         onChange={(e) => setNodeForm({ ...nodeForm, type: e.target.value })}
@@ -638,9 +667,9 @@ export default function Subscriptions() {
                             {opt.label}
                           </SelectItem>
                         ))}
-                      </Select>
+                      </AppSelect>
 
-                      <Select
+                      <AppSelect
                         label="国家/地区"
                         selectedKeys={[nodeForm.country || 'HK']}
                         onChange={(e) => {
@@ -657,7 +686,7 @@ export default function Subscriptions() {
                             {opt.emoji} {opt.name}
                           </SelectItem>
                         ))}
-                      </Select>
+                      </AppSelect>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
@@ -720,7 +749,7 @@ export default function Subscriptions() {
                 isRequired
               />
               {/* 包含国家 */}
-              <Select
+              <AppSelect
                 label="包含国家"
                 placeholder="选择要包含的国家（可多选）"
                 selectionMode="multiple"
@@ -737,10 +766,10 @@ export default function Subscriptions() {
                     {opt.name}
                   </SelectItem>
                 ))}
-              </Select>
+              </AppSelect>
 
               {/* 排除国家 */}
-              <Select
+              <AppSelect
                 label="排除国家"
                 placeholder="选择要排除的国家（可多选）"
                 selectionMode="multiple"
@@ -755,7 +784,7 @@ export default function Subscriptions() {
                     {opt.name}
                   </SelectItem>
                 ))}
-              </Select>
+              </AppSelect>
 
               {/* 包含关键字 */}
               <Input
@@ -792,7 +821,7 @@ export default function Subscriptions() {
               </div>
 
               {/* 模式选择 */}
-              <Select
+              <AppSelect
                 label="模式"
                 selectedKeys={[filterForm.mode]}
                 onChange={(e) => setFilterForm({ ...filterForm, mode: e.target.value })}
@@ -803,7 +832,7 @@ export default function Subscriptions() {
                 <SelectItem key="selector" value="selector">
                   手动选择 (selector)
                 </SelectItem>
-              </Select>
+              </AppSelect>
 
               {/* urltest 配置 */}
               {filterForm.mode === 'urltest' && (
@@ -905,53 +934,60 @@ function SubscriptionCard({ subscription: sub, onRefresh, onEdit, onDelete, onTo
   }, {} as Record<string, { emoji: string; nodes: Node[] }>);
 
   return (
-    <Card>
-      <CardHeader
-        className="flex justify-between items-start cursor-pointer"
+    <div className="rounded-[4px] border border-white/[0.08] bg-[#0b0c10] hover:border-white/[0.15] transition-all overflow-hidden shadow-sm">
+      <div
+        className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer select-none bg-white dark:bg-[#0e1017]/60"
         onClick={(e) => {
-          // 如果点击的是按钮区域，不触发展开
-          if ((e.target as HTMLElement).closest('button')) return;
+          if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('.interactive-control')) return;
           setIsExpanded(!isExpanded);
         }}
       >
         <div className="flex items-center gap-3">
-          <Chip
-            color={sub.enabled ? 'success' : 'default'}
-            variant="flat"
-            size="sm"
-          >
-            {sub.enabled ? '已启用' : '已禁用'}
-          </Chip>
+          <span className="relative flex size-2.5">
+            {sub.enabled ? (
+              <>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full size-2.5 bg-emerald-500"></span>
+              </>
+            ) : (
+              <span className="relative inline-flex rounded-full size-2.5 bg-zinc-600"></span>
+            )}
+          </span>
           <div>
-            <h3 className="text-lg font-semibold">{sub.name}</h3>
-            <p className="text-sm text-gray-500">
-              {sub.node_count} 个节点 · 更新于 {new Date(sub.updated_at).toLocaleString()}
+            <div className="flex items-center gap-2">
+              <h3 className="font-mono text-base font-bold text-white tracking-tight">{sub.name}</h3>
+              <span className="font-mono text-[10px] px-1.5 py-0.5 rounded-[2px] bg-white/[0.05] border border-white/[0.08] text-zinc-400">
+                {sub.node_count} 节点
+              </span>
+            </div>
+            <p className="font-mono text-xs text-slate-600 dark:text-zinc-400 mt-1">
+              UPDATED: {new Date(sub.updated_at).toLocaleString()}
             </p>
           </div>
         </div>
-        <div className="flex gap-2 items-center">
+
+        <div className="flex items-center gap-2 font-mono text-xs">
           <Button
             size="sm"
-            variant="flat"
-            startContent={loading ? <Spinner size="sm" /> : <RefreshCw className="w-4 h-4" />}
+            className="rounded-[2px] font-mono text-xs bg-white/[0.04] border border-white/[0.08] text-zinc-300 hover:text-white"
+            startContent={loading ? <Spinner size="sm" /> : <RefreshCw className="size-3 text-[#ff5722]" />}
             onPress={onRefresh}
             isDisabled={loading}
           >
-            刷新
+            拉取
           </Button>
           <Button
             size="sm"
-            variant="flat"
-            startContent={<Pencil className="w-4 h-4" />}
+            className="rounded-[2px] font-mono text-xs bg-white/[0.04] border border-white/[0.08] text-zinc-300 hover:text-white"
+            startContent={<Pencil className="size-3 text-zinc-400" />}
             onPress={onEdit}
           >
             编辑
           </Button>
           <Button
             size="sm"
-            variant="flat"
-            color="danger"
-            startContent={<Trash2 className="w-4 h-4" />}
+            className="rounded-[2px] font-mono text-xs bg-rose-500/10 border border-rose-500/20 text-rose-700 dark:text-rose-400 hover:bg-rose-500/20"
+            startContent={<Trash2 className="size-3" />}
             onPress={onDelete}
           >
             删除
@@ -959,64 +995,65 @@ function SubscriptionCard({ subscription: sub, onRefresh, onEdit, onDelete, onTo
           <Button
             isIconOnly
             size="sm"
-            variant="light"
+            className="size-7 rounded-[2px] bg-white/[0.04] border border-white/[0.08] text-zinc-400 hover:text-white"
             onPress={() => setIsExpanded(!isExpanded)}
           >
-            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            {isExpanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
           </Button>
-          <Switch
-            isSelected={sub.enabled}
-            onValueChange={onToggle}
-          />
+          <div className="interactive-control ml-1">
+            <Switch
+              size="sm"
+              isSelected={sub.enabled}
+              onValueChange={onToggle}
+              classNames={{ wrapper: "group-data-[selected=true]:bg-[#ff5722]" }}
+            />
+          </div>
         </div>
-      </CardHeader>
+      </div>
 
       {isExpanded && (
-        <CardBody className="pt-0">
-          {/* 流量信息 */}
+        <div className="p-4 border-t border-white/[0.06] bg-[#07080c] space-y-4">
+          {/* 流量信息条 */}
           {sub.traffic && (
-            <div className="flex gap-4 text-sm mb-4">
-              <span>已用: {formatBytes(sub.traffic.used)}</span>
-              <span>剩余: {formatBytes(sub.traffic.remaining)}</span>
-              <span>总计: {formatBytes(sub.traffic.total)}</span>
+            <div className="p-3 rounded-[3px] bg-black/40 border border-white/[0.06] font-mono text-xs flex flex-wrap items-center justify-between gap-3 text-zinc-400">
+              <div className="flex items-center gap-4">
+                <span>USED: <b className="text-zinc-200">{formatBytes(sub.traffic.used)}</b></span>
+                <span>LEFT: <b className="text-emerald-700 dark:text-emerald-400">{formatBytes(sub.traffic.remaining)}</b></span>
+                <span>TOTAL: <b className="text-zinc-200">{formatBytes(sub.traffic.total)}</b></span>
+              </div>
               {sub.expire_at && (
-                <span>到期: {new Date(sub.expire_at).toLocaleDateString()}</span>
+                <span className="text-zinc-500">EXPIRES: {new Date(sub.expire_at).toLocaleDateString()}</span>
               )}
             </div>
           )}
 
-          {/* 按国家分组的节点列表 */}
-          <Accordion variant="bordered" selectionMode="multiple">
+          {/* 按国家分组的节点网格 */}
+          <div className="space-y-3">
             {Object.entries(nodesByCountry).map(([country, data]) => (
-              <AccordionItem
-                key={country}
-                aria-label={country}
-                title={
-                  <div className="flex items-center gap-2">
-                    <span>{data.emoji}</span>
-                    <span>{country}</span>
-                    <Chip size="sm" variant="flat">{data.nodes.length}</Chip>
-                  </div>
-                }
-              >
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+              <div key={country} className="space-y-2">
+                <div className="flex items-center gap-2 font-mono text-xs text-zinc-400 border-b border-white/[0.04] pb-1">
+                  <span>{data.emoji}</span>
+                  <span className="font-semibold text-zinc-200">{country}</span>
+                  <span className="text-[11px] text-slate-600 dark:text-zinc-400">({data.nodes.length} 个节点)</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                   {data.nodes.map((node, idx) => (
                     <div
                       key={idx}
-                      className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-800 rounded text-sm"
+                      className="p-2.5 rounded-[2px] bg-[#0c0d12] border border-white/[0.05] hover:border-white/[0.12] transition-colors flex items-center justify-between gap-2 text-xs font-mono"
                     >
-                      <span className="truncate flex-1">{node.tag}</span>
-                      <Chip size="sm" variant="flat">
+                      <span className="truncate text-zinc-300 font-medium">{node.tag}</span>
+                      <span className="text-[9px] px-1 py-0.5 rounded-[2px] bg-white/[0.06] text-zinc-400 uppercase tracking-wider shrink-0">
                         {node.type}
-                      </Chip>
+                      </span>
                     </div>
                   ))}
                 </div>
-              </AccordionItem>
+              </div>
             ))}
-          </Accordion>
-        </CardBody>
+          </div>
+        </div>
       )}
-    </Card>
+    </div>
   );
 }

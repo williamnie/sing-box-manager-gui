@@ -1,3 +1,4 @@
+import { errorMessage } from '../api';
 import { create } from 'zustand';
 import { subscriptionApi, filterApi, ruleApi, ruleGroupApi, settingsApi, serviceApi, nodeApi, manualNodeApi, monitorApi } from '../api';
 import { toast } from '../components/Toast';
@@ -63,6 +64,12 @@ export interface Filter {
 }
 
 export interface Rule {
+  source_cidrs?: string[];
+  network?: ('tcp' | 'udp')[];
+  protocol?: string[];
+  ports?: number[];
+  port_ranges?: string[];
+  process_names?: string[];
   id: string;
   name: string;
   rule_type: string;
@@ -89,6 +96,12 @@ export interface HostEntry {
 }
 
 export interface Settings {
+  deployment_role?: 'desktop' | 'gateway';
+  gateway?: GatewayConfig;
+  device_groups?: DeviceGroup[];
+  devices?: Device[];
+  split_dns?: SplitDNSRule[];
+  imported_policy?: Record<string, unknown>;
   singbox_path: string;
   config_path: string;
   mixed_port: number;
@@ -106,6 +119,30 @@ export interface Settings {
   auto_apply: boolean;           // 配置变更后自动应用
   subscription_interval: number; // 订阅自动更新间隔 (分钟)
   github_proxy: string;          // GitHub 代理地址
+}
+
+export type DevicePolicy = 'split' | 'direct' | 'strict' | 'bypass';
+export interface DeviceGroup { id: string; name: string; policy: DevicePolicy; outbound?: string }
+export interface Device { id: string; name: string; addresses: string[]; group_id: string; enabled: boolean }
+export interface SplitDNSRule { id: string; domain_suffix: string[]; source_cidrs: string[]; server: 'direct' | 'proxy' }
+export interface DHCPReservation { mac: string; address: string; hostname: string; group: string; gateway: string }
+export interface GatewayConfig {
+  access_mode?: 'full' | 'dns';
+  fakeip_range?: string;
+  dns_source?: 'client' | 'router';
+  static_route_confirmed?: boolean;
+  bypass_cidrs?: string[];
+  enabled: boolean;
+  lan_interface: string;
+  lan_cidrs: string[];
+  lan_address: string;
+  upstream_gateway: string;
+  uplink_interface: string;
+  ipv6_mode: 'disabled' | 'proxy';
+  nat: boolean;
+  exclude_cidrs: string[];
+  dns_port: number;
+  dhcp: { enabled: boolean; range_start: string; range_end: string; lease_time: string; reservations: DHCPReservation[] };
 }
 
 export interface ServiceStatus {
@@ -198,7 +235,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await subscriptionApi.getAll();
       set({ subscriptions: res.data.data || [] });
     } catch (error) {
-      console.error('获取订阅失败:', error);
+      toast.error(errorMessage(error, '请求失败，请检查管理服务'));
     }
   },
 
@@ -207,7 +244,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await manualNodeApi.getAll();
       set({ manualNodes: res.data.data || [] });
     } catch (error) {
-      console.error('获取手动节点失败:', error);
+      toast.error(errorMessage(error, '请求失败，请检查管理服务'));
     }
   },
 
@@ -216,7 +253,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await nodeApi.getCountries();
       set({ countryGroups: res.data.data || [] });
     } catch (error) {
-      console.error('获取国家分组失败:', error);
+      toast.error(errorMessage(error, '请求失败，请检查管理服务'));
     }
   },
 
@@ -225,7 +262,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await filterApi.getAll();
       set({ filters: res.data.data || [] });
     } catch (error) {
-      console.error('获取过滤器失败:', error);
+      toast.error(errorMessage(error, '请求失败，请检查管理服务'));
     }
   },
 
@@ -234,7 +271,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await ruleApi.getAll();
       set({ rules: res.data.data || [] });
     } catch (error) {
-      console.error('获取规则失败:', error);
+      toast.error(errorMessage(error, '请求失败，请检查管理服务'));
     }
   },
 
@@ -243,7 +280,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await ruleGroupApi.getAll();
       set({ ruleGroups: res.data.data || [] });
     } catch (error) {
-      console.error('获取规则组失败:', error);
+      toast.error(errorMessage(error, '请求失败，请检查管理服务'));
     }
   },
 
@@ -252,7 +289,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await settingsApi.get();
       set({ settings: res.data.data });
     } catch (error) {
-      console.error('获取设置失败:', error);
+      toast.error(errorMessage(error, '请求失败，请检查管理服务'));
     }
   },
 
@@ -261,7 +298,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await serviceApi.status();
       set({ serviceStatus: res.data.data });
     } catch (error) {
-      console.error('获取服务状态失败:', error);
+      toast.error(errorMessage(error, '请求失败，请检查管理服务'));
     }
   },
 
@@ -270,7 +307,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await monitorApi.system();
       set({ systemInfo: res.data.data });
     } catch (error) {
-      console.error('获取系统信息失败:', error);
+      toast.error(errorMessage(error, '请求失败，请检查管理服务'));
     }
   },
 
@@ -308,7 +345,7 @@ export const useStore = create<AppState>((set, get) => ({
       await get().fetchSubscriptions();
       toast.success('订阅已删除');
     } catch (error: any) {
-      console.error('删除订阅失败:', error);
+
       toast.error(error.response?.data?.error || '删除订阅失败');
     }
   },
@@ -326,7 +363,7 @@ export const useStore = create<AppState>((set, get) => ({
         toast.success('订阅刷新成功');
       }
     } catch (error: any) {
-      console.error('刷新订阅失败:', error);
+
       toast.error(error.response?.data?.error || '刷新订阅失败');
     } finally {
       set({ loading: false });
@@ -346,7 +383,7 @@ export const useStore = create<AppState>((set, get) => ({
           toast.success(`订阅已${enabled ? '启用' : '禁用'}`);
         }
       } catch (error: any) {
-        console.error('切换订阅状态失败:', error);
+
         toast.error(error.response?.data?.error || '切换订阅状态失败');
       }
     }
@@ -363,7 +400,7 @@ export const useStore = create<AppState>((set, get) => ({
         toast.success('节点添加成功');
       }
     } catch (error: any) {
-      console.error('添加手动节点失败:', error);
+
       toast.error(error.response?.data?.error || '添加节点失败');
       throw error;
     }
@@ -380,7 +417,7 @@ export const useStore = create<AppState>((set, get) => ({
         toast.success('节点更新成功');
       }
     } catch (error: any) {
-      console.error('更新手动节点失败:', error);
+
       toast.error(error.response?.data?.error || '更新节点失败');
       throw error;
     }
@@ -397,23 +434,15 @@ export const useStore = create<AppState>((set, get) => ({
         toast.success('节点已删除');
       }
     } catch (error: any) {
-      console.error('删除手动节点失败:', error);
+
       toast.error(error.response?.data?.error || '删除节点失败');
     }
   },
 
   updateSettings: async (settings: Settings) => {
-    try {
-      const res = await settingsApi.update(settings);
-      // 使用后端返回的数据（可能包含自动生成的密钥）
-      if (res.data.data) {
-        set({ settings: res.data.data });
-      } else {
-        set({ settings });
-      }
-    } catch (error) {
-      console.error('更新设置失败:', error);
-    }
+    const res = await settingsApi.update(settings);
+    // 使用后端返回的数据（可能包含自动生成的密钥）。错误由调用方展示。
+    set({ settings: res.data.data || settings });
   },
 
   toggleRuleGroup: async (id: string, enabled: boolean) => {
@@ -428,7 +457,7 @@ export const useStore = create<AppState>((set, get) => ({
           toast.success(`规则组已${enabled ? '启用' : '禁用'}`);
         }
       } catch (error: any) {
-        console.error('更新规则组失败:', error);
+
         toast.error(error.response?.data?.error || '更新规则组失败');
       }
     }
@@ -446,7 +475,7 @@ export const useStore = create<AppState>((set, get) => ({
           toast.success('规则组出站已更新');
         }
       } catch (error: any) {
-        console.error('更新规则组出站失败:', error);
+
         toast.error(error.response?.data?.error || '更新规则组出站失败');
       }
     }
@@ -462,7 +491,7 @@ export const useStore = create<AppState>((set, get) => ({
         toast.success('规则添加成功');
       }
     } catch (error: any) {
-      console.error('添加规则失败:', error);
+
       toast.error(error.response?.data?.error || '添加规则失败');
       throw error;
     }
@@ -478,7 +507,7 @@ export const useStore = create<AppState>((set, get) => ({
         toast.success('规则更新成功');
       }
     } catch (error: any) {
-      console.error('更新规则失败:', error);
+
       toast.error(error.response?.data?.error || '更新规则失败');
       throw error;
     }
@@ -494,7 +523,7 @@ export const useStore = create<AppState>((set, get) => ({
         toast.success('规则已删除');
       }
     } catch (error: any) {
-      console.error('删除规则失败:', error);
+
       toast.error(error.response?.data?.error || '删除规则失败');
     }
   },
@@ -505,7 +534,7 @@ export const useStore = create<AppState>((set, get) => ({
       await get().fetchFilters();
       toast.success('过滤器添加成功');
     } catch (error: any) {
-      console.error('添加过滤器失败:', error);
+
       toast.error(error.response?.data?.error || '添加过滤器失败');
       throw error;
     }
@@ -517,7 +546,7 @@ export const useStore = create<AppState>((set, get) => ({
       await get().fetchFilters();
       toast.success('过滤器更新成功');
     } catch (error: any) {
-      console.error('更新过滤器失败:', error);
+
       toast.error(error.response?.data?.error || '更新过滤器失败');
       throw error;
     }
@@ -529,7 +558,7 @@ export const useStore = create<AppState>((set, get) => ({
       await get().fetchFilters();
       toast.success('过滤器已删除');
     } catch (error: any) {
-      console.error('删除过滤器失败:', error);
+
       toast.error(error.response?.data?.error || '删除过滤器失败');
       throw error;
     }
@@ -543,7 +572,7 @@ export const useStore = create<AppState>((set, get) => ({
         await get().fetchFilters();
         toast.success(`过滤器已${enabled ? '启用' : '禁用'}`);
       } catch (error: any) {
-        console.error('切换过滤器状态失败:', error);
+
         toast.error(error.response?.data?.error || '切换过滤器状态失败');
       }
     }

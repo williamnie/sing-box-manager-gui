@@ -36,34 +36,37 @@ export const toast = {
 // Toast 单个项目组件
 const ToastItem = ({ toast, onClose }: { toast: Toast; onClose: () => void }) => {
   const icons = {
-    success: <CheckCircle className="w-5 h-5 text-green-500" />,
-    error: <XCircle className="w-5 h-5 text-red-500" />,
-    info: <AlertCircle className="w-5 h-5 text-blue-500" />,
+    success: <CheckCircle className="size-4 text-emerald-400 shrink-0" />,
+    error: <XCircle className="size-4 text-rose-400 shrink-0" />,
+    info: <AlertCircle className="size-4 text-[#ff5722] shrink-0" />,
   };
 
-  const bgColors = {
-    success: 'bg-green-50 border-green-200',
-    error: 'bg-red-50 border-red-200',
-    info: 'bg-blue-50 border-blue-200',
+  const borderStyles = {
+    success: 'border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.15)]',
+    error: 'border-rose-500/40 shadow-[0_0_15px_rgba(244,63,94,0.15)]',
+    info: 'border-[#ff5722]/40 shadow-[0_0_15px_rgba(255,87,34,0.15)]',
   };
 
-  const textColors = {
-    success: 'text-green-800',
-    error: 'text-red-800',
-    info: 'text-blue-800',
+  const tagLabels = {
+    success: 'OK',
+    error: 'ERR',
+    info: 'SYS',
   };
 
   return (
     <div
-      className={`flex items-center gap-3 px-4 py-3 rounded-lg border shadow-lg ${bgColors[toast.type]} animate-slide-in`}
+      className={`flex items-center gap-3 px-3.5 py-2.5 rounded-[3px] border bg-[#0d0e14]/95 backdrop-blur-md ${borderStyles[toast.type]} animate-slide-in select-none`}
     >
       {icons[toast.type]}
-      <span className={`flex-1 text-sm ${textColors[toast.type]}`}>{toast.message}</span>
+      <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-500 font-bold">
+        [{tagLabels[toast.type]}]
+      </span>
+      <span className="flex-1 text-xs text-zinc-200 font-medium whitespace-pre-wrap">{toast.message}</span>
       <button
         onClick={onClose}
-        className="p-1 hover:bg-black/10 rounded transition-colors"
+        className="p-1 hover:bg-white/[0.1] rounded-[2px] transition-colors cursor-pointer text-zinc-400 hover:text-white"
       >
-        <X className="w-4 h-4 text-gray-500" />
+        <X className="size-3" />
       </button>
     </div>
   );
@@ -76,7 +79,7 @@ export const ToastContainer = () => {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 max-w-sm">
+    <div className="fixed top-5 right-5 z-[9999] flex flex-col gap-2 max-w-md w-full pointer-events-auto">
       {toasts.map((t) => (
         <ToastItem key={t.id} toast={t} onClose={() => removeToast(t.id)} />
       ))}

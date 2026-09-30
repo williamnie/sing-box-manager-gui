@@ -2,13 +2,484 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  margin: 0;
-  min-height: 100vh;
+@layer base {
+  :root {
+    --bg-base: #f6f7fb;
+    --bg-surface: #ffffff;
+    --bg-surface-elevated: #f8fafc;
+    --border-line: rgba(0, 0, 0, 0.08);
+    --border-line-subtle: rgba(0, 0, 0, 0.04);
+    --brand-orange: #ff5722;
+  }
+
+  .dark {
+    --bg-base: #070709;
+    --bg-surface: #0d0e12;
+    --bg-surface-elevated: #14161d;
+    --border-line: rgba(255, 255, 255, 0.08);
+    --border-line-subtle: rgba(255, 255, 255, 0.04);
+    --brand-orange: #ff5722;
+  }
+
+  html {
+    /* 解决下拉弹窗/模态框打开时滚动条锁定引起的页面宽度剧烈抖动 */
+    scrollbar-gutter: stable;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  /* 优雅的技术等宽数字与代码 */
+  code, pre, kbd, samp {
+    font-family: 'CommitMono', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  /* 自定义滚动条 - 暗黑模式 */
+  .dark ::-webkit-scrollbar,
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .dark ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-track {
+    background: #070709;
+  }
+
+  .dark ::-webkit-scrollbar-thumb,
+  ::-webkit-scrollbar-thumb {
+    background: #222530;
+    border-radius: 2px;
+  }
+
+  .dark ::-webkit-scrollbar-thumb:hover,
+  ::-webkit-scrollbar-thumb:hover {
+    background: #ff5722;
+  }
+
+  /* 自定义滚动条 - 浅色模式 */
+  .light ::-webkit-scrollbar-track,
+  html:not(.dark) ::-webkit-scrollbar-track {
+    background: #f1f5f9;
+  }
+
+  .light ::-webkit-scrollbar-thumb,
+  html:not(.dark) ::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 2px;
+  }
+
+  .light ::-webkit-scrollbar-thumb:hover,
+  html:not(.dark) ::-webkit-scrollbar-thumb:hover {
+    background: #ff5722;
+  }
 }
 
-#root {
-  min-height: 100vh;
+/* ========================================================
+   1. 下拉选择框 Select 抖动修复与字体一致性重置
+   ======================================================== */
+
+[data-slot="popover"],
+[data-slot="content"],
+[data-slot="listbox"],
+[data-slot="listbox"] * {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'CommitMono', monospace, sans-serif !important;
+}
+
+[data-slot="popover"] {
+  will-change: opacity, transform;
+  transform-origin: top center;
+}
+
+.dark [data-slot="popover"] {
+  background-color: #0e1017 !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.08) !important;
+  color: #ededed !important;
+}
+
+.light [data-slot="popover"],
+html:not(.dark) [data-slot="popover"] {
+  background-color: #ffffff !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+  box-shadow: 0 12px 28px -4px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.06) !important;
+  color: #0f172a !important;
+}
+
+[data-slot="item"] {
+  border-radius: 3px !important;
+  font-size: 0.8125rem !important;
+  padding: 6px 10px !important;
+  min-height: 32px !important;
+}
+
+[data-slot="item"] [data-slot="title"] {
+  font-size: 0.8125rem !important;
+  font-weight: 500 !important;
+  line-height: 1.4 !important;
+  color: inherit !important;
+}
+
+[data-slot="item"] [data-slot="description"] {
+  font-size: 0.725rem !important;
+  margin-top: 2px !important;
+}
+
+.dark [data-slot="item"] [data-slot="description"] {
+  color: #a1a1aa !important;
+}
+
+.light [data-slot="item"] [data-slot="description"],
+html:not(.dark) [data-slot="item"] [data-slot="description"] {
+  color: #64748b !important;
+}
+
+[data-slot="value"] {
+  font-family: inherit !important;
+  font-size: 0.8125rem !important;
+}
+
+/* ========================================================
+   2. 浅色模式全站自适应适配层 (Light Mode Overrides)
+   ======================================================== */
+
+.light body,
+html:not(.dark) body {
+  background-color: #f6f7fb !important;
+  color: #0f172a !important;
+}
+
+/* 浅色网格底纹 */
+.light .bg-grid-tech,
+html:not(.dark) .bg-grid-tech {
+  background-size: 32px 32px;
+  background-image:
+    linear-gradient(to right, rgba(0, 0, 0, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.035) 1px, transparent 1px);
+}
+
+.light .bg-dot-matrix,
+html:not(.dark) .bg-dot-matrix {
+  background-image: radial-gradient(rgba(0, 0, 0, 0.08) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+/* 极客卡片自适应 */
+.light .geek-panel,
+html:not(.dark) .geek-panel {
+  background-color: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 12px -2px rgba(0, 0, 0, 0.05);
+}
+
+.light .geek-panel:hover,
+html:not(.dark) .geek-panel:hover {
+  border-color: rgba(0, 0, 0, 0.16);
+}
+
+.light .geek-panel-glow,
+html:not(.dark) .geek-panel-glow {
+  background-color: #ffffff;
+  border: 1px solid rgba(255, 87, 34, 0.3);
+  box-shadow: 0 0 25px -5px rgba(255, 87, 34, 0.15);
+}
+
+/* 浅色模式下暗色背景类优雅转浅 */
+.light .bg-\[\#070709\],
+.light .bg-\[\#040406\],
+.light .bg-\[\#050608\],
+.light .bg-\[\#07080b\],
+.light .bg-\[\#07080c\],
+.light .bg-\[\#070b09\],
+.light .bg-\[\#070b10\],
+html:not(.dark) .bg-\[\#070709\],
+html:not(.dark) .bg-\[\#040406\],
+html:not(.dark) .bg-\[\#050608\],
+html:not(.dark) .bg-\[\#07080b\],
+html:not(.dark) .bg-\[\#07080c\],
+html:not(.dark) .bg-\[\#070b09\],
+html:not(.dark) .bg-\[\#070b10\] {
+  background-color: #f6f7fb !important;
+}
+
+.light .bg-\[\#090a0f\],
+.light .bg-\[\#0b0c10\],
+.light .bg-\[\#0d0e12\],
+.light .bg-\[\#060608\],
+.light .bg-\[\#0e1017\],
+.light .bg-\[\#0a0a0e\],
+.light .bg-\[\#08080b\],
+.light .bg-\[\#08090d\],
+.light .bg-\[\#0c0d11\],
+.light .bg-\[\#0c0d12\],
+.light .bg-\[\#0c0d13\],
+.light .bg-\[\#0d0e14\],
+.light .bg-\[\#0f1117\],
+.light .bg-\[\#0f1118\],
+.light .bg-\[\#101117\],
+.light .bg-\[\#111218\],
+.light .bg-\[\#12141c\],
+.light .bg-\[\#12141d\],
+.light .bg-\[\#141720\],
+.light .bg-\[\#15161c\],
+.light .bg-\[\#181c28\],
+.light .bg-\[\#1c202d\],
+html:not(.dark) .bg-\[\#090a0f\],
+html:not(.dark) .bg-\[\#0b0c10\],
+html:not(.dark) .bg-\[\#0d0e12\],
+html:not(.dark) .bg-\[\#060608\],
+html:not(.dark) .bg-\[\#0e1017\],
+html:not(.dark) .bg-\[\#0a0a0e\],
+html:not(.dark) .bg-\[\#08080b\],
+html:not(.dark) .bg-\[\#08090d\],
+html:not(.dark) .bg-\[\#0c0d11\],
+html:not(.dark) .bg-\[\#0c0d12\],
+html:not(.dark) .bg-\[\#0c0d13\],
+html:not(.dark) .bg-\[\#0d0e14\],
+html:not(.dark) .bg-\[\#0f1117\],
+html:not(.dark) .bg-\[\#0f1118\],
+html:not(.dark) .bg-\[\#101117\],
+html:not(.dark) .bg-\[\#111218\],
+html:not(.dark) .bg-\[\#12141c\],
+html:not(.dark) .bg-\[\#12141d\],
+html:not(.dark) .bg-\[\#141720\],
+html:not(.dark) .bg-\[\#15161c\],
+html:not(.dark) .bg-\[\#181c28\],
+html:not(.dark) .bg-\[\#1c202d\] {
+  background-color: #ffffff !important;
+}
+
+.light .bg-black\/40,
+.light .bg-black\/60,
+.light .bg-black\/20,
+.light .bg-black\/30,
+html:not(.dark) .bg-black\/40,
+html:not(.dark) .bg-black\/60,
+html:not(.dark) .bg-black\/20,
+html:not(.dark) .bg-black\/30 {
+  background-color: #f1f5f9 !important;
+}
+
+.light .bg-white\/\[0\.03\],
+.light .bg-white\/\[0\.04\],
+.light .bg-white\/\[0\.05\],
+.light .bg-white\/\[0\.06\],
+html:not(.dark) .bg-white\/\[0\.03\],
+html:not(.dark) .bg-white\/\[0\.04\],
+html:not(.dark) .bg-white\/\[0\.05\],
+html:not(.dark) .bg-white\/\[0\.06\] {
+  background-color: #f8fafc !important;
+}
+
+/* 浅色模式下暗色边框统一转浅灰精致边框 */
+.light .border-white\/\[0\.04\],
+.light .border-white\/\[0\.05\],
+.light .border-white\/\[0\.06\],
+.light .border-white\/\[0\.08\],
+.light .border-white\/\[0\.09\],
+.light .border-white\/\[0\.1\],
+.light .border-white\/\[0\.12\],
+.light .border-white\/\[0\.15\],
+.light .border-white\/\[0\.16\],
+.light .border-white\/\[0\.2\],
+html:not(.dark) .border-white\/\[0\.04\],
+html:not(.dark) .border-white\/\[0\.05\],
+html:not(.dark) .border-white\/\[0\.06\],
+html:not(.dark) .border-white\/\[0\.08\],
+html:not(.dark) .border-white\/\[0\.09\],
+html:not(.dark) .border-white\/\[0\.1\],
+html:not(.dark) .border-white\/\[0\.12\],
+html:not(.dark) .border-white\/\[0\.15\],
+html:not(.dark) .border-white\/\[0\.16\],
+html:not(.dark) .border-white\/\[0\.2\] {
+  border-color: #e2e8f0 !important;
+}
+
+/* 浅色模式下标题与文本清晰度保障 */
+.light h1, .light h2, .light h3, .light h4,
+html:not(.dark) h1, html:not(.dark) h2, html:not(.dark) h3, html:not(.dark) h4 {
+  color: #0f172a !important;
+}
+
+.light .text-white:not([class*="bg-primary"]):not([class*="bg-\[\#ff"]):not([class*="bg-orange"]),
+html:not(.dark) .text-white:not([class*="bg-primary"]):not([class*="bg-\[\#ff"]):not([class*="bg-orange"]) {
+  color: #0f172a !important;
+}
+
+.light .text-zinc-100,
+.light .text-zinc-200,
+html:not(.dark) .text-zinc-100,
+html:not(.dark) .text-zinc-200 {
+  color: #1e293b !important;
+}
+
+.light .text-zinc-300,
+html:not(.dark) .text-zinc-300 {
+  color: #334155 !important;
+}
+
+.light .text-zinc-400,
+html:not(.dark) .text-zinc-400 {
+  color: #475569 !important;
+}
+
+.light .text-zinc-500,
+html:not(.dark) .text-zinc-500 {
+  color: #64748b !important;
+}
+
+.light .text-zinc-600,
+html:not(.dark) .text-zinc-600 {
+  color: #94a3b8 !important;
+}
+
+/* 浅色模式下输入框适配 */
+.light input,
+.light textarea,
+html:not(.dark) input,
+html:not(.dark) textarea {
+  color: #0f172a !important;
+}
+
+/* 浅色模式下十字准星颜色 */
+.light .crosshair-corner::before,
+.light .crosshair-corner::after,
+html:not(.dark) .crosshair-corner::before,
+html:not(.dark) .crosshair-corner::after {
+  color: rgba(0, 0, 0, 0.25) !important;
+}
+
+/* ========================================================
+   3. 强制覆盖 NextUI 浅色变量，解决插件 :root 覆盖问题
+   ======================================================== */
+.light,
+[data-theme="light"],
+html:not(.dark) {
+  color-scheme: light !important;
+  --nextui-background: 225 22.2% 96.5% !important;
+  --nextui-foreground: 222 47% 11.2% !important;
+  --nextui-content1: 0 0% 100% !important;
+  --nextui-content2: 210 20% 98% !important;
+  --nextui-content3: 210 14% 95% !important;
+  --nextui-content4: 210 12% 92% !important;
+  --nextui-default-100: 210 16% 96% !important;
+  --nextui-default-200: 210 14% 93% !important;
+  --nextui-default-300: 210 12% 87% !important;
+  --nextui-default-400: 210 10% 80% !important;
+  --nextui-default-500: 215 16% 47% !important;
+  --nextui-divider: 214 32% 91% !important;
+}
+
+.dark,
+[data-theme="dark"] {
+  color-scheme: dark !important;
+  --nextui-background: 240 12.5% 3.14% !important;
+  --nextui-foreground: 0 0% 92.9% !important;
+  --nextui-content1: 228 14% 6.3% !important;
+  --nextui-content2: 227 17% 9.8% !important;
+  --nextui-content3: 226 20% 13% !important;
+  --nextui-content4: 224 20% 18% !important;
+  --nextui-default-100: 231 17% 11.8% !important;
+  --nextui-default-200: 229 17% 16.1% !important;
+  --nextui-default-300: 227 16% 21.6% !important;
+  --nextui-default-400: 225 16% 28.8% !important;
+  --nextui-default-500: 240 4% 46% !important;
+}
+
+/* ========================================================
+   4. 极客动效与视觉辅助
+   ======================================================== */
+
+.dark .bg-grid-tech {
+  background-size: 32px 32px;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+}
+
+.dark .bg-dot-matrix {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+/* 终端十字准星装饰线 */
+.crosshair-corner {
+  position: relative;
+}
+.crosshair-corner::before {
+  content: "+";
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  font-family: monospace;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.25);
+  pointer-events: none;
+}
+.crosshair-corner::after {
+  content: "+";
+  position: absolute;
+  bottom: -8px;
+  right: -8px;
+  font-family: monospace;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.25);
+  pointer-events: none;
+}
+
+.geek-panel {
+  background-color: #0d0e12;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.7);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.geek-panel:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.geek-panel-glow {
+  background-color: #0d0e12;
+  border: 1px solid rgba(255, 87, 34, 0.2);
+  box-shadow: 0 0 25px -5px rgba(255, 87, 34, 0.15);
+}
+
+/* 终端闪烁光标 */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.terminal-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 15px;
+  background-color: #ff5722;
+  vertical-align: -2px;
+  animation: blink 1s step-end infinite;
+}
+
+/* 呼吸绿/橙发光点 */
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(0.9);
+    opacity: 0;
+  }
+}
+
+.pulse-active {
+  animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 /* Toast 动画 */
@@ -24,5 +495,5 @@ body {
 }
 
 .animate-slide-in {
-  animation: slide-in 0.3s ease-out;
+  animation: slide-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
