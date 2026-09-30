@@ -1,3 +1,5 @@
+> 支持 macOS / Linux 单机，以及 Linux 家庭接入的“DNS 分流旁路”和“完整网关接管”。[DNS 分流旁路配置步骤](docs/dns-bypass.md)保留终端默认网关，主路由需下发旁路 DNS 并配置 FakeIP 静态路由。登录、配置导入与安全应用见[部署说明](docs/deployment-modes.md)；特权服务与恢复见[网关说明](docs/linux-gateway.md)。旧单机配置仍为单机，旧 `gateway` 配置仍为完整网关。默认管理地址为 `127.0.0.1`，首次登录读取数据目录的 `setup-token`。
+
 # singbox-manager
 
 [English](#english) | [中文](#中文)
@@ -28,8 +30,15 @@ A modern web-based management panel for [sing-box](https://github.com/SagerNet/s
 - **Rule Configuration**
   - Custom rules (domain, IP, port, geosite, geoip)
   - 13 preset rule groups (Ads, AI services, streaming, etc.)
-  - Rule priority management
+  - Editable rules, imported policies, device policies, and generated route order
+  - Separate draft and applied configuration views
   - Rule set validation tool
+
+- **Configuration Management**
+  - Source-independent sing-box JSON import with preview, validation, backup, and recovery
+  - Preserve outbound references and imported rule order; report runtime settings that are not imported
+  - Recommended split routing for ordinary devices; explicit strict proxy, direct, and bypass modes
+  - Optional source-scoped STUN protection independent of whole-device proxy mode
 
 - **Filter System**
   - Include/exclude by keywords
@@ -178,8 +187,15 @@ MIT License
 - **规则配置**
   - 自定义规则（域名、IP、端口、geosite、geoip）
   - 13 个预设规则组（广告、AI 服务、流媒体等）
-  - 规则优先级管理
+  - 查看可编辑规则、导入策略、设备策略和生成路由次序
+  - 区分草案与已应用配置
   - 规则集验证工具
+
+- **配置管理**
+  - 来源无关的 sing-box JSON 导入，支持预览、校验、备份和恢复
+  - 保留出站引用与导入规则次序，明确列出不导入的运行态设置
+  - 普通设备推荐分流；严格全代理、直连、绕过由用户明确选择
+  - 来源限定的 STUN 保护与整台设备全代理独立配置
 
 - **过滤器系统**
   - 按关键字包含/排除
@@ -190,6 +206,9 @@ MIT License
   - 多种 DNS 协议（UDP、DoT、DoH）
   - 自定义 hosts 映射
   - DNS 路由规则
+  - Linux DNS 分流旁路：国内直连域名返回真实地址，代理域名返回 FakeIP
+  - 主路由统一下发 DNS；配合 FakeIP 静态路由，终端默认网关保持原值
+  - 设备来源策略、Split DNS、IPv4 FakeIP 持久化；明确 IPv6 与应用 DoH 的覆盖边界
 
 - **服务控制**
   - 启动/停止/重启 sing-box

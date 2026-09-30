@@ -46,7 +46,7 @@ var (
 // NewLogger 创建新的日志记录器
 func NewLogger(filePath string, prefix string) (*Logger, error) {
 	dir := filepath.Dir(filePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, fmt.Errorf("创建日志目录失败: %w", err)
 	}
 
@@ -66,7 +66,7 @@ func NewLogger(filePath string, prefix string) (*Logger, error) {
 
 // openFile 打开或创建日志文件
 func (l *Logger) openFile() error {
-	file, err := os.OpenFile(l.filePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(l.filePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
 		return fmt.Errorf("打开日志文件失败: %w", err)
 	}
@@ -128,7 +128,7 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 // Printf 格式化日志输出
 func (l *Logger) Printf(format string, v ...interface{}) {
 	timestamp := time.Now().Format("2006/01/02 15:04:05")
-	msg := fmt.Sprintf(format, v...)
+	msg := Redact(fmt.Sprintf(format, v...))
 	line := fmt.Sprintf("%s %s%s\n", timestamp, l.prefix, msg)
 
 	// 写入文件
@@ -141,7 +141,7 @@ func (l *Logger) Printf(format string, v ...interface{}) {
 // Println 输出一行日志
 func (l *Logger) Println(v ...interface{}) {
 	timestamp := time.Now().Format("2006/01/02 15:04:05")
-	msg := fmt.Sprint(v...)
+	msg := Redact(fmt.Sprint(v...))
 	line := fmt.Sprintf("%s %s%s\n", timestamp, l.prefix, msg)
 
 	// 写入文件
@@ -157,7 +157,7 @@ func (l *Logger) WriteRaw(line string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	data := line + "\n"
+	data := Redact(line) + "\n"
 
 	// 检查是否需要轮转
 	if l.currentSize+int64(len(data)) > l.maxSize {
@@ -277,7 +277,7 @@ func Printf(format string, v ...interface{}) {
 	if manager != nil && manager.appLogger != nil {
 		manager.appLogger.Printf(format, v...)
 	} else {
-		log.Printf(format, v...)
+		log.Print(Redact(fmt.Sprintf(format, v...)))
 	}
 }
 
@@ -286,7 +286,7 @@ func Println(v ...interface{}) {
 	if manager != nil && manager.appLogger != nil {
 		manager.appLogger.Println(v...)
 	} else {
-		log.Println(v...)
+		log.Print(Redact(fmt.Sprint(v...)))
 	}
 }
 

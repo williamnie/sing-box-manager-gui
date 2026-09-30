@@ -104,7 +104,10 @@ func (m *Manager) downloadFile(url, dest string, totalSize int64) error {
 			downloaded += int64(n)
 
 			// 更新进度
-			progress := float64(downloaded) / float64(totalSize) * 80 // 下载阶段占 80%
+			progress := float64(0)
+			if totalSize > 0 {
+				progress = float64(downloaded) / float64(totalSize) * 80
+			}
 			m.updateProgress("downloading", progress, fmt.Sprintf("下载中 %.1f%%", progress/0.8), downloaded, totalSize)
 		}
 		if err == io.EOF {
@@ -160,7 +163,7 @@ func (m *Manager) extractTarGz(archivePath, destDir string) (string, error) {
 		}
 
 		// 只提取 sing-box 二进制文件
-		if header.Typeflag == tar.TypeReg && strings.HasSuffix(header.Name, binaryName) {
+		if header.Typeflag == tar.TypeReg && filepath.Base(header.Name) == binaryName {
 			binaryPath = filepath.Join(destDir, binaryName)
 			outFile, err := os.Create(binaryPath)
 			if err != nil {
@@ -198,7 +201,7 @@ func (m *Manager) extractZip(archivePath, destDir string) (string, error) {
 	}
 
 	for _, f := range r.File {
-		if strings.HasSuffix(f.Name, binaryName) {
+		if filepath.Base(f.Name) == binaryName && !f.FileInfo().IsDir() {
 			rc, err := f.Open()
 			if err != nil {
 				return "", err
@@ -230,44 +233,28 @@ func (m *Manager) extractZip(archivePath, destDir string) (string, error) {
 	return binaryPath, nil
 }
 
-// installBinary 安装二进制文件
+// installBinary 安装前保留旧内核，候选必须先执行版本和实际配置检查。
 func (m *Manager) installBinary(srcPath string) error {
-	destPath := m.binPath
-
-	// 确保目标目录存在
-	destDir := filepath.Dir(destPath)
-	if err := os.MkdirAll(destDir, 0755); err != nil {
-		return fmt.Errorf("创建目录失败: %w", err)
-	}
-
-	// 如果目标文件已存在，先删除
-	if _, err := os.Stat(destPath); err == nil {
-		if err := os.Remove(destPath); err != nil {
-			return fmt.Errorf("删除旧版本失败: %w", err)
-		}
-	}
-
-	// 复制文件
-	src, err := os.Open(srcPath)
-	if err != nil {
+	m.installMu.Lock()
+	defer m.installMu.Unlock()
+	if err := os.Chmod(srcPath, 0755); err != nil {
 		return err
 	}
-	defer src.Close()
-
-	dest, err := os.Create(destPath)
-	if err != nil {
+	if err := ValidateBinary(srcPath); err != nil {
 		return err
 	}
-	defer dest.Close()
-
-	if _, err := io.Copy(dest, src); err != nil {
+	m.mu.RLock()
+	hook := m.installHook
+	m.mu.RUnlock()
+	if hook != nil {
+		return hook(srcPath)
+	}
+	// 已安装内核必须由生命周期事务处理，不能在后台悄悄替换正在使用的文件。
+	if _, err := os.Stat(m.binPath); err == nil {
+		return fmt.Errorf("内核更新尚未连接进程事务，拒绝替换现有内核")
+	} else if !os.IsNotExist(err) {
 		return err
 	}
-
-	// 设置可执行权限
-	if err := os.Chmod(destPath, 0755); err != nil {
-		return fmt.Errorf("设置权限失败: %w", err)
-	}
-
-	return nil
+	_, err := ReplaceBinary(srcPath, m.binPath)
+	return err
 }

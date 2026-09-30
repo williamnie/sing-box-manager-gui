@@ -2,10 +2,17 @@ package daemon
 
 import (
 	"bufio"
+	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -13,507 +20,842 @@ import (
 	"time"
 
 	"github.com/shirou/gopsutil/v3/process"
+	"github.com/xiaobei/singbox-manager/internal/kernel"
 	"github.com/xiaobei/singbox-manager/internal/logger"
 )
 
-// ProcessManager 进程管理器
-type ProcessManager struct {
-	singboxPath string
-	configPath  string
-	dataDir     string // 数据目录，用于设置 sing-box 的工作目录
-	pidFile     string // PID 文件路径，用于持久化进程状态
-	cmd         *exec.Cmd
-	mu          sync.RWMutex
-	running     bool
-	pid         int // 保存 PID（支持恢复的进程，即使 cmd 为空）
-	logs        []string
-	maxLogs     int
+// processIdentity 既校验实例参数，也记录启动时间以拒绝复用的 PID。
+type processIdentity struct {
+	PID        int    `json:"pid"`
+	Created    int64  `json:"created"`
+	Executable string `json:"executable"`
+	Config     string `json:"config"`
+	Directory  string `json:"directory"`
 }
 
-// NewProcessManager 创建进程管理器
+// ProcessManager 的 opMu 覆盖完整生命周期/应用事务，mu 仅保护进程状态。
+type ProcessManager struct {
+	singboxPath, configPath, dataDir, pidFile string
+	opMu                                      sync.Mutex
+	mu                                        sync.RWMutex
+	identity                                  processIdentity
+	maxLogs                                   int
+	inspect                                   func(int) (processIdentity, error)
+	healthWindow, healthTimeout               time.Duration
+}
+
 func NewProcessManager(singboxPath, configPath, dataDir string) *ProcessManager {
-	pm := &ProcessManager{
-		singboxPath: singboxPath,
-		configPath:  configPath,
-		dataDir:     dataDir,
-		pidFile:     filepath.Join(dataDir, "singbox.pid"),
-		maxLogs:     1000,
-		logs:        make([]string, 0),
-	}
-
-	// 启动时尝试恢复已有的 sing-box 进程
+	// 首次启动可能需要下载规则集；仍要求持续存活和本地 API 就绪，但给冷启动留出时间。
+	pm := &ProcessManager{singboxPath: absolutePath(singboxPath), configPath: absolutePath(configPath), dataDir: absolutePath(dataDir), maxLogs: 1000, healthWindow: time.Second, healthTimeout: 30 * time.Second, inspect: inspectProcess}
+	pm.pidFile = filepath.Join(pm.dataDir, "singbox.pid")
 	pm.recoverProcess()
-
 	return pm
 }
 
-// recoverProcess 尝试恢复已有的 sing-box 进程（双重检测）
-func (pm *ProcessManager) recoverProcess() {
-	var pid int
-
-	// 第一步：尝试从 PID 文件恢复
-	pid = pm.recoverFromPidFile()
-
-	// 第二步：如果 PID 文件无效，扫描系统进程
-	if pid <= 0 {
-		pid = pm.findSingboxProcess()
+func absolutePath(path string) string {
+	p, err := filepath.Abs(path)
+	if err == nil {
+		path = p
 	}
-
-	if pid <= 0 {
-		return // 没有找到 sing-box 进程
-	}
-
-	// 恢复状态
-	pm.mu.Lock()
-	pm.running = true
-	pm.pid = pid
-	pm.mu.Unlock()
-
-	// 更新 PID 文件（确保一致性）
-	os.WriteFile(pm.pidFile, []byte(strconv.Itoa(pid)), 0644)
-
-	logger.Printf("已恢复 sing-box 进程跟踪, PID: %d", pid)
-
-	// 启动异步监控进程退出
-	go pm.monitorProcess(pid)
-}
-
-// recoverFromPidFile 从 PID 文件恢复（使用 kill -0 快速验证）
-func (pm *ProcessManager) recoverFromPidFile() int {
-	pid := pm.readPidFile()
-	if pid <= 0 {
-		return 0
-	}
-
-	// 使用 kill -0 快速验证进程是否存活
-	if !pm.isProcessAlive(pid) {
-		os.Remove(pm.pidFile)
-		return 0
-	}
-
-	logger.Printf("从 PID 文件恢复 sing-box 进程, PID: %d", pid)
-	return pid
-}
-
-// findSingboxProcess 使用 pgrep 快速查找 sing-box 进程（启动时使用）
-func (pm *ProcessManager) findSingboxProcess() int {
-	pid := pm.findSingboxByPgrep()
-	if pid > 0 {
-		logger.Printf("通过 pgrep 找到 sing-box 进程, PID: %d", pid)
-	}
-	return pid
-}
-
-// isSingboxProcess 检查进程是否是 sing-box
-func (pm *ProcessManager) isSingboxProcess(proc *process.Process) bool {
-	// 方法1：检查进程名称
-	name, _ := proc.Name()
-	if name == "sing-box" {
-		return true
-	}
-
-	// 方法2：检查可执行文件路径（macOS 上进程名可能被截断）
-	exe, _ := proc.Exe()
-	if strings.HasSuffix(exe, "/sing-box") || strings.HasSuffix(exe, "\\sing-box") {
-		return true
-	}
-
-	return false
-}
-
-// isValidSingboxProcess 验证 PID 是否是有效的 sing-box 进程
-func (pm *ProcessManager) isValidSingboxProcess(pid int) bool {
-	proc, err := process.NewProcess(int32(pid))
-	if err != nil {
-		return false
-	}
-
-	return pm.isSingboxProcess(proc)
-}
-
-// isProcessAlive 使用 kill -0 检查进程是否存活（更可靠）
-func (pm *ProcessManager) isProcessAlive(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	// kill -0 不发送信号，只检查进程是否存在
-	err = proc.Signal(syscall.Signal(0))
-	return err == nil
-}
-
-// readPidFile 只读取 PID 文件，不验证进程类型（轻量级）
-func (pm *ProcessManager) readPidFile() int {
-	data, err := os.ReadFile(pm.pidFile)
-	if err != nil {
-		return 0
-	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil || pid <= 0 {
-		return 0
-	}
-	return pid
-}
-
-// findSingboxByPgrep 使用 pgrep 快速查找 sing-box 进程
-func (pm *ProcessManager) findSingboxByPgrep() int {
-	// pgrep -x 精确匹配进程名
-	cmd := exec.Command("pgrep", "-x", "sing-box")
-	output, err := cmd.Output()
-	if err != nil {
-		return 0
-	}
-
-	// pgrep 可能返回多行（多个进程），取第一个
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	if len(lines) == 0 || lines[0] == "" {
-		return 0
-	}
-
-	pid, err := strconv.Atoi(lines[0])
-	if err != nil {
-		return 0
-	}
-	return pid
-}
-
-// recoverState 恢复运行状态
-func (pm *ProcessManager) recoverState(pid int) {
-	pm.mu.Lock()
-	defer pm.mu.Unlock()
-
-	if !pm.running {
-		pm.running = true
-		pm.pid = pid
-		// 更新 PID 文件
-		os.WriteFile(pm.pidFile, []byte(strconv.Itoa(pid)), 0644)
-		logger.Printf("检测到 sing-box 进程仍在运行，已恢复状态, PID: %d", pid)
-
-		// 重新启动监控
-		go pm.monitorProcess(pid)
-	}
-}
-
-// monitorProcess 监控已恢复的进程（当没有 cmd 对象时使用）
-func (pm *ProcessManager) monitorProcess(pid int) {
-	failCount := 0
-	maxFails := 3 // 连续失败 3 次才认为退出
-
+	// 新配置尚不存在时仍解析已有父目录（macOS /var -> /private/var）。
+	parent := filepath.Clean(path)
+	var suffix []string
 	for {
-		time.Sleep(2 * time.Second)
+		if resolved, err := filepath.EvalSymlinks(parent); err == nil {
+			for i := len(suffix) - 1; i >= 0; i-- {
+				resolved = filepath.Join(resolved, suffix[i])
+			}
+			return resolved
+		}
+		next := filepath.Dir(parent)
+		if next == parent {
+			return filepath.Clean(path)
+		}
+		suffix = append(suffix, filepath.Base(parent))
+		parent = next
+	}
+}
 
-		// 优先使用 kill -0 检查（更可靠）
-		if pm.isProcessAlive(pid) {
-			failCount = 0
+func inspectProcess(pid int) (processIdentity, error) {
+	if pid <= 0 {
+		return processIdentity{}, fmt.Errorf("无效 PID")
+	}
+	p, err := process.NewProcess(int32(pid))
+	if err != nil {
+		return processIdentity{}, err
+	}
+	cwd, err := p.Cwd()
+	var exe string
+	var args []string
+	if err != nil && runtime.GOOS == "darwin" {
+		// 官方发布使用 no-cgo，gopsutil 在此构建下没有 Cwd 实现。
+		exe, cwd, args, err = inspectDarwinWithoutCGO(pid)
+	} else if err == nil {
+		exe, err = p.Exe()
+		if err == nil {
+			args, err = p.CmdlineSlice()
+		}
+	}
+	if err != nil {
+		return processIdentity{}, err
+	}
+	created, err := p.CreateTime()
+	if err != nil || created <= 0 {
+		return processIdentity{}, fmt.Errorf("无法读取进程启动时间")
+	}
+	// 仅识别管理器启动的精确参数；不接管 config-directory 或多个配置的实例。
+	if len(args) != 4 || args[1] != "run" || args[2] != "-c" {
+		return processIdentity{}, fmt.Errorf("进程参数不属于此管理器")
+	}
+	cfg := args[3]
+	if !filepath.IsAbs(cfg) {
+		cfg = filepath.Join(cwd, cfg)
+	}
+	return processIdentity{PID: pid, Created: created, Executable: absolutePath(exe), Config: absolutePath(cfg), Directory: absolutePath(cwd)}, nil
+}
+
+func inspectDarwinWithoutCGO(pid int) (string, string, []string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	raw, err := exec.CommandContext(ctx, "/usr/sbin/lsof", "-a", "-p", strconv.Itoa(pid), "-d", "cwd,txt", "-Ffn").Output()
+	if err != nil {
+		return "", "", nil, err
+	}
+	var exe, cwd, fd string
+	for _, line := range strings.Split(string(raw), "\n") {
+		if len(line) < 2 {
 			continue
 		}
-
-		// kill -0 失败，再用 gopsutil 检查
-		if pm.isValidSingboxProcess(pid) {
-			failCount = 0
-			continue
+		if line[0] == 'f' {
+			fd = line[1:]
 		}
-
-		// 两种方法都失败，计数
-		failCount++
-		if failCount < maxFails {
-			logger.Printf("sing-box 进程检测失败 (%d/%d), PID: %d", failCount, maxFails, pid)
-			continue
+		if line[0] == 'n' && fd == "cwd" {
+			cwd = line[1:]
 		}
+		if line[0] == 'n' && fd == "txt" && exe == "" {
+			exe = line[1:]
+		}
+	}
+	if exe == "" || cwd == "" {
+		return "", "", nil, fmt.Errorf("无法确认进程可执行文件和工作目录")
+	}
+	raw, err = exec.CommandContext(ctx, "/bin/ps", "-p", strconv.Itoa(pid), "-o", "command=").Output()
+	if err != nil {
+		return "", "", nil, err
+	}
+	command := strings.TrimSpace(string(raw))
+	prefix := exe + " run -c "
+	if !strings.HasPrefix(command, prefix) {
+		return "", "", nil, fmt.Errorf("进程命令不属于此实例")
+	}
+	return exe, cwd, []string{exe, "run", "-c", strings.TrimPrefix(command, prefix)}, nil
+}
 
-		// 连续失败达到阈值，认为进程退出
-		pm.mu.Lock()
-		pm.running = false
-		pm.pid = 0
-		pm.mu.Unlock()
-		os.Remove(pm.pidFile)
-		logger.Printf("sing-box 进程已退出, PID: %d", pid)
+func (pm *ProcessManager) expected(id processIdentity) bool {
+	return id.PID > 0 && id.Created > 0 && id.Executable == pm.singboxPath && id.Config == pm.configPath && id.Directory == pm.dataDir
+}
+
+func (pm *ProcessManager) matches(id processIdentity) bool {
+	if id.PID <= 0 {
+		return false
+	}
+	live, err := pm.inspect(id.PID)
+	return err == nil && live == id
+}
+
+func (pm *ProcessManager) recoverProcess() {
+	raw, err := os.ReadFile(pm.pidFile)
+	if err != nil {
 		return
 	}
-}
-
-// Start 启动 sing-box
-func (pm *ProcessManager) Start() error {
+	var saved processIdentity
+	if json.Unmarshal(raw, &saved) != nil {
+		// 兼容旧整数 PID，但必须重新验证全部实例参数。
+		saved.PID, _ = strconv.Atoi(strings.TrimSpace(string(raw)))
+	}
+	live, err := pm.inspect(saved.PID)
+	if err != nil || !pm.expected(live) || (saved.Created != 0 && saved != live) {
+		// 不删除可能属于另一个配置实例的身份文件。
+		return
+	}
 	pm.mu.Lock()
-	defer pm.mu.Unlock()
-
-	if pm.running {
-		return fmt.Errorf("sing-box 已经在运行")
+	pm.identity = live
+	pm.mu.Unlock()
+	if err := pm.saveIdentity(live); err != nil {
+		logger.Printf("保存进程身份失败")
 	}
-
-	// 检查 sing-box 是否存在
-	if _, err := os.Stat(pm.singboxPath); os.IsNotExist(err) {
-		return fmt.Errorf("sing-box 不存在: %s", pm.singboxPath)
-	}
-
-	// 检查配置文件是否存在
-	if _, err := os.Stat(pm.configPath); os.IsNotExist(err) {
-		return fmt.Errorf("配置文件不存在: %s", pm.configPath)
-	}
-
-	pm.cmd = exec.Command(pm.singboxPath, "run", "-c", pm.configPath)
-	pm.cmd.Dir = pm.dataDir // 设置工作目录，确保相对路径（如 external_ui）正确解析
-
-	// 捕获输出
-	stdout, err := pm.cmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("获取标准输出失败: %w", err)
-	}
-
-	stderr, err := pm.cmd.StderrPipe()
-	if err != nil {
-		return fmt.Errorf("获取标准错误失败: %w", err)
-	}
-
-	if err := pm.cmd.Start(); err != nil {
-		return fmt.Errorf("启动 sing-box 失败: %w", err)
-	}
-
-	pm.running = true
-	pm.pid = pm.cmd.Process.Pid
-
-	// 写入 PID 文件
-	if err := os.WriteFile(pm.pidFile, []byte(strconv.Itoa(pm.pid)), 0644); err != nil {
-		logger.Printf("写入 PID 文件失败: %v", err)
-	}
-
-	logger.Printf("sing-box 已启动, PID: %d", pm.pid)
-
-	// 获取 sing-box 日志记录器
-	var singboxLogger *logger.Logger
-	if logManager := logger.GetLogManager(); logManager != nil {
-		singboxLogger = logManager.SingboxLogger()
-	}
-
-	// 异步读取日志
-	go func() {
-		scanner := bufio.NewScanner(stdout)
-		for scanner.Scan() {
-			line := scanner.Text()
-			pm.addLog(line)
-			// 同时写入日志文件
-			if singboxLogger != nil {
-				singboxLogger.WriteRaw(line)
-			}
-		}
-	}()
-
-	go func() {
-		scanner := bufio.NewScanner(stderr)
-		for scanner.Scan() {
-			line := scanner.Text()
-			pm.addLog(line)
-			// 同时写入日志文件
-			if singboxLogger != nil {
-				singboxLogger.WriteRaw(line)
-			}
-		}
-	}()
-
-	// 监控进程退出
-	go func() {
-		pm.cmd.Wait()
-		pm.mu.Lock()
-		pm.running = false
-		pm.pid = 0
-		pm.mu.Unlock()
-		os.Remove(pm.pidFile)
-		logger.Printf("sing-box 进程已退出")
-	}()
-
-	return nil
+	go pm.monitorProcess(live)
 }
 
-// Stop 停止 sing-box
-func (pm *ProcessManager) Stop() error {
-	pm.mu.Lock()
-	defer pm.mu.Unlock()
-
-	if !pm.running {
-		return nil
-	}
-
-	var pid int
-
-	// 情况1：有 cmd 对象（正常启动的进程）
-	if pm.cmd != nil && pm.cmd.Process != nil {
-		pid = pm.cmd.Process.Pid
-		// 发送 SIGTERM 信号
-		if err := pm.cmd.Process.Signal(syscall.SIGTERM); err != nil {
-			// 如果 SIGTERM 失败，尝试 SIGKILL
-			if err := pm.cmd.Process.Kill(); err != nil {
-				return fmt.Errorf("停止 sing-box 失败: %w", err)
-			}
-		}
-	} else if pm.pid > 0 {
-		// 情况2：没有 cmd 对象（恢复的进程），通过 PID 发送信号
-		pid = pm.pid
-		proc, err := os.FindProcess(pid)
-		if err == nil {
-			if err := proc.Signal(syscall.SIGTERM); err != nil {
-				proc.Kill()
-			}
-		}
-	}
-
-	pm.running = false
-	pm.pid = 0
-	os.Remove(pm.pidFile)
-	logger.Printf("sing-box 已停止, PID: %d", pid)
-	return nil
-}
-
-// Restart 重启 sing-box
-func (pm *ProcessManager) Restart() error {
-	if err := pm.Stop(); err != nil {
+func (pm *ProcessManager) saveIdentity(id processIdentity) error {
+	raw, err := json.Marshal(id)
+	if err != nil {
 		return err
 	}
-	return pm.Start()
+	return atomicWrite(pm.pidFile, raw, 0600)
 }
 
-// Reload 热重载配置
-func (pm *ProcessManager) Reload() error {
+func (pm *ProcessManager) currentIdentity() processIdentity {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
-
-	if !pm.running || pm.cmd == nil || pm.cmd.Process == nil {
-		return fmt.Errorf("sing-box 未运行")
-	}
-
-	// sing-box 支持 SIGHUP 热重载
-	if err := pm.cmd.Process.Signal(syscall.SIGHUP); err != nil {
-		return fmt.Errorf("重载配置失败: %w", err)
-	}
-
-	return nil
+	return pm.identity
 }
 
-// IsRunning 检查是否运行中（带实时检测和自动恢复）
-func (pm *ProcessManager) IsRunning() bool {
-	pm.mu.RLock()
-	running := pm.running
-	pid := pm.pid
-	cmd := pm.cmd
-	pm.mu.RUnlock()
-
-	// 1. 如果内存状态是运行中，直接返回 true
-	if running {
-		return true
+func (pm *ProcessManager) clearIdentity(id processIdentity) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	if pm.identity != id {
+		return
 	}
-
-	// 2. 内存状态是未运行，但尝试实际检测进程是否存活
-
-	// 2.1 检查保存的 PID
-	if pid > 0 && pm.isProcessAlive(pid) {
-		pm.recoverState(pid)
-		return true
-	}
-
-	// 2.2 检查 cmd 对象的 PID
-	if cmd != nil && cmd.Process != nil {
-		cmdPid := cmd.Process.Pid
-		if pm.isProcessAlive(cmdPid) {
-			pm.recoverState(cmdPid)
-			return true
+	pm.identity = processIdentity{}
+	// 旧监视器退出不能删除后来启动的实例所写的新 PID 文件。
+	if raw, err := os.ReadFile(pm.pidFile); err == nil {
+		var saved processIdentity
+		if json.Unmarshal(raw, &saved) == nil && saved == id {
+			_ = os.Remove(pm.pidFile)
 		}
 	}
+}
 
-	// 2.3 兜底：从 PID 文件恢复 (读文件 + kill -0，很快)
-	if filePid := pm.readPidFile(); filePid > 0 && pm.isProcessAlive(filePid) {
-		pm.recoverState(filePid)
+func (pm *ProcessManager) monitorProcess(id processIdentity) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		if pm.currentIdentity() != id {
+			return
+		}
+		if !pm.matches(id) {
+			pm.clearIdentity(id)
+			return
+		}
+	}
+}
+
+func (pm *ProcessManager) running() bool {
+	id := pm.currentIdentity()
+	if pm.matches(id) {
 		return true
 	}
-
-	// 2.4 兜底：用 pgrep 快速查找 (替代 gopsutil 全量扫描)
-	if pgrepPid := pm.findSingboxByPgrep(); pgrepPid > 0 {
-		pm.recoverState(pgrepPid)
-		return true
+	if id.PID != 0 {
+		pm.clearIdentity(id)
 	}
-
 	return false
 }
 
-// GetPID 获取进程 ID
+func (pm *ProcessManager) start() error {
+	if pm.running() {
+		return fmt.Errorf("sing-box 已经在运行")
+	}
+	_, err := os.Stat(pm.configPath)
+	if err != nil {
+		return fmt.Errorf("读取配置失败: %w", err)
+	}
+	cmd := exec.Command(pm.singboxPath, "run", "-c", pm.configPath)
+	cmd.Dir = pm.dataDir
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	output, err := pm.startLogRelay()
+	if err != nil {
+		return fmt.Errorf("启动独立日志转发失败: %w", err)
+	}
+	defer output.Close()
+	cmd.Stdout = output
+	cmd.Stderr = output
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("启动 sing-box 失败: %w", err)
+	}
+	// 只对刚启动且持有句柄的子进程进行失败清理。
+	id, err := pm.inspect(cmd.Process.Pid)
+	if err != nil || !pm.expected(id) {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return fmt.Errorf("启动后的进程身份验证失败: %v", err)
+	}
+	pm.mu.Lock()
+	pm.identity = id
+	pm.mu.Unlock()
+	if err := pm.saveIdentity(id); err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		pm.clearIdentity(id)
+		return fmt.Errorf("保存进程身份失败: %w", err)
+	}
+	go func() { _ = cmd.Wait(); pm.clearIdentity(id) }()
+	return nil
+}
+
+func (pm *ProcessManager) signal(id processIdentity, signal syscall.Signal) error {
+	proc, err := os.FindProcess(id.PID)
+	if err != nil {
+		return err
+	}
+	defer proc.Release()
+	if !pm.matches(id) {
+		return fmt.Errorf("进程身份已改变，拒绝发送信号")
+	}
+	return proc.Signal(signal)
+}
+
+func (pm *ProcessManager) stop() error {
+	id := pm.currentIdentity()
+	if id.PID == 0 {
+		return nil
+	}
+	if !pm.matches(id) {
+		pm.clearIdentity(id)
+		return nil
+	}
+	if err := pm.signal(id, syscall.SIGTERM); err != nil {
+		return fmt.Errorf("停止 sing-box 失败: %w", err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if !pm.matches(id) {
+			pm.clearIdentity(id)
+			return nil
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if err := pm.signal(id, syscall.SIGKILL); err != nil {
+		return fmt.Errorf("终止 sing-box 失败: %w", err)
+	}
+	deadline = time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if !pm.matches(id) {
+			pm.clearIdentity(id)
+			return nil
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	return fmt.Errorf("sing-box 停止超时")
+}
+
+func (pm *ProcessManager) Start() error {
+	pm.opMu.Lock()
+	defer pm.opMu.Unlock()
+	if err := pm.checkPath(pm.singboxPath, pm.configPath); err != nil {
+		return err
+	}
+	if err := pm.start(); err != nil {
+		return err
+	}
+	if err := pm.healthy(); err != nil {
+		stopErr := pm.stop()
+		return errors.Join(err, stopErr)
+	}
+	return nil
+}
+func (pm *ProcessManager) Stop() error { pm.opMu.Lock(); defer pm.opMu.Unlock(); return pm.stop() }
+func (pm *ProcessManager) Restart() error {
+	pm.opMu.Lock()
+	defer pm.opMu.Unlock()
+	return pm.restart()
+}
+func (pm *ProcessManager) restart() error {
+	if pm.running() && !pm.expected(pm.currentIdentity()) {
+		return fmt.Errorf("实例路径已变更，请先停止原实例后再启动")
+	}
+	if err := pm.checkPath(pm.singboxPath, pm.configPath); err != nil {
+		return err
+	}
+	if err := pm.stop(); err != nil {
+		return err
+	}
+	if err := pm.start(); err != nil {
+		return err
+	}
+	if err := pm.healthy(); err != nil {
+		return errors.Join(err, pm.stop())
+	}
+	return nil
+}
+func (pm *ProcessManager) Reload() error {
+	// 重启经相同健康检查；避免未经验证的 SIGHUP 在旧版内核中终止服务。
+	pm.opMu.Lock()
+	defer pm.opMu.Unlock()
+	if !pm.running() {
+		return fmt.Errorf("sing-box 未运行")
+	}
+	return pm.restart()
+}
+func (pm *ProcessManager) IsRunning() bool {
+	pm.opMu.Lock()
+	defer pm.opMu.Unlock()
+	return pm.running()
+}
 func (pm *ProcessManager) GetPID() int {
-	pm.mu.RLock()
-	defer pm.mu.RUnlock()
-
-	// 优先返回保存的 PID（支持恢复的进程）
-	if pm.pid > 0 {
-		return pm.pid
+	pm.opMu.Lock()
+	defer pm.opMu.Unlock()
+	if !pm.running() {
+		return 0
 	}
-
-	// 备用：从 cmd 获取
-	if pm.cmd != nil && pm.cmd.Process != nil {
-		return pm.cmd.Process.Pid
-	}
-	return 0
+	return pm.currentIdentity().PID
 }
-
-// GetLogs 获取日志
 func (pm *ProcessManager) GetLogs() []string {
-	pm.mu.RLock()
-	defer pm.mu.RUnlock()
-
-	logs := make([]string, len(pm.logs))
-	copy(logs, pm.logs)
-	return logs
-}
-
-// ClearLogs 清除日志
-func (pm *ProcessManager) ClearLogs() {
-	pm.mu.Lock()
-	defer pm.mu.Unlock()
-	pm.logs = make([]string, 0)
-}
-
-// addLog 添加日志
-func (pm *ProcessManager) addLog(line string) {
-	pm.mu.Lock()
-	defer pm.mu.Unlock()
-
-	pm.logs = append(pm.logs, line)
-
-	// 限制日志数量
-	if len(pm.logs) > pm.maxLogs {
-		pm.logs = pm.logs[len(pm.logs)-pm.maxLogs:]
+	f, err := os.Open(filepath.Join(pm.dataDir, "logs", "singbox.log"))
+	if err != nil {
+		return []string{}
 	}
+	defer f.Close()
+	var lines []string
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 64<<10), 1<<20)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+		if len(lines) > pm.maxLogs {
+			lines = lines[len(lines)-pm.maxLogs:]
+		}
+	}
+	return lines
+}
+func (pm *ProcessManager) ClearLogs() {
+	// 日志转发器以 O_APPEND 打开，截断不会破坏其后续写入。
+	_ = os.Truncate(filepath.Join(pm.dataDir, "logs", "singbox.log"), 0)
 }
 
-// SetPaths 设置路径
-func (pm *ProcessManager) SetPaths(singboxPath, configPath string) {
-	pm.mu.Lock()
-	defer pm.mu.Unlock()
-	pm.singboxPath = singboxPath
-	pm.configPath = configPath
+// 运行中的实例保留启动身份，后续停止时仍只操作该实例。
+func (pm *ProcessManager) SetPaths(binary, config string) {
+	pm.opMu.Lock()
+	defer pm.opMu.Unlock()
+	pm.singboxPath = absolutePath(binary)
+	pm.configPath = absolutePath(config)
+}
+func (pm *ProcessManager) SetConfigPath(config string) {
+	pm.opMu.Lock()
+	defer pm.opMu.Unlock()
+	pm.configPath = absolutePath(config)
 }
 
-// SetConfigPath 只设置配置文件路径
-func (pm *ProcessManager) SetConfigPath(configPath string) {
-	pm.mu.Lock()
-	defer pm.mu.Unlock()
-	pm.configPath = configPath
-}
-
-// Check 检查配置文件
-func (pm *ProcessManager) Check() error {
-	cmd := exec.Command(pm.singboxPath, "check", "-c", pm.configPath)
+func (pm *ProcessManager) checkPath(binary, config string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, binary, "check", "-c", config)
+	cmd.Dir = pm.dataDir
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("配置检查失败: %s", string(output))
+		raw, _ := os.ReadFile(config)
+		detail := logger.Redact(configRedactor(raw)(strings.TrimSpace(string(output))))
+		if len(detail) > 2048 {
+			detail = detail[:2048]
+		}
+		return fmt.Errorf("配置检查失败: %w: %s", err, detail)
 	}
 	return nil
 }
 
-// Version 获取 sing-box 版本
-func (pm *ProcessManager) Version() (string, error) {
-	cmd := exec.Command(pm.singboxPath, "version")
-	output, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("获取版本失败: %w", err)
+func (pm *ProcessManager) Check() error {
+	pm.opMu.Lock()
+	defer pm.opMu.Unlock()
+	return pm.checkPath(pm.singboxPath, pm.configPath)
+}
+func (pm *ProcessManager) CheckConfig(raw []byte) error {
+	pm.opMu.Lock()
+	defer pm.opMu.Unlock()
+	return pm.checkCandidate(pm.singboxPath, raw)
+}
+func (pm *ProcessManager) checkCandidate(binary string, raw []byte) error {
+	if !json.Valid(raw) {
+		return fmt.Errorf("配置必须是合法 JSON")
 	}
-	return string(output), nil
+	if err := os.MkdirAll(filepath.Dir(pm.configPath), 0700); err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(filepath.Dir(pm.configPath), ".candidate-*.json")
+	if err != nil {
+		return err
+	}
+	path := f.Name()
+	defer os.Remove(path)
+	if _, err := f.Write(raw); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return pm.checkPath(binary, path)
+}
+
+// ApplyConfig 是手动和自动应用的唯一事务入口。停止状态只验证和落盘，不隐式启动。
+func (pm *ProcessManager) ApplyConfig(raw []byte) error {
+	pm.opMu.Lock()
+	defer pm.opMu.Unlock()
+	if pm.running() && !pm.expected(pm.currentIdentity()) {
+		return fmt.Errorf("实例路径已变更，请先停止原实例后再应用")
+	}
+	if err := pm.checkCandidate(pm.singboxPath, raw); err != nil {
+		return err
+	}
+	old, err := os.ReadFile(pm.configPath)
+	existed := err == nil
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if existed {
+		if err := atomicWrite(pm.configPath+".previous", old, 0600); err != nil {
+			return fmt.Errorf("备份配置失败: %w", err)
+		}
+	}
+	wasRunning := pm.running()
+	if err := atomicWrite(pm.configPath, raw, 0600); err != nil {
+		// rename 后的目录 fsync 也可能失败，此时同样恢复旧文件。
+		if existed {
+			return errors.Join(err, atomicWrite(pm.configPath, old, 0600))
+		}
+		removeErr := os.Remove(pm.configPath)
+		if os.IsNotExist(removeErr) {
+			removeErr = nil
+		}
+		return errors.Join(err, removeErr)
+	}
+	if !wasRunning {
+		return nil
+	}
+	applyErr := pm.stop()
+	if applyErr == nil {
+		applyErr = pm.start()
+	}
+	if applyErr == nil {
+		applyErr = pm.healthy()
+	}
+	if applyErr == nil {
+		return nil
+	}
+	stopErr := pm.stop()
+	if existed {
+		err = atomicWrite(pm.configPath, old, 0600)
+	} else {
+		err = os.Remove(pm.configPath)
+	}
+	if err != nil {
+		return errors.Join(applyErr, stopErr, fmt.Errorf("恢复配置失败: %w", err))
+	}
+	if stopErr != nil {
+		return errors.Join(fmt.Errorf("原配置已恢复，但候选进程停止失败: %w", applyErr), stopErr)
+	}
+	if existed {
+		if err = pm.start(); err == nil {
+			err = pm.healthy()
+		}
+	}
+	if err != nil {
+		return errors.Join(applyErr, fmt.Errorf("旧配置已恢复，但恢复运行失败: %w", err))
+	}
+	return fmt.Errorf("候选配置应用失败，已恢复原配置和进程: %w", applyErr)
+}
+
+func atomicWrite(path string, raw []byte, mode os.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(filepath.Dir(path), ".atomic-*")
+	if err != nil {
+		return err
+	}
+	name := f.Name()
+	defer os.Remove(name)
+	if err = f.Chmod(mode); err == nil {
+		_, err = f.Write(raw)
+	}
+	if err == nil {
+		err = f.Sync()
+	}
+	closeErr := f.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if err = os.Rename(name, path); err != nil {
+		return err
+	}
+	d, err := os.Open(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	return d.Sync()
+}
+
+func (pm *ProcessManager) healthy() error {
+	raw, err := os.ReadFile(pm.configPath)
+	if err != nil {
+		return err
+	}
+	var cfg struct {
+		Experimental struct {
+			Clash struct {
+				Controller string `json:"external_controller"`
+				Secret     string `json:"secret"`
+			} `json:"clash_api"`
+		} `json:"experimental"`
+	}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return err
+	}
+	endpoint := ""
+	if controller := cfg.Experimental.Clash.Controller; controller != "" {
+		host, port, err := net.SplitHostPort(controller)
+		if err != nil {
+			return fmt.Errorf("Clash API 地址格式错误")
+		}
+		ip := net.ParseIP(host)
+		if host != "" && host != "localhost" && (ip == nil || (!ip.IsLoopback() && !ip.IsUnspecified())) {
+			return fmt.Errorf("健康检查仅允许本地 Clash API")
+		}
+		if host == "" || host == "0.0.0.0" {
+			host = "127.0.0.1"
+		}
+		if host == "::" {
+			host = "::1"
+		}
+		endpoint = "http://" + net.JoinHostPort(host, port) + "/version"
+	}
+	client := &http.Client{Timeout: 250 * time.Millisecond, Transport: &http.Transport{Proxy: nil}, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	defer client.CloseIdleConnections()
+	start := time.Now()
+	deadline := start.Add(pm.healthTimeout)
+	for time.Now().Before(deadline) {
+		if !pm.running() {
+			return fmt.Errorf("sing-box 未能持续运行")
+		}
+		ready := endpoint == ""
+		if endpoint != "" {
+			req, _ := http.NewRequest(http.MethodGet, endpoint, nil)
+			if cfg.Experimental.Clash.Secret != "" {
+				req.Header.Set("Authorization", "Bearer "+cfg.Experimental.Clash.Secret)
+			}
+			resp, err := client.Do(req)
+			if err == nil {
+				body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+				resp.Body.Close()
+				var v struct {
+					Version string `json:"version"`
+				}
+				ready = resp.StatusCode == http.StatusOK && json.Unmarshal(body, &v) == nil && v.Version != ""
+			}
+		}
+		if ready && time.Since(start) >= pm.healthWindow {
+			return nil
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return fmt.Errorf("sing-box 健康检查超时")
+}
+
+func configRedactor(raw []byte) func(string) string {
+	var config any
+	_ = json.Unmarshal(raw, &config)
+	var secrets []string
+	var visit func(any)
+	visit = func(value any) {
+		switch v := value.(type) {
+		case map[string]any:
+			for key, child := range v {
+				if logger.SensitiveKey(key) {
+					if s, ok := child.(string); ok && s != "" {
+						secrets = append(secrets, s)
+					}
+				}
+				visit(child)
+			}
+		case []any:
+			for _, child := range v {
+				visit(child)
+			}
+		}
+	}
+	visit(config)
+	return func(line string) string {
+		for _, secret := range secrets {
+			line = strings.ReplaceAll(line, secret, "[REDACTED]")
+			quoted, _ := json.Marshal(secret)
+			line = strings.ReplaceAll(line, string(quoted), `"[REDACTED]"`)
+		}
+		return line
+	}
+}
+
+func (pm *ProcessManager) Version() (string, error) {
+	pm.opMu.Lock()
+	defer pm.opMu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, pm.singboxPath, "version").Output()
+	return string(out), err
+}
+
+// InstallKernel 供 kernel.Manager 的安装 hook 使用，与配置事务串行。
+func (pm *ProcessManager) InstallKernel(candidate string) error {
+	pm.opMu.Lock()
+	defer pm.opMu.Unlock()
+	if pm.running() && !pm.expected(pm.currentIdentity()) {
+		return fmt.Errorf("实例路径已变更，请先停止原实例后再更新内核")
+	}
+	if err := kernel.ValidateBinary(candidate); err != nil {
+		return err
+	}
+	if _, err := os.Stat(pm.configPath); err == nil {
+		if err := pm.checkPath(candidate, pm.configPath); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	wasRunning := pm.running()
+	if wasRunning {
+		if err := pm.stop(); err != nil {
+			return err
+		}
+	}
+	rollback, err := kernel.ReplaceBinary(candidate, pm.singboxPath)
+	if err != nil {
+		if wasRunning {
+			recovery := pm.start()
+			if recovery == nil {
+				recovery = pm.healthy()
+			}
+			return errors.Join(err, recovery)
+		}
+		return err
+	}
+	if !wasRunning {
+		return nil
+	}
+	if err = pm.start(); err == nil {
+		err = pm.healthy()
+	}
+	if err == nil {
+		return nil
+	}
+	if stopErr := pm.stop(); stopErr != nil {
+		return errors.Join(err, stopErr)
+	}
+	if restoreErr := rollback(); restoreErr != nil {
+		return errors.Join(err, fmt.Errorf("恢复内核失败: %w", restoreErr))
+	}
+	recovery := pm.start()
+	if recovery == nil {
+		recovery = pm.healthy()
+	}
+	if recovery != nil {
+		return errors.Join(err, fmt.Errorf("内核已恢复但启动失败: %w", recovery))
+	}
+	return fmt.Errorf("新内核未通过健康检查，已恢复旧内核: %w", err)
+}
+
+// RunLogRelay 仅供主程序固定内部模式调用。独立进程持有管道读端，使管理器退出不触发内核 SIGPIPE。
+// 转发器不接受命令；配置、日志均限制在同一数据目录，stdin EOF 后自动退出。
+func RunLogRelay(dataDir, configPath string) error {
+	dataDir = absolutePath(dataDir)
+	configPath = absolutePath(configPath)
+	rel, err := filepath.Rel(dataDir, configPath)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return fmt.Errorf("日志配置不属于数据目录")
+	}
+	raw, err := os.ReadFile(configPath)
+	if err != nil {
+		return err
+	}
+	redact := configRedactor(raw)
+	f, err := os.OpenFile(filepath.Join(dataDir, "singbox-relay.lock"), os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("旧日志转发器尚未结束")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	logDir := filepath.Join(dataDir, "logs")
+	if err := os.MkdirAll(logDir, 0700); err != nil {
+		return err
+	}
+	logFile, err := logger.NewLogger(filepath.Join(logDir, "singbox.log"), "")
+	if err != nil {
+		return err
+	}
+	defer logFile.Close()
+	if err := os.Chmod(filepath.Join(logDir, "singbox.log"), 0600); err != nil {
+		return err
+	}
+	ready := os.NewFile(3, "relay-ready")
+	if ready == nil {
+		return fmt.Errorf("缺少内部就绪通道")
+	}
+	if _, err := ready.Write([]byte{1}); err != nil {
+		ready.Close()
+		return err
+	}
+	ready.Close()
+	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Buffer(make([]byte, 64<<10), 1<<20)
+	for scanner.Scan() {
+		logFile.WriteRaw(logger.Redact(redact(scanner.Text())))
+	}
+	// 超长日志行不应堵塞内核 stdout：丢弃剩余输入直到内核退出。
+	if err := scanner.Err(); err != nil {
+		_, _ = io.Copy(io.Discard, os.Stdin)
+		return fmt.Errorf("日志行超出限制")
+	}
+	return nil
+}
+
+func (pm *ProcessManager) startLogRelay() (*os.File, error) {
+	executable, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+	input, output, err := os.Pipe()
+	if err != nil {
+		return nil, err
+	}
+	readyRead, readyWrite, err := os.Pipe()
+	if err != nil {
+		input.Close()
+		output.Close()
+		return nil, err
+	}
+	relay := exec.Command(executable, "--internal-log-relay", pm.dataDir, pm.configPath)
+	relay.Dir = pm.dataDir
+	relay.Stdin = input
+	relay.ExtraFiles = []*os.File{readyWrite}
+	relay.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	err = relay.Start()
+	input.Close()
+	readyWrite.Close()
+	if err != nil {
+		readyRead.Close()
+		output.Close()
+		return nil, err
+	}
+	go func() { _ = relay.Wait() }()
+	defer readyRead.Close()
+	ready := make(chan error, 1)
+	go func() {
+		var b [1]byte
+		_, err := io.ReadFull(readyRead, b[:])
+		if err == nil && b[0] != 1 {
+			err = fmt.Errorf("日志转发器应答无效")
+		}
+		ready <- err
+	}()
+	select {
+	case err := <-ready:
+		if err != nil {
+			output.Close()
+			return nil, err
+		}
+		return output, nil
+	case <-time.After(3 * time.Second):
+		output.Close()
+		return nil, fmt.Errorf("日志转发器就绪超时")
+	}
 }

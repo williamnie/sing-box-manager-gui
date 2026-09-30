@@ -4,20 +4,23 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"io/fs"
+	"net"
 	"net/http"
 	"os"
 	"os/user"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strconv"
+	"sync"
 	"time"
 
-	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/shirou/gopsutil/v3/process"
 	"github.com/xiaobei/singbox-manager/internal/builder"
 	"github.com/xiaobei/singbox-manager/internal/daemon"
+	"github.com/xiaobei/singbox-manager/internal/gateway"
 	"github.com/xiaobei/singbox-manager/internal/kernel"
 	"github.com/xiaobei/singbox-manager/internal/logger"
 	"github.com/xiaobei/singbox-manager/internal/parser"
@@ -38,17 +41,23 @@ func generateRandomSecret(length int) string {
 
 // Server API 服务器
 type Server struct {
-	store          *storage.JSONStore
-	subService     *service.SubscriptionService
-	processManager *daemon.ProcessManager
-	launchdManager *daemon.LaunchdManager
-	systemdManager *daemon.SystemdManager
-	kernelManager  *kernel.Manager
-	scheduler      *service.Scheduler
-	router         *gin.Engine
-	sbmPath        string // sbm 可执行文件路径
-	port           int    // Web 服务端口
-	version        string // sbm 版本号
+	platform        string
+	gateway         gatewayController
+	writeMu         sync.Mutex
+	auth            *authManager
+	allowedNetworks []*net.IPNet
+	operationMu     sync.Mutex
+	store           *storage.JSONStore
+	subService      *service.SubscriptionService
+	processManager  processController
+	launchdManager  *daemon.LaunchdManager
+	systemdManager  *daemon.SystemdManager
+	kernelManager   *kernel.Manager
+	scheduler       *service.Scheduler
+	router          *gin.Engine
+	sbmPath         string // sbm 可执行文件路径
+	port            int    // Web 服务端口
+	version         string // sbm 版本号
 }
 
 // NewServer 创建 API 服务器
@@ -62,19 +71,28 @@ func NewServer(store *storage.JSONStore, processManager *daemon.ProcessManager, 
 
 	s := &Server{
 		store:          store,
+		platform:       runtime.GOOS,
+		gateway:        gateway.NewClient(gateway.DefaultSocket),
 		subService:     subService,
 		processManager: processManager,
 		launchdManager: launchdManager,
 		systemdManager: systemdManager,
 		kernelManager:  kernelManager,
 		scheduler:      service.NewScheduler(store, subService),
-		router:         gin.Default(),
+		router:         gin.New(),
 		sbmPath:        sbmPath,
 		port:           port,
 		version:        version,
 	}
 
+	s.auth, _ = newAuth(store.GetDataDir())
+	kernelManager.SetInstallHook(func(candidate string) error {
+		s.operationMu.Lock()
+		defer s.operationMu.Unlock()
+		return processManager.InstallKernel(candidate)
+	})
 	// 设置调度器的更新回调
+	s.scheduler.SetWriteGuard(&s.writeMu)
 	s.scheduler.SetUpdateCallback(s.autoApplyConfig)
 
 	s.setupRoutes()
@@ -93,19 +111,23 @@ func (s *Server) StopScheduler() {
 
 // setupRoutes 设置路由
 func (s *Server) setupRoutes() {
-	// CORS 配置
-	s.router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"*"},
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
-		ExposeHeaders:    []string{"Content-Length"},
-		AllowCredentials: false,
-		MaxAge:           12 * time.Hour,
-	}))
+	s.router.Use(s.recoverRequest, s.securityBoundary)
+	s.router.SetTrustedProxies(nil)
+	s.router.GET("/api/auth/status", s.authStatus)
+	s.router.POST("/api/auth/setup", s.login)
+	s.router.POST("/api/auth/login", s.login)
+	s.router.POST("/api/auth/logout", s.logout)
 
 	// API 路由组
-	api := s.router.Group("/api")
+	api := s.router.Group("/api", s.requireAuth, func(c *gin.Context) {
+		if c.Request.Method != "GET" {
+			s.writeMu.Lock()
+			defer s.writeMu.Unlock()
+		}
+		c.Next()
+	})
 	{
+		s.setupDeploymentRoutes(api)
 		// 订阅管理
 		api.GET("/subscriptions", s.getSubscriptions)
 		api.POST("/subscriptions", s.addSubscription)
@@ -217,7 +239,7 @@ func (s *Server) setupRoutes() {
 
 // Run 运行服务器
 func (s *Server) Run(addr string) error {
-	return s.router.Run(addr)
+	return s.httpServer(addr).ListenAndServe()
 }
 
 // ==================== 订阅 API ====================
@@ -270,7 +292,7 @@ func (s *Server) updateSubscription(c *gin.Context) {
 
 	// 自动应用配置
 	if err := s.autoApplyConfig(); err != nil {
-		c.JSON(http.StatusOK, gin.H{"message": "更新成功，但自动应用配置失败: " + err.Error()})
+		c.JSON(http.StatusOK, gin.H{"warning": "更新成功，但自动应用配置失败: " + err.Error()})
 		return
 	}
 
@@ -287,7 +309,7 @@ func (s *Server) deleteSubscription(c *gin.Context) {
 
 	// 自动应用配置
 	if err := s.autoApplyConfig(); err != nil {
-		c.JSON(http.StatusOK, gin.H{"message": "删除成功，但自动应用配置失败: " + err.Error()})
+		c.JSON(http.StatusOK, gin.H{"warning": "删除成功，但自动应用配置失败: " + err.Error()})
 		return
 	}
 
@@ -374,7 +396,7 @@ func (s *Server) updateFilter(c *gin.Context) {
 
 	// 自动应用配置
 	if err := s.autoApplyConfig(); err != nil {
-		c.JSON(http.StatusOK, gin.H{"message": "更新成功，但自动应用配置失败: " + err.Error()})
+		c.JSON(http.StatusOK, gin.H{"warning": "更新成功，但自动应用配置失败: " + err.Error()})
 		return
 	}
 
@@ -391,7 +413,7 @@ func (s *Server) deleteFilter(c *gin.Context) {
 
 	// 自动应用配置
 	if err := s.autoApplyConfig(); err != nil {
-		c.JSON(http.StatusOK, gin.H{"message": "删除成功，但自动应用配置失败: " + err.Error()})
+		c.JSON(http.StatusOK, gin.H{"warning": "删除成功，但自动应用配置失败: " + err.Error()})
 		return
 	}
 
@@ -415,6 +437,10 @@ func (s *Server) addRule(c *gin.Context) {
 	// 生成 ID
 	rule.ID = uuid.New().String()
 
+	if err := storage.ValidateRule(rule, s.store.GetSettings().DeploymentRole == "gateway"); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
 	if err := s.store.AddRule(rule); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -439,6 +465,10 @@ func (s *Server) updateRule(c *gin.Context) {
 	}
 
 	rule.ID = id
+	if err := storage.ValidateRule(rule, s.store.GetSettings().DeploymentRole == "gateway"); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
 	if err := s.store.UpdateRule(rule); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -446,7 +476,7 @@ func (s *Server) updateRule(c *gin.Context) {
 
 	// 自动应用配置
 	if err := s.autoApplyConfig(); err != nil {
-		c.JSON(http.StatusOK, gin.H{"message": "更新成功，但自动应用配置失败: " + err.Error()})
+		c.JSON(http.StatusOK, gin.H{"warning": "更新成功，但自动应用配置失败: " + err.Error()})
 		return
 	}
 
@@ -463,7 +493,7 @@ func (s *Server) deleteRule(c *gin.Context) {
 
 	// 自动应用配置
 	if err := s.autoApplyConfig(); err != nil {
-		c.JSON(http.StatusOK, gin.H{"message": "删除成功，但自动应用配置失败: " + err.Error()})
+		c.JSON(http.StatusOK, gin.H{"warning": "删除成功，但自动应用配置失败: " + err.Error()})
 		return
 	}
 
@@ -494,7 +524,7 @@ func (s *Server) updateRuleGroup(c *gin.Context) {
 
 	// 自动应用配置
 	if err := s.autoApplyConfig(); err != nil {
-		c.JSON(http.StatusOK, gin.H{"message": "更新成功，但自动应用配置失败: " + err.Error()})
+		c.JSON(http.StatusOK, gin.H{"warning": "更新成功，但自动应用配置失败: " + err.Error()})
 		return
 	}
 
@@ -584,6 +614,17 @@ func (s *Server) updateSettings(c *gin.Context) {
 		return
 	}
 
+	storage.NormalizeSettings(&settings)
+	previous := s.store.GetSettings()
+	settings.ImportedPolicy = previous.ImportedPolicy
+	if settings.DeploymentRole != previous.DeploymentRole || !reflect.DeepEqual(settings.Gateway, previous.Gateway) {
+		c.JSON(400, gin.H{"error": "请从部署与网关页面保存角色并显式应用"})
+		return
+	}
+	if err := storage.ValidateSettings(&settings); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
 	// 根据局域网访问设置处理 secret
 	if settings.AllowLAN {
 		// 开启局域网访问且 secret 为空时，自动生成一个
@@ -656,53 +697,16 @@ func (s *Server) previewConfig(c *gin.Context) {
 }
 
 func (s *Server) applyConfig(c *gin.Context) {
-	configJSON, err := s.buildConfig()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	s.operationMu.Lock()
+	defer s.operationMu.Unlock()
+	if err := s.applyManagedConfig(); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-
-	// 保存配置文件
-	settings := s.store.GetSettings()
-	if err := s.saveConfigFile(s.resolvePath(settings.ConfigPath), configJSON); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	// 检查配置
-	if err := s.processManager.Check(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	// 重启服务
-	if s.processManager.IsRunning() {
-		if err := s.processManager.Restart(); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "配置已应用"})
+	c.JSON(200, gin.H{"message": "配置已校验并原子应用"})
 }
 
-func (s *Server) buildConfig() (string, error) {
-	settings := s.store.GetSettings()
-	nodes := s.store.GetAllNodes()
-	filters := s.store.GetFilters()
-	rules := s.store.GetRules()
-	ruleGroups := s.store.GetRuleGroups()
-
-	b := builder.NewConfigBuilder(settings, nodes, filters, rules, ruleGroups)
-	if version, err := s.processManager.Version(); err == nil {
-		b = b.WithSingBoxVersion(version)
-	}
-	return b.BuildJSON()
-}
-
-func (s *Server) saveConfigFile(path, content string) error {
-	return os.WriteFile(path, []byte(content), 0644)
-}
+func (s *Server) buildConfig() (string, error) { return s.buildSettings(s.store.GetSettings(), false) }
 
 // resolvePath 将相对路径解析为基于数据目录的绝对路径
 func (s *Server) resolvePath(path string) string {
@@ -714,28 +718,17 @@ func (s *Server) resolvePath(path string) string {
 
 // autoApplyConfig 自动应用配置（如果 sing-box 正在运行）
 func (s *Server) autoApplyConfig() error {
+	s.operationMu.Lock()
+	defer s.operationMu.Unlock()
 	settings := s.store.GetSettings()
 	if !settings.AutoApply {
 		return nil
 	}
-
-	// 生成配置
-	configJSON, err := s.buildConfig()
-	if err != nil {
-		return err
+	// 网关拓扑只允许显式应用；日常策略更新仍经过同一配置事务。
+	if settings.DeploymentRole == "gateway" && !settings.Gateway.Enabled {
+		return nil
 	}
-
-	// 保存配置文件
-	if err := s.saveConfigFile(s.resolvePath(settings.ConfigPath), configJSON); err != nil {
-		return err
-	}
-
-	// 如果 sing-box 正在运行，则重启
-	if s.processManager.IsRunning() {
-		return s.processManager.Restart()
-	}
-
-	return nil
+	return s.applyManagedConfig()
 }
 
 // ==================== 服务 API ====================
@@ -760,6 +753,14 @@ func (s *Server) getServiceStatus(c *gin.Context) {
 }
 
 func (s *Server) startService(c *gin.Context) {
+	s.operationMu.Lock()
+	defer s.operationMu.Unlock()
+	if s.store.GetSettings().DeploymentRole == "gateway" {
+		if err := s.applyManagedConfig(); err != nil {
+			c.JSON(400, gin.H{"error": err.Error()})
+			return
+		}
+	}
 	if err := s.processManager.Start(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -768,6 +769,13 @@ func (s *Server) startService(c *gin.Context) {
 }
 
 func (s *Server) stopService(c *gin.Context) {
+	s.operationMu.Lock()
+	defer s.operationMu.Unlock()
+	settings := s.store.GetSettings()
+	if settings.DeploymentRole == "gateway" && gateway.Normalize(settings.Gateway).AccessMode == "dns" && settings.Gateway.Enabled {
+		s.stopDNSBypass(c)
+		return
+	}
 	if err := s.processManager.Stop(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -776,6 +784,10 @@ func (s *Server) stopService(c *gin.Context) {
 }
 
 func (s *Server) restartService(c *gin.Context) {
+	if s.store.GetSettings().DeploymentRole == "gateway" {
+		s.applyConfig(c)
+		return
+	}
 	if err := s.processManager.Restart(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -784,11 +796,13 @@ func (s *Server) restartService(c *gin.Context) {
 }
 
 func (s *Server) reloadService(c *gin.Context) {
-	if err := s.processManager.Reload(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"message": "配置已重载"})
+	s.applyConfig(c)
+	/*
+		if err := s.processManager.Reload(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "配置已重载"}) */
 }
 
 // ==================== launchd API ====================
@@ -923,6 +937,10 @@ func (s *Server) getSystemdStatus(c *gin.Context) {
 }
 
 func (s *Server) installSystemd(c *gin.Context) {
+	if s.store.GetSettings().DeploymentRole == "gateway" {
+		c.JSON(400, gin.H{"error": "系统级网关服务由初始化安装器管理；日常网关操作请使用网关检查、应用和恢复"})
+		return
+	}
 	if s.systemdManager == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "当前系统不支持 systemd 服务"})
 		return
@@ -971,6 +989,10 @@ func (s *Server) installSystemd(c *gin.Context) {
 }
 
 func (s *Server) uninstallSystemd(c *gin.Context) {
+	if s.store.GetSettings().DeploymentRole == "gateway" {
+		c.JSON(400, gin.H{"error": "系统级网关服务由初始化安装器管理；日常网关操作请使用网关检查、应用和恢复"})
+		return
+	}
 	if s.systemdManager == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "当前系统不支持 systemd 服务"})
 		return
@@ -984,6 +1006,10 @@ func (s *Server) uninstallSystemd(c *gin.Context) {
 }
 
 func (s *Server) restartSystemd(c *gin.Context) {
+	if s.store.GetSettings().DeploymentRole == "gateway" {
+		c.JSON(400, gin.H{"error": "系统级网关服务由初始化安装器管理；日常网关操作请使用网关检查、应用和恢复"})
+		return
+	}
 	if s.systemdManager == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "当前系统不支持 systemd 服务"})
 		return
@@ -1032,6 +1058,10 @@ func (s *Server) getDaemonStatus(c *gin.Context) {
 }
 
 func (s *Server) installDaemon(c *gin.Context) {
+	if s.store.GetSettings().DeploymentRole == "gateway" {
+		c.JSON(400, gin.H{"error": "系统级网关服务由初始化安装器管理；日常网关操作请使用网关检查、应用和恢复"})
+		return
+	}
 	homeDir, err := os.UserHomeDir()
 	if err != nil || homeDir == "" {
 		if u, err := user.Current(); err == nil && u.HomeDir != "" {
@@ -1100,6 +1130,10 @@ func (s *Server) installDaemon(c *gin.Context) {
 }
 
 func (s *Server) uninstallDaemon(c *gin.Context) {
+	if s.store.GetSettings().DeploymentRole == "gateway" {
+		c.JSON(400, gin.H{"error": "系统级网关服务由初始化安装器管理；日常网关操作请使用网关检查、应用和恢复"})
+		return
+	}
 	var err error
 	switch runtime.GOOS {
 	case "darwin":
@@ -1127,6 +1161,10 @@ func (s *Server) uninstallDaemon(c *gin.Context) {
 }
 
 func (s *Server) restartDaemon(c *gin.Context) {
+	if s.store.GetSettings().DeploymentRole == "gateway" {
+		c.JSON(400, gin.H{"error": "系统级网关服务由初始化安装器管理；日常网关操作请使用网关检查、应用和恢复"})
+		return
+	}
 	var err error
 	switch runtime.GOOS {
 	case "darwin":
@@ -1338,7 +1376,7 @@ func (s *Server) updateManualNode(c *gin.Context) {
 
 	// 自动应用配置
 	if err := s.autoApplyConfig(); err != nil {
-		c.JSON(http.StatusOK, gin.H{"message": "更新成功，但自动应用配置失败: " + err.Error()})
+		c.JSON(http.StatusOK, gin.H{"warning": "更新成功，但自动应用配置失败: " + err.Error()})
 		return
 	}
 
@@ -1355,7 +1393,7 @@ func (s *Server) deleteManualNode(c *gin.Context) {
 
 	// 自动应用配置
 	if err := s.autoApplyConfig(); err != nil {
-		c.JSON(http.StatusOK, gin.H{"message": "删除成功，但自动应用配置失败: " + err.Error()})
+		c.JSON(http.StatusOK, gin.H{"warning": "删除成功，但自动应用配置失败: " + err.Error()})
 		return
 	}
 

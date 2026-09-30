@@ -84,16 +84,22 @@ func (s *SubscriptionService) Refresh(id string) error {
 // RefreshAll 刷新所有订阅
 func (s *SubscriptionService) RefreshAll() error {
 	subs := s.store.GetSubscriptions()
+	failures := 0
 	for _, sub := range subs {
 		if sub.Enabled {
 			if err := s.refresh(&sub); err != nil {
-				// 记录错误但继续处理其他订阅
+				// 记录失败数量，不把含凭据的订阅 URL 写入日志。
+				failures++
 				continue
 			}
 			if err := s.store.UpdateSubscription(sub); err != nil {
+				failures++
 				continue
 			}
 		}
+	}
+	if failures > 0 {
+		return fmt.Errorf("%d 个订阅更新失败，请检查订阅配置", failures)
 	}
 	return nil
 }

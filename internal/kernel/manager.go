@@ -51,11 +51,20 @@ type GithubAsset struct {
 // Manager 内核管理器
 type Manager struct {
 	dataDir     string
-	binPath     string                       // sing-box 二进制文件的绝对路径
+	binPath     string // sing-box 二进制文件的绝对路径
 	getSettings func() *storage.Settings
 	mu          sync.RWMutex
+	installMu   sync.Mutex
+	installHook func(string) error
 	progress    *DownloadProgress
 	downloading bool
+}
+
+// SetInstallHook 将最终安装交给进程管理器，保证更新与配置应用互斥并支持健康回退。
+func (m *Manager) SetInstallHook(hook func(candidate string) error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.installHook = hook
 }
 
 // NewManager 创建内核管理器
@@ -208,7 +217,8 @@ func (m *Manager) StartDownload(version string) error {
 func (m *Manager) GetProgress() *DownloadProgress {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.progress
+	progress := *m.progress
+	return &progress
 }
 
 // IsDownloading 检查是否正在下载

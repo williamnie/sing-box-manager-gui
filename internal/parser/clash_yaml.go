@@ -241,7 +241,9 @@ func convertClashProxy(proxy ClashProxy) (*storage.Node, error) {
 		network = "tcp"
 	}
 
-	if network != "tcp" || proxy.WSOpts != nil || proxy.H2Opts != nil || proxy.GrpcOpts != nil {
+	// 订阅转换器可能给 TCP 节点附带其他传输层的空选项；只有 network 决定传输类型。
+	// sing-box 的普通 TCP 使用默认传输，不能生成 transport.type=tcp。
+	if network != "tcp" {
 		transport := map[string]interface{}{
 			"type": network,
 		}

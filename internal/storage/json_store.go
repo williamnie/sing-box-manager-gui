@@ -10,9 +10,10 @@ import (
 
 // JSONStore JSON 文件存储实现
 type JSONStore struct {
-	dataDir string
-	mu      sync.RWMutex
-	data    *AppData
+	dataDir   string
+	mu        sync.RWMutex
+	data      *AppData
+	persisted *AppData
 }
 
 // NewJSONStore 创建新的 JSON 存储
@@ -22,16 +23,22 @@ func NewJSONStore(dataDir string) (*JSONStore, error) {
 	}
 
 	// 确保数据目录存在
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
+	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		return nil, fmt.Errorf("创建数据目录失败: %w", err)
 	}
 
 	// 确保 generated 子目录存在
 	generatedDir := filepath.Join(dataDir, "generated")
-	if err := os.MkdirAll(generatedDir, 0755); err != nil {
+	if err := os.MkdirAll(generatedDir, 0700); err != nil {
 		return nil, fmt.Errorf("创建 generated 目录失败: %w", err)
 	}
 
+	if err := os.Chmod(dataDir, 0700); err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(generatedDir, 0700); err != nil {
+		return nil, err
+	}
 	// 加载数据
 	if err := store.load(); err != nil {
 		return nil, err
@@ -50,6 +57,7 @@ func (s *JSONStore) load() error {
 	// 如果文件不存在，初始化默认数据
 	if _, err := os.Stat(dataFile); os.IsNotExist(err) {
 		s.data = &AppData{
+			SchemaVersion: 2,
 			Subscriptions: []Subscription{},
 			ManualNodes:   []ManualNode{},
 			Filters:       []Filter{},
@@ -66,7 +74,7 @@ func (s *JSONStore) load() error {
 		return fmt.Errorf("读取数据文件失败: %w", err)
 	}
 
-	s.data = &AppData{}
+	s.data = &AppData{Settings: DefaultSettings()}
 	if err := json.Unmarshal(data, s.data); err != nil {
 		return fmt.Errorf("解析数据文件失败: %w", err)
 	}
@@ -77,12 +85,14 @@ func (s *JSONStore) load() error {
 	}
 
 	// 确保 RuleGroups 不为空
-	if len(s.data.RuleGroups) == 0 {
+	if s.data.RuleGroups == nil && s.data.SchemaVersion < 2 {
 		s.data.RuleGroups = DefaultRuleGroups()
 	}
 
 	// 迁移旧的路径格式（移除多余的 data/ 前缀）
-	needSave := false
+	needSave := s.data.SchemaVersion < 2 || s.data.Settings.DeploymentRole == ""
+	s.data.SchemaVersion = 2
+	NormalizeSettings(s.data.Settings)
 	if s.data.Settings.SingBoxPath == "data/bin/sing-box" {
 		s.data.Settings.SingBoxPath = "bin/sing-box"
 		needSave = true
@@ -95,11 +105,20 @@ func (s *JSONStore) load() error {
 		return s.saveInternal()
 	}
 
+	s.persisted = clone(s.data)
+	if err := os.Chmod(dataFile, 0600); err != nil {
+		return err
+	}
 	return nil
 }
 
 // saveInternal 内部保存方法（不加锁）
-func (s *JSONStore) saveInternal() error {
+func (s *JSONStore) saveInternal() (result error) {
+	defer func() {
+		if result != nil && s.persisted != nil {
+			s.data = clone(s.persisted)
+		}
+	}()
 	dataFile := filepath.Join(s.dataDir, "data.json")
 
 	data, err := json.MarshalIndent(s.data, "", "  ")
@@ -107,10 +126,11 @@ func (s *JSONStore) saveInternal() error {
 		return fmt.Errorf("序列化数据失败: %w", err)
 	}
 
-	if err := os.WriteFile(dataFile, data, 0644); err != nil {
+	if err := atomicWrite(dataFile, data); err != nil {
 		return fmt.Errorf("写入数据文件失败: %w", err)
 	}
-
+	s.data = clone(s.data)
+	s.persisted = clone(s.data)
 	return nil
 }
 
@@ -127,7 +147,7 @@ func (s *JSONStore) Save() error {
 func (s *JSONStore) GetSubscriptions() []Subscription {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.data.Subscriptions
+	return clone(s.data.Subscriptions)
 }
 
 // GetSubscription 获取单个订阅
@@ -137,7 +157,8 @@ func (s *JSONStore) GetSubscription(id string) *Subscription {
 
 	for i := range s.data.Subscriptions {
 		if s.data.Subscriptions[i].ID == id {
-			return &s.data.Subscriptions[i]
+			v := clone(s.data.Subscriptions[i])
+			return &v
 		}
 	}
 	return nil
@@ -186,7 +207,7 @@ func (s *JSONStore) DeleteSubscription(id string) error {
 func (s *JSONStore) GetFilters() []Filter {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.data.Filters
+	return clone(s.data.Filters)
 }
 
 // GetFilter 获取单个过滤器
@@ -196,7 +217,8 @@ func (s *JSONStore) GetFilter(id string) *Filter {
 
 	for i := range s.data.Filters {
 		if s.data.Filters[i].ID == id {
-			return &s.data.Filters[i]
+			v := clone(s.data.Filters[i])
+			return &v
 		}
 	}
 	return nil
@@ -245,7 +267,7 @@ func (s *JSONStore) DeleteFilter(id string) error {
 func (s *JSONStore) GetRules() []Rule {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.data.Rules
+	return clone(s.data.Rules)
 }
 
 // AddRule 添加规则
@@ -291,7 +313,7 @@ func (s *JSONStore) DeleteRule(id string) error {
 func (s *JSONStore) GetRuleGroups() []RuleGroup {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.data.RuleGroups
+	return clone(s.data.RuleGroups)
 }
 
 // UpdateRuleGroup 更新规则组
@@ -314,7 +336,7 @@ func (s *JSONStore) UpdateRuleGroup(ruleGroup RuleGroup) error {
 func (s *JSONStore) GetSettings() *Settings {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.data.Settings
+	return clone(s.data.Settings)
 }
 
 // UpdateSettings 更新设置
@@ -322,7 +344,7 @@ func (s *JSONStore) UpdateSettings(settings *Settings) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.data.Settings = settings
+	s.data.Settings = clone(settings)
 	return s.saveInternal()
 }
 
@@ -332,7 +354,7 @@ func (s *JSONStore) UpdateSettings(settings *Settings) error {
 func (s *JSONStore) GetManualNodes() []ManualNode {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.data.ManualNodes
+	return clone(s.data.ManualNodes)
 }
 
 // AddManualNode 添加手动节点
@@ -460,4 +482,40 @@ func (s *JSONStore) GetCountryGroups() []CountryGroup {
 // GetDataDir 获取数据目录
 func (s *JSONStore) GetDataDir() string {
 	return s.dataDir
+}
+
+// Snapshot 返回独立快照，供一致的预览和迁移事务使用。
+func (s *JSONStore) Snapshot() *AppData { s.mu.RLock(); defer s.mu.RUnlock(); return clone(s.data) }
+func (s *JSONStore) Replace(data *AppData) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	previous := s.data
+	s.data = clone(data)
+	if err := s.saveInternal(); err != nil {
+		s.data = previous
+		return err
+	}
+	return nil
+}
+func atomicWrite(path string, data []byte) error {
+	f, err := os.CreateTemp(filepath.Dir(path), ".data-*")
+	if err != nil {
+		return err
+	}
+	name := f.Name()
+	defer os.Remove(name)
+	if err = f.Chmod(0600); err == nil {
+		_, err = f.Write(data)
+	}
+	if err == nil {
+		err = f.Sync()
+	}
+	closeErr := f.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	return os.Rename(name, path)
 }

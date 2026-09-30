@@ -1,10 +1,17 @@
 package main
 
 import (
+	"context"
+	"crypto/tls"
 	"flag"
 	"fmt"
+	"net"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"strconv"
+	"strings"
+	"syscall"
 
 	"github.com/xiaobei/singbox-manager/internal/api"
 	"github.com/xiaobei/singbox-manager/internal/daemon"
@@ -13,89 +20,143 @@ import (
 )
 
 var (
-	Version   = "0.2.13"
-	BuildTime = "unknown"
-	GitCommit = "unknown"
-	dataDir   string
-	port      int
+	Version                                   = "0.2.13"
+	BuildTime                                 = "unknown"
+	GitCommit                                 = "unknown"
+	dataDir                                   string
+	port                                      int
+	listenHost, tlsCert, tlsKey, allowNetwork string
 )
 
 func init() {
-	// 获取默认数据目录
 	homeDir, _ := os.UserHomeDir()
-	defaultDataDir := filepath.Join(homeDir, ".singbox-manager")
-
-	flag.StringVar(&dataDir, "data", defaultDataDir, "数据目录")
+	flag.StringVar(&dataDir, "data", filepath.Join(homeDir, ".singbox-manager"), "数据目录")
 	flag.IntVar(&port, "port", 9090, "Web 服务端口")
+	flag.StringVar(&listenHost, "listen", "127.0.0.1", "Web 监听 IP（非回环地址必须配置 TLS）")
+	flag.StringVar(&tlsCert, "tls-cert", "", "管理服务 TLS 证书路径")
+	flag.StringVar(&tlsKey, "tls-key", "", "管理服务 TLS 私钥路径")
+	flag.StringVar(&allowNetwork, "allow-network", "", "允许访问管理服务的来源 CIDR，逗号分隔；空值不附加来源限制")
 }
 
 func main() {
+	if len(os.Args) == 4 && os.Args[1] == "--internal-log-relay" {
+		if err := daemon.RunLogRelay(os.Args[2], os.Args[3]); err != nil {
+			os.Exit(1)
+		}
+		return
+	}
 	flag.Parse()
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "启动管理器失败: %v\n", err)
+		os.Exit(1)
+	}
+}
 
-	// 将 dataDir 转换为绝对路径，避免相对路径在子进程中出错
-	var err error
+func validateListen(host string, port int, cert, key, networks string) (string, []*net.IPNet, error) {
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return "", nil, fmt.Errorf("-listen 必须是明确的 IPv4 或 IPv6 地址")
+	}
+	if port < 1 || port > 65535 {
+		return "", nil, fmt.Errorf("Web 端口必须在 1 到 65535 之间")
+	}
+	if (cert == "") != (key == "") {
+		return "", nil, fmt.Errorf("-tls-cert 和 -tls-key 必须同时配置")
+	}
+	if !ip.IsLoopback() && cert == "" {
+		return "", nil, fmt.Errorf("非本机监听必须配置 -tls-cert 和 -tls-key")
+	}
+	var allowed []*net.IPNet
+	if networks != "" {
+		for _, entry := range strings.Split(networks, ",") {
+			_, network, err := net.ParseCIDR(strings.TrimSpace(entry))
+			if err != nil {
+				return "", nil, fmt.Errorf("-allow-network 含无效 CIDR")
+			}
+			allowed = append(allowed, network)
+		}
+	}
+	return net.JoinHostPort(ip.String(), strconv.Itoa(port)), allowed, nil
+}
+
+func run() error {
+	addr, allowed, err := validateListen(listenHost, port, tlsCert, tlsKey, allowNetwork)
+	if err != nil {
+		return err
+	}
+	if tlsCert != "" {
+		if _, err := tls.LoadX509KeyPair(tlsCert, tlsKey); err != nil {
+			return fmt.Errorf("无法加载管理服务 TLS 证书或私钥: %w", err)
+		}
+	}
 	dataDir, err = filepath.Abs(dataDir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "获取绝对路径失败: %v\n", err)
-		os.Exit(1)
+		return err
 	}
-
-	// 获取当前可执行文件的绝对路径（用于 launchd 安装）
+	lock, err := daemon.AcquireInstanceLock(dataDir)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	if resolved, err := filepath.EvalSymlinks(dataDir); err == nil {
+		dataDir = resolved
+	}
 	execPath, err := os.Executable()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "获取可执行文件路径失败: %v\n", err)
-		os.Exit(1)
+		return err
 	}
-	execPath, _ = filepath.EvalSymlinks(execPath)
-
-	// 初始化日志系统
+	if resolved, err := filepath.EvalSymlinks(execPath); err == nil {
+		execPath = resolved
+	}
 	if err := logger.InitLogManager(dataDir); err != nil {
-		fmt.Fprintf(os.Stderr, "初始化日志系统失败: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("初始化日志失败: %w", err)
 	}
-
-	// 打印启动信息
 	logger.Printf("singbox-manager v%s", Version)
 	logger.Printf("数据目录: %s", dataDir)
-	logger.Printf("Web 端口: %d", port)
-
-	// 初始化存储
 	store, err := storage.NewJSONStore(dataDir)
 	if err != nil {
-		logger.Printf("初始化存储失败: %v", err)
-		os.Exit(1)
+		return fmt.Errorf("初始化存储失败: %w", err)
 	}
-
-	// 初始化进程管理器
-	// sing-box 二进制文件路径固定为 dataDir/bin/sing-box
-	singboxPath := filepath.Join(dataDir, "bin", "sing-box")
-	configPath := filepath.Join(dataDir, "generated", "config.json")
-	processManager := daemon.NewProcessManager(singboxPath, configPath, dataDir)
-
-	// 初始化 launchd 管理器
+	processManager := daemon.NewProcessManager(filepath.Join(dataDir, "bin", "sing-box"), filepath.Join(dataDir, "generated", "config.json"), dataDir)
 	launchdManager, err := daemon.NewLaunchdManager()
 	if err != nil {
-		logger.Printf("初始化 launchd 管理器失败: %v", err)
+		logger.Printf("launchd 管理不可用: %v", err)
 	}
-
-	// 初始化 systemd 管理器
 	systemdManager, err := daemon.NewSystemdManager()
 	if err != nil {
-		logger.Printf("初始化 systemd 管理器失败: %v", err)
+		logger.Printf("systemd 管理不可用: %v", err)
 	}
-
-	// 创建 API 服务器
 	server := api.NewServer(store, processManager, launchdManager, systemdManager, execPath, port, Version)
-
-	// 启动定时任务调度器
+	if !server.AuthReady() {
+		return fmt.Errorf("认证初始化失败，管理服务未启动；请检查数据目录中的认证文件权限和格式")
+	}
+	server.SetAllowedNetworks(allowed)
+	if _, err := os.Stat(filepath.Join(dataDir, "setup-token")); err == nil {
+		logger.Printf("首次登录初始化令牌文件: %s", filepath.Join(dataDir, "setup-token"))
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	server.StartScheduler()
-
-	// 启动服务
-	addr := fmt.Sprintf(":%d", port)
-	logger.Printf("启动 Web 服务: http://0.0.0.0%s", addr)
-
-	if err := server.Run(addr); err != nil {
-		logger.Printf("启动服务失败: %v", err)
-		os.Exit(1)
+	defer server.StopScheduler()
+	scheme := "http"
+	if tlsCert != "" {
+		scheme = "https"
+	}
+	logger.Printf("管理服务地址: %s://%s", scheme, addr)
+	serveErrors := make(chan error, 1)
+	go func() {
+		if tlsCert != "" {
+			serveErrors <- server.RunTLS(addr, tlsCert, tlsKey)
+		} else {
+			serveErrors <- server.Run(addr)
+		}
+	}()
+	select {
+	case err := <-serveErrors:
+		return err
+	case <-ctx.Done():
+		// 管理器退出不终止已记录身份的 sing-box，下次启动按身份恢复。
+		logger.Printf("管理器退出，保留受管 sing-box 运行状态")
+		return nil
 	}
 }

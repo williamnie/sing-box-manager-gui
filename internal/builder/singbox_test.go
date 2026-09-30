@@ -7,6 +7,25 @@ import (
 	"github.com/xiaobei/singbox-manager/internal/storage"
 )
 
+func TestConfigBuilder_FilterModesUseSingBoxOutboundTypes(t *testing.T) {
+	for _, tc := range []struct{ mode, want string }{{"select", "selector"}, {"urltest", "urltest"}} {
+		t.Run(tc.mode, func(t *testing.T) {
+			b := NewConfigBuilder(storage.DefaultSettings(),
+				[]storage.Node{{Tag: "test-node", Type: "socks", Server: "example.com", ServerPort: 1080}},
+				[]storage.Filter{{Name: "test-group", Mode: tc.mode, AllNodes: true, Enabled: true}}, nil, nil)
+			for _, outbound := range b.buildOutbounds() {
+				if outbound["tag"] == "test-group" {
+					if outbound["type"] != tc.want {
+						t.Fatalf("outbound type = %v, want %s", outbound["type"], tc.want)
+					}
+					return
+				}
+			}
+			t.Fatal("filter group was not generated")
+		})
+	}
+}
+
 func TestConfigBuilder_NodeToOutbound_TUICEnsuresTLS(t *testing.T) {
 	b := NewConfigBuilder(storage.DefaultSettings(), nil, nil, nil, nil)
 

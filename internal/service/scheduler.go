@@ -1,7 +1,7 @@
 package service
 
 import (
-	"log"
+	"github.com/xiaobei/singbox-manager/internal/logger"
 	"sync"
 	"time"
 
@@ -12,6 +12,7 @@ import (
 type Scheduler struct {
 	store      *storage.JSONStore
 	subService *SubscriptionService
+	writeGuard sync.Locker
 	onUpdate   func() error // 订阅更新后的回调
 
 	stopCh   chan struct{}
@@ -45,7 +46,7 @@ func (s *Scheduler) Start() {
 
 	settings := s.store.GetSettings()
 	if settings.SubscriptionInterval <= 0 {
-		log.Println("[Scheduler] 定时更新已禁用")
+		logger.Println("[Scheduler] 定时更新已禁用")
 		return
 	}
 
@@ -53,8 +54,8 @@ func (s *Scheduler) Start() {
 	s.running = true
 	s.stopCh = make(chan struct{})
 
-	go s.run()
-	log.Printf("[Scheduler] 已启动，更新间隔: %v\n", s.interval)
+	go s.run(s.stopCh, s.interval)
+	logger.Printf("[Scheduler] 已启动，更新间隔: %v\n", s.interval)
 }
 
 // Stop 停止调度器
@@ -68,7 +69,7 @@ func (s *Scheduler) Stop() {
 
 	close(s.stopCh)
 	s.running = false
-	log.Println("[Scheduler] 已停止")
+	logger.Println("[Scheduler] 已停止")
 }
 
 // Restart 重启调度器（更新配置后调用）
@@ -85,13 +86,13 @@ func (s *Scheduler) IsRunning() bool {
 }
 
 // run 运行定时任务
-func (s *Scheduler) run() {
-	ticker := time.NewTicker(s.interval)
+func (s *Scheduler) run(stop <-chan struct{}, interval time.Duration) {
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {
 		select {
-		case <-s.stopCh:
+		case <-stop:
 			return
 		case <-ticker.C:
 			s.updateSubscriptions()
@@ -101,21 +102,25 @@ func (s *Scheduler) run() {
 
 // updateSubscriptions 更新所有订阅
 func (s *Scheduler) updateSubscriptions() {
-	log.Println("[Scheduler] 开始自动更新订阅...")
+	if s.writeGuard != nil {
+		s.writeGuard.Lock()
+		defer s.writeGuard.Unlock()
+	}
+	logger.Println("[Scheduler] 开始自动更新订阅...")
 
 	if err := s.subService.RefreshAll(); err != nil {
-		log.Printf("[Scheduler] 更新订阅失败: %v\n", err)
+		logger.Printf("[Scheduler] 更新订阅失败: %v\n", err)
 		return
 	}
 
-	log.Println("[Scheduler] 订阅更新完成")
+	logger.Println("[Scheduler] 订阅更新完成")
 
 	// 调用更新回调（自动应用配置）
 	if s.onUpdate != nil {
 		if err := s.onUpdate(); err != nil {
-			log.Printf("[Scheduler] 自动应用配置失败: %v\n", err)
+			logger.Printf("[Scheduler] 自动应用配置失败: %v\n", err)
 		} else {
-			log.Println("[Scheduler] 配置已自动应用")
+			logger.Println("[Scheduler] 配置已自动应用")
 		}
 	}
 }
@@ -139,3 +144,6 @@ func (s *Scheduler) GetInterval() time.Duration {
 	defer s.mu.Unlock()
 	return s.interval
 }
+
+// SetWriteGuard 必须在 Start 前设置，与 HTTP 写入和迁移互斥。
+func (s *Scheduler) SetWriteGuard(guard sync.Locker) { s.writeGuard = guard }

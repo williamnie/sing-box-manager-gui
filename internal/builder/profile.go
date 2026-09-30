@@ -7,6 +7,9 @@ var singBoxVersionPattern = regexp.MustCompile(`\b(\d+)\.(\d+)\.(\d+)\b`)
 // CompatProfile 表示针对特定 sing-box 版本的配置生成能力。
 type CompatProfile struct {
 	LegacyInboundFields bool
+	Known               bool
+	Major               int
+	Minor               int
 }
 
 // DefaultCompatProfile 默认按现代 sing-box 配置格式生成。
@@ -27,10 +30,11 @@ func CompatProfileFromVersion(versionOutput string) CompatProfile {
 	if major < 1 || (major == 1 && minor < 13) {
 		return CompatProfile{
 			LegacyInboundFields: true,
+			Known:               true, Major: major, Minor: minor,
 		}
 	}
 
-	return DefaultCompatProfile()
+	return CompatProfile{Known: true, Major: major, Minor: minor}
 }
 
 func parseVersionPart(value string) int {

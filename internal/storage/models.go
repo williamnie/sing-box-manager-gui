@@ -1,6 +1,9 @@
 package storage
 
-import "time"
+import (
+	"github.com/xiaobei/singbox-manager/internal/gateway"
+	"time"
+)
 
 // Subscription 订阅
 type Subscription struct {
@@ -25,7 +28,7 @@ type Traffic struct {
 // Node 节点
 type Node struct {
 	Tag          string                 `json:"tag"`
-	Type         string                 `json:"type"`                    // shadowsocks/vmess/vless/trojan/hysteria2/tuic
+	Type         string                 `json:"type"` // shadowsocks/vmess/vless/trojan/hysteria2/tuic
 	Server       string                 `json:"server"`
 	ServerPort   int                    `json:"server_port"`
 	Extra        map[string]interface{} `json:"extra,omitempty"`         // 协议特定字段
@@ -72,13 +75,19 @@ type URLTestConfig struct {
 
 // Rule 自定义规则
 type Rule struct {
-	ID       string   `json:"id"`
-	Name     string   `json:"name"`
-	RuleType string   `json:"rule_type"` // domain_suffix/domain_keyword/ip_cidr/geosite/geoip/port
-	Values   []string `json:"values"`    // 规则值列表
-	Outbound string   `json:"outbound"`  // 目标出站
-	Enabled  bool     `json:"enabled"`
-	Priority int      `json:"priority"`  // 优先级 (越小越优先)
+	SourceCIDRs  []string `json:"source_cidrs,omitempty"`
+	Network      []string `json:"network,omitempty"`
+	Protocol     []string `json:"protocol,omitempty"`
+	Ports        []int    `json:"ports,omitempty"`
+	PortRanges   []string `json:"port_ranges,omitempty"`
+	ProcessNames []string `json:"process_names,omitempty"`
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	RuleType     string   `json:"rule_type"` // domain_suffix/domain_keyword/ip_cidr/geosite/geoip/port
+	Values       []string `json:"values"`    // 规则值列表
+	Outbound     string   `json:"outbound"`  // 目标出站
+	Enabled      bool     `json:"enabled"`
+	Priority     int      `json:"priority"` // 优先级 (越小越优先)
 }
 
 // RuleGroup 预设规则组
@@ -101,6 +110,12 @@ type HostEntry struct {
 
 // Settings 全局设置
 type Settings struct {
+	DeploymentRole string          `json:"deployment_role"`
+	Gateway        gateway.Config  `json:"gateway"`
+	Devices        []Device        `json:"devices"`
+	DeviceGroups   []DeviceGroup   `json:"device_groups"`
+	SplitDNS       []SplitDNSRule  `json:"split_dns"`
+	ImportedPolicy *ImportedPolicy `json:"imported_policy,omitempty"`
 	// sing-box 路径
 	SingBoxPath string `json:"singbox_path"`
 	ConfigPath  string `json:"config_path"`
@@ -111,15 +126,15 @@ type Settings struct {
 	AllowLAN   bool `json:"allow_lan"`   // 允许局域网访问
 
 	// DNS 配置
-	ProxyDNS  string      `json:"proxy_dns"`        // 代理 DNS
-	DirectDNS string      `json:"direct_dns"`       // 直连 DNS
-	Hosts     []HostEntry `json:"hosts,omitempty"`  // DNS hosts 映射
+	ProxyDNS  string      `json:"proxy_dns"`       // 代理 DNS
+	DirectDNS string      `json:"direct_dns"`      // 直连 DNS
+	Hosts     []HostEntry `json:"hosts,omitempty"` // DNS hosts 映射
 
 	// 控制面板
-	WebPort        int    `json:"web_port"`          // 管理界面端口
-	ClashAPIPort   int    `json:"clash_api_port"`    // Clash API 端口
-	ClashUIPath    string `json:"clash_ui_path"`     // zashboard 路径
-	ClashAPISecret string `json:"clash_api_secret"`  // ClashAPI 密钥
+	WebPort        int    `json:"web_port"`         // 管理界面端口
+	ClashAPIPort   int    `json:"clash_api_port"`   // Clash API 端口
+	ClashUIPath    string `json:"clash_ui_path"`    // zashboard 路径
+	ClashAPISecret string `json:"clash_api_secret"` // ClashAPI 密钥
 
 	// 漏网规则
 	FinalOutbound string `json:"final_outbound"` // 默认出站
@@ -138,6 +153,7 @@ type Settings struct {
 // DefaultSettings 默认设置
 func DefaultSettings() *Settings {
 	return &Settings{
+		DeploymentRole:       "desktop",
 		SingBoxPath:          "bin/sing-box",
 		ConfigPath:           "generated/config.json",
 		MixedPort:            2080,
@@ -159,6 +175,7 @@ func DefaultSettings() *Settings {
 
 // AppData 应用数据
 type AppData struct {
+	SchemaVersion int            `json:"schema_version"`
 	Subscriptions []Subscription `json:"subscriptions"`
 	ManualNodes   []ManualNode   `json:"manual_nodes"`
 	Filters       []Filter       `json:"filters"`
@@ -188,96 +205,96 @@ func DefaultRuleGroups() []RuleGroup {
 
 // CountryNames 国家代码到中文名称的映射
 var CountryNames = map[string]string{
-	"HK": "香港",
-	"TW": "台湾",
-	"JP": "日本",
-	"KR": "韩国",
-	"SG": "新加坡",
-	"US": "美国",
-	"GB": "英国",
-	"DE": "德国",
-	"FR": "法国",
-	"NL": "荷兰",
-	"AU": "澳大利亚",
-	"CA": "加拿大",
-	"RU": "俄罗斯",
-	"IN": "印度",
-	"BR": "巴西",
-	"AR": "阿根廷",
-	"TR": "土耳其",
-	"TH": "泰国",
-	"VN": "越南",
-	"MY": "马来西亚",
-	"PH": "菲律宾",
-	"ID": "印尼",
-	"AE": "阿联酋",
-	"ZA": "南非",
-	"CH": "瑞士",
-	"IT": "意大利",
-	"ES": "西班牙",
-	"SE": "瑞典",
-	"NO": "挪威",
-	"FI": "芬兰",
-	"DK": "丹麦",
-	"PL": "波兰",
-	"CZ": "捷克",
-	"AT": "奥地利",
-	"IE": "爱尔兰",
-	"PT": "葡萄牙",
-	"GR": "希腊",
-	"IL": "以色列",
-	"MX": "墨西哥",
-	"CL": "智利",
-	"CO": "哥伦比亚",
-	"PE": "秘鲁",
+	"HK":    "香港",
+	"TW":    "台湾",
+	"JP":    "日本",
+	"KR":    "韩国",
+	"SG":    "新加坡",
+	"US":    "美国",
+	"GB":    "英国",
+	"DE":    "德国",
+	"FR":    "法国",
+	"NL":    "荷兰",
+	"AU":    "澳大利亚",
+	"CA":    "加拿大",
+	"RU":    "俄罗斯",
+	"IN":    "印度",
+	"BR":    "巴西",
+	"AR":    "阿根廷",
+	"TR":    "土耳其",
+	"TH":    "泰国",
+	"VN":    "越南",
+	"MY":    "马来西亚",
+	"PH":    "菲律宾",
+	"ID":    "印尼",
+	"AE":    "阿联酋",
+	"ZA":    "南非",
+	"CH":    "瑞士",
+	"IT":    "意大利",
+	"ES":    "西班牙",
+	"SE":    "瑞典",
+	"NO":    "挪威",
+	"FI":    "芬兰",
+	"DK":    "丹麦",
+	"PL":    "波兰",
+	"CZ":    "捷克",
+	"AT":    "奥地利",
+	"IE":    "爱尔兰",
+	"PT":    "葡萄牙",
+	"GR":    "希腊",
+	"IL":    "以色列",
+	"MX":    "墨西哥",
+	"CL":    "智利",
+	"CO":    "哥伦比亚",
+	"PE":    "秘鲁",
 	"NZ":    "新西兰",
 	"OTHER": "其他",
 }
 
 // CountryEmojis 国家代码到 emoji 的映射
 var CountryEmojis = map[string]string{
-	"HK": "🇭🇰",
-	"TW": "🇹🇼",
-	"JP": "🇯🇵",
-	"KR": "🇰🇷",
-	"SG": "🇸🇬",
-	"US": "🇺🇸",
-	"GB": "🇬🇧",
-	"DE": "🇩🇪",
-	"FR": "🇫🇷",
-	"NL": "🇳🇱",
-	"AU": "🇦🇺",
-	"CA": "🇨🇦",
-	"RU": "🇷🇺",
-	"IN": "🇮🇳",
-	"BR": "🇧🇷",
-	"AR": "🇦🇷",
-	"TR": "🇹🇷",
-	"TH": "🇹🇭",
-	"VN": "🇻🇳",
-	"MY": "🇲🇾",
-	"PH": "🇵🇭",
-	"ID": "🇮🇩",
-	"AE": "🇦🇪",
-	"ZA": "🇿🇦",
-	"CH": "🇨🇭",
-	"IT": "🇮🇹",
-	"ES": "🇪🇸",
-	"SE": "🇸🇪",
-	"NO": "🇳🇴",
-	"FI": "🇫🇮",
-	"DK": "🇩🇰",
-	"PL": "🇵🇱",
-	"CZ": "🇨🇿",
-	"AT": "🇦🇹",
-	"IE": "🇮🇪",
-	"PT": "🇵🇹",
-	"GR": "🇬🇷",
-	"IL": "🇮🇱",
-	"MX": "🇲🇽",
-	"CL": "🇨🇱",
-	"CO": "🇨🇴",
-	"PE": "🇵🇪",
+	"HK":    "🇭🇰",
+	"TW":    "🇹🇼",
+	"JP":    "🇯🇵",
+	"KR":    "🇰🇷",
+	"SG":    "🇸🇬",
+	"US":    "🇺🇸",
+	"GB":    "🇬🇧",
+	"DE":    "🇩🇪",
+	"FR":    "🇫🇷",
+	"NL":    "🇳🇱",
+	"AU":    "🇦🇺",
+	"CA":    "🇨🇦",
+	"RU":    "🇷🇺",
+	"IN":    "🇮🇳",
+	"BR":    "🇧🇷",
+	"AR":    "🇦🇷",
+	"TR":    "🇹🇷",
+	"TH":    "🇹🇭",
+	"VN":    "🇻🇳",
+	"MY":    "🇲🇾",
+	"PH":    "🇵🇭",
+	"ID":    "🇮🇩",
+	"AE":    "🇦🇪",
+	"ZA":    "🇿🇦",
+	"CH":    "🇨🇭",
+	"IT":    "🇮🇹",
+	"ES":    "🇪🇸",
+	"SE":    "🇸🇪",
+	"NO":    "🇳🇴",
+	"FI":    "🇫🇮",
+	"DK":    "🇩🇰",
+	"PL":    "🇵🇱",
+	"CZ":    "🇨🇿",
+	"AT":    "🇦🇹",
+	"IE":    "🇮🇪",
+	"PT":    "🇵🇹",
+	"GR":    "🇬🇷",
+	"IL":    "🇮🇱",
+	"MX":    "🇲🇽",
+	"CL":    "🇨🇱",
+	"CO":    "🇨🇴",
+	"PE":    "🇵🇪",
 	"NZ":    "🇳🇿",
 	"OTHER": "🌐",
 }
