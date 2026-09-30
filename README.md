@@ -2,6 +2,8 @@
 
 # singbox-manager
 
+内置代理热切换、连接管理、流量统计和增量日志已整合到管理界面，迁移与验证说明见[内置运行面板](docs/builtin-panel.md)。
+
 [English](#english) | [中文](#中文)
 
 ---

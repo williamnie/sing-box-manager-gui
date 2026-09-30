@@ -236,8 +236,12 @@ func (b *ConfigBuilder) BuildJSON() (string, error) {
 
 // buildLog 构建日志配置
 func (b *ConfigBuilder) buildLog() *LogConfig {
+	level := b.settings.LogLevel
+	if level == "" {
+		level = "info"
+	}
 	return &LogConfig{
-		Level:     "info",
+		Level:     level,
 		Timestamp: true,
 	}
 }
@@ -392,7 +396,7 @@ func (b *ConfigBuilder) buildNTP() *NTPConfig {
 
 // buildInbounds 构建入站配置
 func (b *ConfigBuilder) buildInbounds() []Inbound {
-	// 根据局域网访问设置决定监听地址
+	// mixed 端口仍按局域网访问设置监听。
 	listenAddr := "127.0.0.1"
 	if b.settings.AllowLAN && b.settings.DeploymentRole != "gateway" {
 		listenAddr = "0.0.0.0"
@@ -969,22 +973,15 @@ func (b *ConfigBuilder) buildRoute() *RouteConfig {
 
 // buildExperimental 构建实验性配置
 func (b *ConfigBuilder) buildExperimental() *ExperimentalConfig {
-	// 根据局域网访问设置决定监听地址
+	// 内置面板通过管理后端访问控制接口，独立于 mixed 的 LAN 开关。
 	listenAddr := "127.0.0.1"
-	if b.settings.AllowLAN && b.settings.DeploymentRole != "gateway" {
-		listenAddr = "0.0.0.0"
-	}
-
-	// 只有开启局域网访问时才设置 secret
 	secret := b.settings.ClashAPISecret
 
 	return &ExperimentalConfig{
 		ClashAPI: &ClashAPIConfig{
-			ExternalController:    fmt.Sprintf("%s:%d", listenAddr, b.settings.ClashAPIPort),
-			ExternalUI:            b.settings.ClashUIPath,
-			ExternalUIDownloadURL: "https://github.com/Zephyruso/zashboard/releases/latest/download/dist.zip",
-			Secret:                secret,
-			DefaultMode:           "rule",
+			ExternalController: fmt.Sprintf("%s:%d", listenAddr, b.settings.ClashAPIPort),
+			Secret:             secret,
+			DefaultMode:        "rule",
 		},
 		CacheFile: &CacheFileConfig{
 			Enabled:     true,

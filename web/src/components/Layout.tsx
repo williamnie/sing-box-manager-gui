@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -9,8 +9,10 @@ import {
   Network,
   FileCheck,
   LogOut,
-  ExternalLink,
-  Terminal,
+  Route,
+  Activity,
+  Menu,
+  X,
   Cpu,
 } from 'lucide-react';
 import { useStore } from '../store';
@@ -20,12 +22,14 @@ import ThemeToggle from './ThemeToggle';
 
 const menuItems = [
   { path: '/', icon: LayoutDashboard, label: '仪表盘', code: '01' },
-  { path: '/subscriptions', icon: Globe, label: '节点管理', code: '02' },
-  { path: '/rules', icon: FileText, label: '分流规则', code: '03' },
-  { path: '/gateway', icon: Network, label: '部署与设备', code: '04' },
-  { path: '/configuration', icon: FileCheck, label: '配置审阅', code: '05' },
-  { path: '/logs', icon: ScrollText, label: '实时日志', code: '06' },
-  { path: '/settings', icon: Settings, label: '系统设置', code: '07' },
+  { path: '/proxies', icon: Route, label: '代理', code: '02' },
+  { path: '/connections', icon: Activity, label: '连接', code: '03' },
+  { path: '/subscriptions', icon: Globe, label: '节点管理', code: '04' },
+  { path: '/rules', icon: FileText, label: '分流规则', code: '05' },
+  { path: '/gateway', icon: Network, label: '部署与设备', code: '06' },
+  { path: '/configuration', icon: FileCheck, label: '配置审阅', code: '07' },
+  { path: '/logs', icon: ScrollText, label: '实时日志', code: '08' },
+  { path: '/settings', icon: Settings, label: '系统设置', code: '09' },
 ];
 
 interface LayoutProps {
@@ -33,6 +37,7 @@ interface LayoutProps {
 }
 
 export default function Layout({ children }: LayoutProps) {
+  const [navigationOpen, setNavigationOpen] = useState(false);
   const location = useLocation();
   const { settings, fetchSettings, serviceStatus, fetchServiceStatus } = useStore();
 
@@ -45,17 +50,17 @@ export default function Layout({ children }: LayoutProps) {
     }
   }, [settings, serviceStatus, fetchSettings, fetchServiceStatus]);
 
-  const clashApiPort = settings?.clash_api_port || 9091;
   const isRunning = serviceStatus?.running ?? false;
 
   return (
     <div className="flex min-h-screen bg-[#f6f7fb] dark:bg-[#070709] text-zinc-900 dark:text-[#ededed] transition-colors duration-150">
       {/* 侧边栏 */}
-      <aside className="w-64 bg-white dark:bg-[#090a0f] border-r border-zinc-200/80 dark:border-white/[0.08] fixed h-full flex flex-col z-20 select-none transition-colors duration-150 shadow-sm dark:shadow-none">
+      {navigationOpen && <button aria-label="关闭导航" className="fixed inset-0 z-20 bg-black/40 md:hidden" onClick={() => setNavigationOpen(false)} />}
+      <aside className={`w-64 bg-white dark:bg-[#090a0f] border-r border-zinc-200/80 dark:border-white/[0.08] fixed h-full flex flex-col z-30 select-none transition-transform duration-150 shadow-sm dark:shadow-none ${navigationOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}>
         {/* 顶部 Logo 终端区块 */}
         <div className="p-5 border-b border-zinc-200/80 dark:border-white/[0.08] bg-white/90 dark:bg-[#090a0f]/80 backdrop-blur-md">
           <div className="flex items-center justify-between">
-            <Link to="/" className="flex items-center gap-2.5 group">
+            <Link to="/" onClick={() => setNavigationOpen(false)} className="flex items-center gap-2.5 group">
               <div className="size-7 rounded-[3px] bg-[#ff5722] flex items-center justify-center text-white font-black font-mono text-sm shadow-[0_0_12px_rgba(255,87,34,0.35)] group-hover:bg-[#ff6e40] transition-colors">
                 SB
               </div>
@@ -106,6 +111,7 @@ export default function Layout({ children }: LayoutProps) {
               <Link
                 key={item.path}
                 to={item.path}
+                onClick={() => setNavigationOpen(false)}
                 className={`group flex items-center justify-between px-3 py-2.5 rounded-[3px] transition-all duration-150 border ${
                   isActive
                     ? 'bg-orange-500/10 text-[#ff5722] border-orange-500/30 border-l-2 border-l-[#ff5722] font-semibold dark:bg-white/[0.06] dark:text-white dark:border-white/[0.12]'
@@ -138,23 +144,6 @@ export default function Layout({ children }: LayoutProps) {
 
         {/* 底部极客控制台与系统元数据 */}
         <div className="p-3 border-t border-zinc-200/80 dark:border-white/[0.08] bg-zinc-50/80 dark:bg-black/40 space-y-2">
-          {/* Zashboard 极客卡片 */}
-          <a
-            href={`http://127.0.0.1:${clashApiPort}/ui/`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-between p-2.5 rounded-[3px] border border-zinc-200 dark:border-white/[0.08] bg-white dark:bg-[#0c0d12] hover:border-[#ff5722]/50 hover:bg-zinc-50 dark:hover:bg-[#12141c] text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white transition-all group shadow-2xs"
-          >
-            <div className="flex items-center gap-2">
-              <Terminal className="size-3.5 text-[#ff5722]" />
-              <div className="flex flex-col text-left">
-                <span className="text-[11px] font-medium leading-none">Zashboard 控制台</span>
-                <span className="text-[9px] font-mono text-zinc-400 dark:text-zinc-500 mt-0.5">PORT :{clashApiPort}</span>
-              </div>
-            </div>
-            <ExternalLink className="size-3 text-zinc-400 group-hover:text-[#ff5722] transition-colors" />
-          </a>
-
           {/* 退出与版本 */}
           <div className="pt-1 flex items-center justify-between px-1">
             <button
@@ -181,10 +170,11 @@ export default function Layout({ children }: LayoutProps) {
       </aside>
 
       {/* 主界面区域 */}
-      <div className="flex-1 ml-64 flex flex-col min-h-screen">
+      <div className="min-w-0 flex-1 md:ml-64 flex flex-col min-h-screen">
         {/* 顶部极客状态条 */}
-        <header className="h-12 border-b border-zinc-200/80 dark:border-white/[0.08] bg-white/90 dark:bg-[#070709]/80 backdrop-blur-md px-6 flex items-center justify-between sticky top-0 z-10 select-none transition-colors duration-150">
+        <header className="h-12 border-b border-zinc-200/80 dark:border-white/[0.08] bg-white/90 dark:bg-[#070709]/80 backdrop-blur-md px-3 md:px-6 flex items-center justify-between sticky top-0 z-10 select-none transition-colors duration-150">
           <div className="flex items-center gap-2 text-xs font-mono text-zinc-500 dark:text-zinc-400">
+            <button aria-label={navigationOpen ? '关闭导航菜单' : '打开导航菜单'} aria-expanded={navigationOpen} className="p-1.5 md:hidden" onClick={() => setNavigationOpen(!navigationOpen)}>{navigationOpen ? <X className="size-4" /> : <Menu className="size-4" />}</button>
             <span className="text-zinc-400 dark:text-zinc-600">SBM</span>
             <span className="text-zinc-300 dark:text-zinc-700">/</span>
             <span className="text-[#ff5722] font-semibold">{location.pathname === '/' ? 'dashboard' : location.pathname.slice(1)}</span>
@@ -216,7 +206,7 @@ export default function Layout({ children }: LayoutProps) {
         </header>
 
         {/* 页面主内容 */}
-        <main className="flex-1 p-6 md:p-8 bg-[#f6f7fb] dark:bg-[#070709] bg-grid-tech transition-colors duration-150">
+        <main className="min-w-0 flex-1 p-3 sm:p-6 md:p-8 bg-[#f6f7fb] dark:bg-[#070709] bg-grid-tech transition-colors duration-150">
           <div className="max-w-7xl mx-auto">
             {children}
           </div>

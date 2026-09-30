@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import RuntimeOverview from '../components/RuntimeOverview';
 import { Button, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Tooltip } from '@nextui-org/react';
 import { Play, Square, RefreshCw, HardDrive, Wifi, Info, Activity, Terminal, ArrowUpRight, Zap, Cpu } from 'lucide-react';
 import { useStore } from '../store';
@@ -108,6 +109,8 @@ export default function Dashboard() {
           </Button>
         </div>
       </div>
+
+      <RuntimeOverview />
 
       {/* 部署说明提示 */}
       <div className="relative rounded-[3px] border border-zinc-200/80 dark:border-white/[0.08] bg-white dark:bg-[#0c0d12] p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 overflow-hidden shadow-2xs">

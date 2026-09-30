@@ -40,6 +40,7 @@ import type { Settings as SettingsType, HostEntry } from '../store';
 import { daemonApi, kernelApi, settingsApi } from '../api';
 import { toast } from '../components/Toast';
 import ConfirmModal from '../components/ConfirmModal';
+import PanelPreferences from '../components/PanelPreferences';
 import { Link } from 'react-router-dom';
 
 function randomSecret() {
@@ -434,6 +435,8 @@ export default function Settings() {
         </Button>
       </div>
 
+      <PanelPreferences />
+
       {/* 快捷导航定位 */}
       <div className="flex flex-wrap items-center gap-2 p-2 rounded-[3px] border border-white/[0.06] bg-default-100/40 dark:bg-black/30 text-xs font-mono">
         <span className="text-[11px] text-zinc-500">// 快速跳转:</span>
@@ -651,13 +654,13 @@ export default function Settings() {
           </div>
 
           {/* Clash API 密钥保险箱 */}
-          {formData.allow_lan && (
+          {formData.clash_api_port > 0 && (
             <div className="p-3.5 rounded-[3px] bg-[#0c0d12] border border-amber-500/30 space-y-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Shield className="w-3.5 h-3.5 text-amber-800 dark:text-amber-400" />
                   <span className="font-mono text-xs font-semibold text-amber-800 dark:text-amber-400">
-                    CLASH_API_SECRET // 外部面板认证凭据
+                    内核控制接口密钥
                   </span>
                 </div>
                 <span className="font-mono text-[10px] px-1.5 py-0.2 rounded-[2px] bg-amber-500/10 text-amber-800 dark:text-amber-400 border border-amber-500/20">
@@ -665,7 +668,7 @@ export default function Settings() {
                 </span>
               </div>
               <p className="font-mono text-[11px] text-zinc-400 leading-relaxed">
-                开放 LAN 访问后，外部 UI（如 Zashboard / Yacd）连接本机内核时必须携带此 Secret 进行签名认证。
+                内置面板由管理后端连接本机内核，无需在代理页填写密钥。应用新配置后控制接口仅监听本机，与 mixed 的局域网访问开关独立。
               </p>
               <div className="flex items-center gap-2 pt-1">
                 <Input
@@ -929,10 +932,10 @@ export default function Settings() {
               />
               <Input
                 type="number"
-                label="Clash API 端口"
+                label="内核控制 API 端口"
                 placeholder="9091"
                 value={String(formData.clash_api_port)}
-                onChange={(e) => setFormData({ ...formData, clash_api_port: parseInt(e.target.value) || 9091 })}
+                onChange={(e) => setFormData({ ...formData, clash_api_port: Number(e.target.value) })}
                 classNames={{
                   label: 'font-mono text-xs text-zinc-400',
                   input: 'font-mono text-xs text-zinc-200',
@@ -951,6 +954,13 @@ export default function Settings() {
                 inputWrapper: 'bg-[#060608] border border-white/[0.08] rounded-[2px]',
               }}
             />
+            <label className="block space-y-2 text-xs text-zinc-600 dark:text-zinc-400">
+              <span>内核日志输出级别</span>
+              <select value={formData.log_level || 'info'} onChange={e => setFormData({ ...formData, log_level: e.target.value as SettingsType['log_level'] })} className="w-full rounded border border-zinc-200 bg-white px-3 py-2 text-zinc-900 dark:border-white/10 dark:bg-zinc-950 dark:text-zinc-100">
+                {['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'panic'].map(level => <option key={level} value={level}>{level}</option>)}
+              </select>
+              <span className="block leading-relaxed">随配置保存并按自动应用设置生效；对运行中的内核应用会重启服务。日志页的级别过滤只改变显示。端口设为 0 会停用代理和连接控制。</span>
+            </label>
           </div>
         </div>
 

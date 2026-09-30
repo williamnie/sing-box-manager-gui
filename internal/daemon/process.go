@@ -3,6 +3,8 @@ package daemon
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -31,12 +33,13 @@ type processIdentity struct {
 	Executable string `json:"executable"`
 	Config     string `json:"config"`
 	Directory  string `json:"directory"`
+	ConfigHash string `json:"config_hash,omitempty"`
 }
 
 // ProcessManager 的 opMu 覆盖完整生命周期/应用事务，mu 仅保护进程状态。
 type ProcessManager struct {
 	singboxPath, configPath, dataDir, pidFile string
-	opMu                                      sync.Mutex
+	opMu                                      sync.RWMutex
 	mu                                        sync.RWMutex
 	identity                                  processIdentity
 	maxLogs                                   int
@@ -160,6 +163,7 @@ func (pm *ProcessManager) matches(id processIdentity) bool {
 		return false
 	}
 	live, err := pm.inspect(id.PID)
+	live.ConfigHash = id.ConfigHash
 	return err == nil && live == id
 }
 
@@ -174,6 +178,7 @@ func (pm *ProcessManager) recoverProcess() {
 		saved.PID, _ = strconv.Atoi(strings.TrimSpace(string(raw)))
 	}
 	live, err := pm.inspect(saved.PID)
+	live.ConfigHash = saved.ConfigHash
 	if err != nil || !pm.expected(live) || (saved.Created != 0 && saved != live) {
 		// 不删除可能属于另一个配置实例的身份文件。
 		return
@@ -246,7 +251,7 @@ func (pm *ProcessManager) start() error {
 	if pm.running() {
 		return fmt.Errorf("sing-box 已经在运行")
 	}
-	_, err := os.Stat(pm.configPath)
+	raw, err := os.ReadFile(pm.configPath)
 	if err != nil {
 		return fmt.Errorf("读取配置失败: %w", err)
 	}
@@ -270,6 +275,8 @@ func (pm *ProcessManager) start() error {
 		_ = cmd.Wait()
 		return fmt.Errorf("启动后的进程身份验证失败: %v", err)
 	}
+	hash := sha256.Sum256(raw)
+	id.ConfigHash = hex.EncodeToString(hash[:])
 	pm.mu.Lock()
 	pm.identity = id
 	pm.mu.Unlock()
@@ -378,13 +385,13 @@ func (pm *ProcessManager) Reload() error {
 	return pm.restart()
 }
 func (pm *ProcessManager) IsRunning() bool {
-	pm.opMu.Lock()
-	defer pm.opMu.Unlock()
+	pm.opMu.RLock()
+	defer pm.opMu.RUnlock()
 	return pm.running()
 }
 func (pm *ProcessManager) GetPID() int {
-	pm.opMu.Lock()
-	defer pm.opMu.Unlock()
+	pm.opMu.RLock()
+	defer pm.opMu.RUnlock()
 	if !pm.running() {
 		return 0
 	}
@@ -677,8 +684,8 @@ func configRedactor(raw []byte) func(string) string {
 }
 
 func (pm *ProcessManager) Version() (string, error) {
-	pm.opMu.Lock()
-	defer pm.opMu.Unlock()
+	pm.opMu.RLock()
+	defer pm.opMu.RUnlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, pm.singboxPath, "version").Output()

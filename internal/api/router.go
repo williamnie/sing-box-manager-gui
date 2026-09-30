@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -41,23 +42,25 @@ func generateRandomSecret(length int) string {
 
 // Server API 服务器
 type Server struct {
-	platform        string
-	gateway         gatewayController
-	writeMu         sync.Mutex
-	auth            *authManager
-	allowedNetworks []*net.IPNet
-	operationMu     sync.Mutex
-	store           *storage.JSONStore
-	subService      *service.SubscriptionService
-	processManager  processController
-	launchdManager  *daemon.LaunchdManager
-	systemdManager  *daemon.SystemdManager
-	kernelManager   *kernel.Manager
-	scheduler       *service.Scheduler
-	router          *gin.Engine
-	sbmPath         string // sbm 可执行文件路径
-	port            int    // Web 服务端口
-	version         string // sbm 版本号
+	platform          string
+	gateway           gatewayController
+	writeMu           sync.Mutex
+	auth              *authManager
+	allowedNetworks   []*net.IPNet
+	operationMu       sync.Mutex
+	runtimeDelaySlots chan struct{}
+	runtimeWriteMu    sync.Mutex
+	store             *storage.JSONStore
+	subService        *service.SubscriptionService
+	processManager    processController
+	launchdManager    *daemon.LaunchdManager
+	systemdManager    *daemon.SystemdManager
+	kernelManager     *kernel.Manager
+	scheduler         *service.Scheduler
+	router            *gin.Engine
+	sbmPath           string // sbm 可执行文件路径
+	port              int    // Web 服务端口
+	version           string // sbm 版本号
 }
 
 // NewServer 创建 API 服务器
@@ -70,19 +73,20 @@ func NewServer(store *storage.JSONStore, processManager *daemon.ProcessManager, 
 	kernelManager := kernel.NewManager(store.GetDataDir(), store.GetSettings)
 
 	s := &Server{
-		store:          store,
-		platform:       runtime.GOOS,
-		gateway:        gateway.NewClient(gateway.DefaultSocket),
-		subService:     subService,
-		processManager: processManager,
-		launchdManager: launchdManager,
-		systemdManager: systemdManager,
-		kernelManager:  kernelManager,
-		scheduler:      service.NewScheduler(store, subService),
-		router:         gin.New(),
-		sbmPath:        sbmPath,
-		port:           port,
-		version:        version,
+		store:             store,
+		platform:          runtime.GOOS,
+		gateway:           gateway.NewClient(gateway.DefaultSocket),
+		subService:        subService,
+		processManager:    processManager,
+		launchdManager:    launchdManager,
+		systemdManager:    systemdManager,
+		kernelManager:     kernelManager,
+		scheduler:         service.NewScheduler(store, subService),
+		router:            gin.New(),
+		sbmPath:           sbmPath,
+		port:              port,
+		version:           version,
+		runtimeDelaySlots: make(chan struct{}, 4),
 	}
 
 	s.auth, _ = newAuth(store.GetDataDir())
@@ -120,13 +124,14 @@ func (s *Server) setupRoutes() {
 
 	// API 路由组
 	api := s.router.Group("/api", s.requireAuth, func(c *gin.Context) {
-		if c.Request.Method != "GET" {
+		if c.Request.Method != "GET" && !strings.HasPrefix(c.Request.URL.Path, "/api/runtime/") {
 			s.writeMu.Lock()
 			defer s.writeMu.Unlock()
 		}
 		c.Next()
 	})
 	{
+		s.setupRuntimeRoutes(api)
 		s.setupDeploymentRoutes(api)
 		// 订阅管理
 		api.GET("/subscriptions", s.getSubscriptions)
@@ -197,6 +202,8 @@ func (s *Server) setupRoutes() {
 		api.GET("/monitor/logs", s.getLogs)
 		api.GET("/monitor/logs/sbm", s.getAppLogs)
 		api.GET("/monitor/logs/singbox", s.getSingboxLogs)
+		api.GET("/monitor/logs/stream", s.streamLogs)
+		api.GET("/monitor/logs/export", s.exportLogs)
 
 		// 节点
 		api.GET("/nodes", s.getAllNodes)
@@ -625,15 +632,13 @@ func (s *Server) updateSettings(c *gin.Context) {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-	// 根据局域网访问设置处理 secret
-	if settings.AllowLAN {
-		// 开启局域网访问且 secret 为空时，自动生成一个
+	// 控制密钥与 mixed 的 LAN 开关独立，避免切换访问范围时覆盖凭据。
+	if settings.ClashAPIPort > 0 && settings.ClashAPISecret == "" {
+		settings.ClashAPISecret = generateRandomSecret(32)
 		if settings.ClashAPISecret == "" {
-			settings.ClashAPISecret = generateRandomSecret(16)
+			c.JSON(500, gin.H{"error": "无法生成控制接口密钥"})
+			return
 		}
-	} else {
-		// 关闭局域网访问时，清除 secret
-		settings.ClashAPISecret = ""
 	}
 
 	if err := s.store.UpdateSettings(&settings); err != nil {

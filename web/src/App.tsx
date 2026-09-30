@@ -11,6 +11,8 @@ import AuthGate from './components/AuthGate';
 const Gateway = lazy(() => import('./pages/Gateway'));
 const ConfigurationImport = lazy(() => import('./pages/ConfigurationImport'));
 const Configuration = lazy(() => import('./pages/Configuration'));
+const Proxies = lazy(() => import('./pages/Proxies'));
+const Connections = lazy(() => import('./pages/Connections'));
 
 function App() {
   return (
@@ -20,6 +22,8 @@ function App() {
         <Suspense fallback={<p className="text-default-500">正在加载管理页面…</p>}><Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/subscriptions" element={<Subscriptions />} />
+          <Route path="/proxies" element={<Proxies />} />
+          <Route path="/connections" element={<Connections />} />
           <Route path="/rules" element={<Rules />} />
           <Route path="/logs" element={<Logs />} />
           <Route path="/settings" element={<Settings />} />

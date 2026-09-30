@@ -133,8 +133,9 @@ type Settings struct {
 	// 控制面板
 	WebPort        int    `json:"web_port"`         // 管理界面端口
 	ClashAPIPort   int    `json:"clash_api_port"`   // Clash API 端口
-	ClashUIPath    string `json:"clash_ui_path"`    // zashboard 路径
+	ClashUIPath    string `json:"clash_ui_path"`    // 兼容旧数据，内置面板不再生成 external_ui
 	ClashAPISecret string `json:"clash_api_secret"` // ClashAPI 密钥
+	LogLevel       string `json:"log_level"`        // 内核日志输出级别，通过配置应用生效
 
 	// 漏网规则
 	FinalOutbound string `json:"final_outbound"` // 默认出站
@@ -163,7 +164,8 @@ func DefaultSettings() *Settings {
 		DirectDNS:            "https://dns.alidns.com/dns-query",
 		WebPort:              9090,
 		ClashAPIPort:         9091,
-		ClashUIPath:          "zashboard",
+		ClashUIPath:          "",
+		LogLevel:             "info",
 		ClashAPISecret:       "", // 默认为空，开启局域网时自动生成
 		FinalOutbound:        "Proxy",
 		RuleSetBaseURL:       "https://github.com/lyc8503/sing-box-rules/raw/rule-set-geosite",

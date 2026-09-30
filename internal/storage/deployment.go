@@ -44,6 +44,9 @@ type ImportedPolicy struct {
 }
 
 func NormalizeSettings(s *Settings) {
+	if s.LogLevel == "" {
+		s.LogLevel = "info"
+	}
 	if s.DeploymentRole == "" {
 		s.DeploymentRole = "desktop"
 	}
@@ -78,6 +81,11 @@ func SourcePrefix(s string) (netip.Prefix, error) {
 var domainPattern = regexp.MustCompile(`^[a-zA-Z0-9_*.-]+$`)
 
 func ValidateSettings(s *Settings) error {
+	switch s.LogLevel {
+	case "", "trace", "debug", "info", "warn", "error", "fatal", "panic":
+	default:
+		return fmt.Errorf("无效日志级别")
+	}
 	if s.DeploymentRole != "desktop" && s.DeploymentRole != "gateway" {
 		return fmt.Errorf("未知部署角色")
 	}

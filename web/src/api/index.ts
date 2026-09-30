@@ -2,7 +2,7 @@ import axios from 'axios';
 import { toast } from '../components/Toast';
 import type { Settings } from '../store';
 
-const api = axios.create({
+export const api = axios.create({
   baseURL: '/api',
   timeout: 30000,
   withCredentials: true,
