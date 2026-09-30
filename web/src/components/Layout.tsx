@@ -61,9 +61,7 @@ export default function Layout({ children }: LayoutProps) {
         <div className="p-5 border-b border-zinc-200/80 dark:border-white/[0.08] bg-white/90 dark:bg-[#090a0f]/80 backdrop-blur-md">
           <div className="flex items-center justify-between">
             <Link to="/" onClick={() => setNavigationOpen(false)} className="flex items-center gap-2.5 group">
-              <div className="size-7 rounded-[3px] bg-[#ff5722] flex items-center justify-center text-white font-black font-mono text-sm shadow-[0_0_12px_rgba(255,87,34,0.35)] group-hover:bg-[#ff6e40] transition-colors">
-                SB
-              </div>
+              <img src="/assets/icon.svg" alt="" width={28} height={28} className="size-7 shrink-0 rounded-md shadow-[0_0_12px_rgba(255,87,34,0.35)]" />
               <div className="flex flex-col">
                 <span className="font-mono text-xs font-bold tracking-wider text-zinc-900 dark:text-white uppercase flex items-center gap-1.5">
                   SingBox

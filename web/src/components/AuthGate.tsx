@@ -63,9 +63,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
         {/* 顶部极客标题栏 */}
         <div className="h-10 px-5 border-b border-white/[0.08] bg-[#0e1017] flex items-center justify-between select-none">
           <div className="flex items-center gap-2">
-            <div className="size-5 rounded-[2px] bg-[#ff5722] flex items-center justify-center text-black font-black font-mono text-[10px]">
-              SB
-            </div>
+            <img src="/assets/icon.svg" alt="" width={20} height={20} className="size-5 shrink-0" />
             <span className="font-mono text-xs font-bold tracking-wider text-white uppercase">
               SingBox // AUTH GATE
             </span>
@@ -180,4 +178,3 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     </main>
   );
 }
-
