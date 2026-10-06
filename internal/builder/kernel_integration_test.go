@@ -38,6 +38,7 @@ func TestRealKernelGeneratedConfigurations(t *testing.T) {
 				s.DeviceGroups = []storage.DeviceGroup{{ID: "direct", Policy: "direct"}}
 				s.Devices = []storage.Device{{ID: "d", Enabled: true, GroupID: "direct", Addresses: []string{"192.0.2.205"}}}
 			}
+			s.AllowLAN = true
 			s.Hosts = []storage.HostEntry{{ID: "h", Domain: "nas.lan", IPs: []string{"192.0.2.9"}, Enabled: true}}
 			b := NewConfigBuilder(s, []storage.Node{{Tag: "test-proxy", Type: "socks", Server: "203.0.113.2", ServerPort: 1080}}, nil, []storage.Rule{{Name: "source-protocol-range", Enabled: true, RuleType: "port_range", Values: []string{"6881:60000"}, SourceCIDRs: []string{"192.0.2.205"}, Network: []string{"udp"}, Protocol: []string{"stun"}, Outbound: "DIRECT"}}, nil).WithPlatform(platform).WithSingBoxVersion(string(version))
 			raw, e := b.BuildJSON()

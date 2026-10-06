@@ -398,7 +398,7 @@ func (b *ConfigBuilder) buildNTP() *NTPConfig {
 func (b *ConfigBuilder) buildInbounds() []Inbound {
 	// mixed 端口仍按局域网访问设置监听。
 	listenAddr := "127.0.0.1"
-	if b.settings.AllowLAN && b.settings.DeploymentRole != "gateway" {
+	if b.settings.AllowLAN {
 		listenAddr = "0.0.0.0"
 	}
 
