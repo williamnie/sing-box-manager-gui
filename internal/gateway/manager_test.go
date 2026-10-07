@@ -109,7 +109,15 @@ func (r *fakeRunner) Run(_ context.Context, name string, args []string, in strin
 			}
 			if args[1] == "rule" {
 				if args[2] == "add" {
-					r.dnsRules = "12030: from all to " + args[8] + " fwmark 0x5342 iif " + args[10] + " lookup 20230 proto 242"
+					values := map[string]string{}
+					for i := 3; i+1 < len(args); i += 2 {
+						values[args[i]] = args[i+1]
+					}
+					r.dnsRules = "12030: from all"
+					if values["to"] != "" {
+						r.dnsRules += " to " + values["to"]
+					}
+					r.dnsRules += " fwmark 0x5342 iif " + values["iif"] + " lookup 20230 proto 242"
 				} else {
 					r.dnsRules = ""
 				}

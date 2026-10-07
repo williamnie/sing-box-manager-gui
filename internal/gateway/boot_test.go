@@ -220,3 +220,29 @@ func findingCode(findings []Finding, code string) bool {
 	}
 	return false
 }
+
+func TestApplyIdleStateAfterRebootUsesCurrentBoot(t *testing.T) {
+	for _, mode := range []string{"full", "dns"} {
+		t.Run(mode, func(t *testing.T) {
+			m, _, c := fixture(t)
+			if mode == "dns" {
+				m, _, c = dnsFixture(t)
+			}
+			// 从未启用或已恢复的空状态可能保留上一次启动的身份。
+			if err := m.save(state{BootID: "previous-boot"}); err != nil {
+				t.Fatal(err)
+			}
+			ctx := context.Background()
+			if _, err := m.Apply(ctx, "gateway", c); err != nil {
+				t.Fatal(err)
+			}
+			status, err := m.Status(ctx)
+			if err != nil || !status.Applied || status.Rebooted || status.RecoveryRequired {
+				t.Fatalf("fresh application retained stale boot identity: %+v %v", status, err)
+			}
+			if _, err = m.Rollback(ctx); err != nil {
+				t.Fatal("fresh application cannot be restored", err)
+			}
+		})
+	}
+}

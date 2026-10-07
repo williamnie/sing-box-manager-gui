@@ -9,8 +9,8 @@ import (
 	"strings"
 )
 
-// DNS 的所有路由均属于单个保留表，规则同时限定入口、目的网段和完整 mark。
-// 不创建 default 路由、不处理 OUTPUT，也不修改全局 forwarding。
+// DNS 路由属于单个保留表，策略规则限定入口和完整 mark。
+// 默认再限定 FakeIP 目标；显式兼容接管可本地投递公网目标，但不处理 OUTPUT/forwarding。
 type dnsRouting struct {
 	Routes string `json:"routes"`
 	Rules  string `json:"rules"`
@@ -21,7 +21,7 @@ func previewDNS(c Config) Plan {
 		// max(all, interface) 采用 loose 模式即可接受保留网段的透明入站，其他接口保持原值。
 		"net/ipv4/conf/" + c.LANInterface + "/rp_filter": "2",
 	}, Warnings: []string{
-		"主路由 DHCP 必须直接下发本机 LAN DNS；客户端默认网关保持主路由，不接管 DHCP",
+		"终端须直接使用本机 LAN DNS，可逐台手动设置或由主路由 DHCP 下发；默认网关保持主路由，不接管 DHCP",
 		"主路由必须配置 FakeIP 网段 → 旁路 LAN 地址静态路由；已有路由可复用，界面确认不等于现场验证",
 		"只接收指定 LAN 接口、LAN 来源和 FakeIP 目的的 TCP/UDP；真实 IP、BT/PT 直连、硬编码 IP、自带 DoH 和 IPv6 备用路径仍可经主路由直出",
 		"IPv4-only FakeIP：代理域名 AAAA 不返回真实 IPv6；此模式不能保证严格全代理或 WebRTC 零泄露",
@@ -29,6 +29,10 @@ func previewDNS(c Config) Plan {
 	}}
 	if c.DNSSource == "router" {
 		p.Warnings = append(p.Warnings, "主路由转发 DNS 会合并客户端来源，DNS 阶段不能识别原始终端或应用设备差异策略")
+	}
+	if c.CaptureRoutedTraffic {
+		p.Warnings[2] = "接收指定 LAN 接口和来源中已被主路由转交的公网 IPv4 TCP/UDP，包括真实 IP；内网、排除网段及 UDP 53/123/5354 保持不接管"
+		p.Warnings = append(p.Warnings, "此选项不会修改主路由；未被转交到本机的流量仍不受控。不会接管宿主 OUTPUT 或启用 IPv6 透明代理")
 	}
 	var v4 []string
 	for _, cidr := range c.LANCIDRs {
@@ -42,9 +46,25 @@ func previewDNS(c Config) Plan {
 	fmt.Fprintf(&n, "  ip daddr %s meta l4proto { tcp, udp } th dport %d iifname != \"%s\" counter drop\n", c.LANAddress, c.DNSPort, c.LANInterface)
 	fmt.Fprintf(&n, "  ip daddr %s meta l4proto { tcp, udp } th dport %d ip saddr != { %s } counter drop\n", c.LANAddress, c.DNSPort, strings.Join(v4, ", "))
 	// 普通客户端不能直接连接透明监听端口；原目的为 FakeIP 的包保留原目的端口。
-	fmt.Fprintf(&n, "  ip daddr != %s meta l4proto { tcp, udp } th dport %d counter drop\n", c.FakeIPRange, TProxyPort)
+	if c.CaptureRoutedTraffic {
+		fmt.Fprintf(&n, "  fib daddr type local meta l4proto { tcp, udp } th dport %d counter drop\n", TProxyPort)
+	} else {
+		fmt.Fprintf(&n, "  ip daddr != %s meta l4proto { tcp, udp } th dport %d counter drop\n", c.FakeIPRange, TProxyPort)
+	}
 	n.WriteString(" }\n chain fakeip_ingress {\n  type filter hook prerouting priority mangle; policy accept;\n")
 	fmt.Fprintf(&n, "  iifname \"%s\" ip saddr { %s } ip daddr %s meta l4proto { tcp, udp } meta mark set %s tproxy ip to :%d counter accept\n", c.LANInterface, strings.Join(v4, ", "), c.FakeIPRange, DNSMark, TProxyPort)
+	if c.CaptureRoutedTraffic {
+		fmt.Fprintf(&n, "  iifname != \"%s\" return\n  ip saddr != { %s } return\n", c.LANInterface, strings.Join(v4, ", "))
+		n.WriteString("  fib daddr type { unspec, local, anycast, multicast, broadcast } return\n")
+		n.WriteString("  ip daddr { 0.0.0.0/8, 10.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/4, 240.0.0.0/4 } return\n")
+		for _, cidr := range append(append([]string{}, c.LANCIDRs...), c.ExcludeCIDRs...) {
+			if netip.MustParsePrefix(cidr).Addr().Is4() {
+				fmt.Fprintf(&n, "  ip daddr %s return\n", cidr)
+			}
+		}
+		n.WriteString("  udp dport { 53, 123, 5354 } return\n")
+		fmt.Fprintf(&n, "  meta nfproto ipv4 meta l4proto { tcp, udp } meta mark set %s tproxy ip to :%d counter accept\n", DNSMark, TProxyPort)
+	}
 	n.WriteString(" }\n}\n")
 	p.NFTables = n.String()
 	p.PolicyRoutes = []string{"ip " + strings.Join(dnsRouteArgs("add", c), " "), "ip " + strings.Join(dnsRuleArgs("add", c), " ")}
@@ -52,10 +72,18 @@ func previewDNS(c Config) Plan {
 }
 
 func dnsRouteArgs(action string, c Config) []string {
-	return []string{"-4", "route", action, "local", c.FakeIPRange, "dev", "lo", "table", strconv.Itoa(DNSRouteTable), "proto", "242"}
+	destination := c.FakeIPRange
+	if c.CaptureRoutedTraffic {
+		destination = "default"
+	}
+	return []string{"-4", "route", action, "local", destination, "dev", "lo", "table", strconv.Itoa(DNSRouteTable), "proto", "242"}
 }
 func dnsRuleArgs(action string, c Config) []string {
-	return []string{"-4", "rule", action, "priority", strconv.Itoa(DNSRulePriority), "from", "all", "to", c.FakeIPRange, "iif", c.LANInterface, "fwmark", DNSMark + "/0xffffffff", "lookup", strconv.Itoa(DNSRouteTable), "protocol", "242"}
+	args := []string{"-4", "rule", action, "priority", strconv.Itoa(DNSRulePriority), "from", "all"}
+	if !c.CaptureRoutedTraffic {
+		args = append(args, "to", c.FakeIPRange)
+	}
+	return append(args, "iif", c.LANInterface, "fwmark", DNSMark+"/0xffffffff", "lookup", strconv.Itoa(DNSRouteTable), "protocol", "242")
 }
 func canonicalLines(s string) string {
 	var lines []string
@@ -106,7 +134,11 @@ func (m *Manager) captureDNSRouting(ctx context.Context) (dnsRouting, error) {
 
 func validDNSRoute(s string, c Config) bool {
 	f := strings.Fields(s)
-	if len(f) < 2 || f[0] != "2" || f[1] != c.FakeIPRange {
+	destination := c.FakeIPRange
+	if c.CaptureRoutedTraffic {
+		destination = "default"
+	}
+	if len(f) < 2 || f[0] != "2" || f[1] != destination {
 		return false
 	}
 	seen := map[string]string{}
@@ -131,7 +163,11 @@ func validDNSRule(s string, c Config) bool {
 		seen[f[i]] = f[i+1]
 	}
 	mark := seen["fwmark"]
-	return len(seen) == 6 && seen["from"] == "all" && seen["to"] == c.FakeIPRange && seen["iif"] == c.LANInterface && (mark == DNSMark || mark == DNSMark+"/0xffffffff") && seen["lookup"] == strconv.Itoa(DNSRouteTable) && seen["proto"] == "242"
+	fields, destination := 6, c.FakeIPRange
+	if c.CaptureRoutedTraffic {
+		fields, destination = 5, ""
+	}
+	return len(seen) == fields && seen["from"] == "all" && seen["to"] == destination && seen["iif"] == c.LANInterface && (mark == DNSMark || mark == DNSMark+"/0xffffffff") && seen["lookup"] == strconv.Itoa(DNSRouteTable) && seen["proto"] == "242"
 }
 
 func (m *Manager) applyDNSRouting(ctx context.Context, s *state) error {

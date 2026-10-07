@@ -113,6 +113,35 @@ func TestLinuxNamespace(t *testing.T) {
 	if dns, e = m.captureDNSRouting(ctx); e != nil || dns != (dnsRouting{}) {
 		t.Fatalf("DNS routes remained: %+v %v", dns, e)
 	}
+
+	// 主路由可转交真实公网 IP；只允许对应入口和完整 mark 本地投递。
+	c.CaptureRoutedTraffic = true
+	m.Policy.AllowRoutedTraffic = true
+	if status, e := m.Apply(ctx, "gateway", c); e != nil || !status.Applied {
+		t.Fatalf("routed DNS ingress apply: %+v %v", status, e)
+	}
+	if _, e = m.Apply(ctx, "gateway", c); e != nil {
+		t.Fatal(e)
+	}
+	for _, tc := range []struct {
+		mark, incoming string
+		local          bool
+	}{{DNSMark, "eth0", true}, {"0", "eth0", false}, {DNSMark, "lo", false}} {
+		out, err := runner.Run(ctx, "ip", []string{"-4", "route", "get", "203.0.113.10", "from", "192.0.2.205", "iif", tc.incoming, "mark", tc.mark}, "")
+		if tc.local && (err != nil || !strings.Contains(out, "local ")) || !tc.local && strings.Contains(out, "local ") {
+			t.Fatalf("routed ingress lookup %+v: %s %v", tc, out, err)
+		}
+	}
+	after, e = runner.Run(ctx, "sysctl", []string{"-n", "net.ipv4.ip_forward"}, "")
+	if e != nil || strings.TrimSpace(after) != strings.TrimSpace(baseline) {
+		t.Fatal("routed DNS ingress changed forwarding", e)
+	}
+	if _, e = m.Rollback(ctx); e != nil {
+		t.Fatal(e)
+	}
+	if dns, e = m.captureDNSRouting(ctx); e != nil || dns != (dnsRouting{}) {
+		t.Fatalf("routed DNS ingress was not restored: %+v %v", dns, e)
+	}
 }
 
 type namespaceRunner struct{ Runner }

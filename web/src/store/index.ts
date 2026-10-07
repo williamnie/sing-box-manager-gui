@@ -128,6 +128,7 @@ export interface Device { id: string; name: string; addresses: string[]; group_i
 export interface SplitDNSRule { id: string; domain_suffix: string[]; source_cidrs: string[]; server: 'direct' | 'proxy' }
 export interface DHCPReservation { mac: string; address: string; hostname: string; group: string; gateway: string }
 export interface GatewayConfig {
+  capture_routed_traffic?: boolean;
   access_mode?: 'full' | 'dns';
   fakeip_range?: string;
   dns_source?: 'client' | 'router';

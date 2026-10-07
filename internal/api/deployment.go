@@ -20,6 +20,7 @@ import (
 
 func (s *Server) setupDeploymentRoutes(r *gin.RouterGroup) {
 	r.GET("/gateway/status", s.gatewayStatus)
+	r.GET("/gateway/clients", s.gatewayClients)
 	r.PUT("/gateway/settings", s.saveGatewaySettings)
 	r.POST("/gateway/preview", s.gatewayPreview)
 	r.POST("/gateway/check", s.gatewayCheck)
@@ -143,7 +144,7 @@ func (s *Server) gatewayPreview(c *gin.Context) {
 	plan, planErr := gateway.Preview(settings.DeploymentRole, settings.Gateway)
 	warnings := []string{"离线配置预览不验证转发覆盖；设备默认网关和 IPv6 路由必须经过此设备。"}
 	if settings.DeploymentRole == "gateway" && gateway.Normalize(settings.Gateway).AccessMode == "dns" {
-		warnings = []string{builder.DNSBypassWarnings(), "主路由须下发旁路 DNS，并配置 FakeIP 网段到旁路 LAN 地址的静态路由；终端默认网关保持主路由。更换地址池前须等待/清除客户端 DNS 缓存并同步更新路由。"}
+		warnings = []string{builder.DNSBypassWarnings(settings.Gateway), "终端须使用旁路 DNS，主路由须配置 FakeIP 网段到旁路 LAN 地址的静态路由；终端默认网关保持主路由。更换地址池前须等待/清除客户端 DNS 缓存并同步更新路由。"}
 	}
 	if planErr != nil {
 		warnings = append(warnings, "网关计划验证失败: "+planErr.Error())
@@ -373,7 +374,7 @@ func (s *Server) gatewayStatus(c *gin.Context) {
 		}
 	}
 	if settings.DeploymentRole == "gateway" && gateway.Normalize(settings.Gateway).AccessMode == "dns" {
-		warnings = append(warnings, builder.DNSBypassWarnings())
+		warnings = append(warnings, builder.DNSBypassWarnings(settings.Gateway))
 	}
 	c.JSON(200, gin.H{"data": gin.H{"platform": s.platform, "role": settings.DeploymentRole, "access_mode": gateway.Normalize(settings.Gateway).AccessMode, "enabled": enabled, "configured_enabled": settings.Gateway.Enabled, "helper": helper, "devices": devicePolicySummary(settings), "warnings": warnings}})
 }

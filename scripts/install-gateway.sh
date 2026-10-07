@@ -38,6 +38,7 @@ if [[ ! -e /etc/sbm-gateway/policy.json ]]; then
 {
   "allow_gateway": false,
   "allow_dns_bypass": false,
+  "allow_routed_traffic": false,
   "allowed_lan_interfaces": [],
   "allowed_uplink_interfaces": [],
   "allowed_lan_cidrs": [],

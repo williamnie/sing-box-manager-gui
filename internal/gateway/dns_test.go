@@ -2,10 +2,82 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 )
+
+func TestDNSRoutedTrafficPlanKeepsRealIPConnections(t *testing.T) {
+	_, _, c := dnsFixture(t)
+	raw, _ := json.Marshal(c)
+	var settings map[string]any
+	_ = json.Unmarshal(raw, &settings)
+	settings["capture_routed_traffic"] = true
+	raw, _ = json.Marshal(settings)
+	if err := json.Unmarshal(raw, &c); err != nil {
+		t.Fatal(err)
+	}
+	p, err := Preview("gateway", c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(p.PolicyRoutes[0], "local default dev lo") || strings.Contains(p.PolicyRoutes[1], " to 198.18.") {
+		t.Fatalf("router-forwarded real IPs still have no local delivery route: %v", p.PolicyRoutes)
+	}
+	for _, required := range []string{`iifname != "eth0" return`, `ip saddr != { 192.0.2.0/24 } return`, `fib daddr type`, `udp dport { 53, 123, 5354 } return`, `meta nfproto ipv4 meta l4proto { tcp, udp }`} {
+		if !strings.Contains(p.NFTables, required) {
+			t.Fatalf("routed ingress boundary missing %s", required)
+		}
+	}
+	for _, forbidden := range []string{"hook output", "hook forward", "masquerade", "flush ruleset"} {
+		if strings.Contains(p.NFTables, forbidden) {
+			t.Fatal("routed ingress changed unrelated network behavior", forbidden)
+		}
+	}
+}
+
+func TestDNSRoutedTrafficAuthorizationLifecycleAndRecovery(t *testing.T) {
+	m, runner, c := dnsFixture(t)
+	c.CaptureRoutedTraffic = true
+	ctx := context.Background()
+	if _, err := m.Apply(ctx, "gateway", c); err == nil || runner.mutations != 0 {
+		t.Fatal("routed traffic captured without independent root authorization")
+	}
+	m.Policy.AllowRoutedTraffic = true
+	if status, err := m.Apply(ctx, "gateway", c); err != nil || !status.Applied {
+		t.Fatalf("routed ingress apply failed: %+v %v", status, err)
+	}
+	mutations := runner.mutations
+	if status, err := m.Apply(ctx, "gateway", c); err != nil || !status.Applied || runner.mutations != mutations {
+		t.Fatalf("routed ingress is not idempotent: %+v %v", status, err)
+	}
+	limited := c
+	limited.CaptureRoutedTraffic = false
+	if _, err := m.Apply(ctx, "gateway", limited); err == nil {
+		t.Fatal("capture scope changed without prior rollback")
+	}
+	if _, err := m.Rollback(ctx); err != nil || runner.dnsRoutes != "" || runner.dnsRules != "" || runner.nft != "" {
+		t.Fatalf("routed resources not restored: %v", err)
+	}
+	if _, err := m.Apply(ctx, "gateway", c); err != nil {
+		t.Fatal(err)
+	}
+	// 重启后先归档旧状态，再显式应用；不能把旧启动资源写回。
+	runner.nft, runner.dnsRoutes, runner.dnsRules = "", "", ""
+	m.ReadBootID = func() (string, error) { return "routed-new-boot", nil }
+	if _, err := m.Rollback(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if status, err := m.Apply(ctx, "gateway", c); err != nil || !status.Applied {
+		t.Fatalf("routed ingress reboot recovery failed: %+v %v", status, err)
+	}
+	// 新路由表不能混入未受管路由后仍被当作安全恢复点。
+	runner.dnsRoutes += "\n203.0.113.0/24 dev eth0"
+	if _, err := m.Rollback(ctx); err == nil {
+		t.Fatal("routed ingress discarded foreign route drift")
+	}
+}
 
 func dnsFixture(t *testing.T) (*Manager, *fakeRunner, Config) {
 	m, r, c := fixture(t)

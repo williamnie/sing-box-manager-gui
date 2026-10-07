@@ -11,7 +11,7 @@
 
 旧数据升级至 schema 2，未配置部署角色时保持单机，保留 TUN、mixed、订阅和规则。既有 `gateway` 的空 `access_mode` 归一化为 `full`，不会静默切换为 DNS 旁路；系统为 Linux 不会自动选择或启用家庭接管。macOS 可离线预览 Linux 草案，不能执行网关系统操作。数据目录仍是一个实例的边界，配置固定在 `generated/config.json`，内核固定在 `bin/sing-box`；API 不接受任意可执行程序或写文件路径。不同实例必须使用不同数据目录和端口。
 
-DNS 分流旁路的正常用法是：终端自动获取地址和主路由默认网关，主路由的 LAN / DHCP 设置下发旁路 LAN 地址作为 DNS，同时配置“FakeIP 网段 → 旁路 LAN 地址”静态路由。已有这条路由可以复用；新安装不能仅修改 DNS 而遗漏路由。不需要逐台设置终端网关或安装客户端。模式选择、来源识别、缓存和验收步骤见 [DNS 分流旁路](dns-bypass.md)。
+DNS 分流旁路的正常用法是：终端自动获取地址和主路由默认网关，需要接入的设备手动指定旁路 LAN 地址作为 DNS，或由主路由 LAN / DHCP 统一下发；主路由同时配置“FakeIP 网段 → 旁路 LAN 地址”静态路由。已有这条路由可以复用；新安装不能仅修改 DNS 而遗漏路由。不需要逐台设置终端网关或安装客户端。模式选择、来源识别、缓存和验收步骤见 [DNS 分流旁路](dns-bypass.md)。Mac mini 原生部署与 Linux 虚拟机的区别见 [macOS 部署](macos.md)。
 
 ## 首次登录及监听
 
@@ -55,7 +55,7 @@ sbm -data /path/to/instance -listen 192.0.2.2 -port 9090 \
 
 保护仅覆盖实际经过该实例的流量；设备默认路由、IPv6、备用网络或旁路直接出网仍需网络层配合。设备解释和生成配置展示配置预期，不冒充实时抓包结果。
 
-单机和完整网关的 `proxy_dns`、`direct_dns` 实际进入 typed DNS 配置，支持 UDP、TCP、TLS、HTTPS、QUIC、HTTP3；域名型 DNS 通过明确的 bootstrap DNS 解析，避免递归。hosts 先匹配，随后是设备 DNS 策略、Split DNS、可映射的域名规则。含流量端口/协议的规则不会被错误扩大为全域名 DNS 规则。单机保留 FakeIP；完整网关默认使用真实 DNS 地址，兼容已有导入 DNS。DNS 旁路的代理域名直接生成 FakeIP、不向 `proxy_dns` 查询；真实地址使用 `direct_dns` 或导入策略内相应解析器。它按可安全映射的域名策略选择真实地址或 IPv4 FakeIP，并禁用共享 DNS 应答缓存以防来源差异污染；FakeIP 映射独立持久化。代理域名仅 A 返回 FakeIP，所有非 A 查询（包括 AAAA、HTTPS / SVCB、ANY、TXT、MX、SRV）均为 NOERROR 空答，避免地址提示绕行；hosts / 直连域名保留正常解析，需要 TXT / MX 等记录时须为相关域名显式直连或配置直连 Split DNS。路由器自身缓存或替代 DNS 仍可能绕过当前策略，须确认终端的实际 DNS 路径。无法安全转换的复杂导入 DNS 会阻止 DNS 旁路应用，导入原数据保留。
+单机和完整网关的 `proxy_dns`、`direct_dns` 实际进入 typed DNS 配置，支持 UDP、TCP、TLS、HTTPS、QUIC、HTTP3；域名型 DNS 通过明确的 bootstrap DNS 解析，避免递归。hosts 先匹配，随后是设备 DNS 策略、Split DNS、可映射的域名规则。含流量端口/协议的规则不会被错误扩大为全域名 DNS 规则。单机保留 FakeIP；完整网关默认使用真实 DNS 地址，兼容已有导入 DNS。DNS 旁路向 LAN 终端返回代理域名的 FakeIP；后续内部业务 `resolve` 查询使用 `proxy_dns` 获取真实地址。LAN 直连域名使用 `direct_dns` 或导入策略内相应解析器，节点引导和直连出站的显式默认解析器仍使用 `dns_direct`，避免代理解析循环。它按可安全映射的域名策略选择真实地址或 IPv4 FakeIP，并禁用共享 DNS 应答缓存以防来源差异污染；FakeIP 映射独立持久化。代理域名仅 A 返回 FakeIP，所有非 A 查询（包括 AAAA、HTTPS / SVCB、ANY、TXT、MX、SRV）均为 NOERROR 空答，避免地址提示绕行；hosts / 直连域名保留正常解析，需要 TXT / MX 等记录时须为相关域名显式直连或配置直连 Split DNS。路由器自身缓存或替代 DNS 仍可能绕过当前策略，须确认终端的实际 DNS 路径。无法安全转换的复杂导入 DNS 会阻止 DNS 旁路应用，导入原数据保留。
 
 可选 DHCP 保留地址选择组后，会转换为对应 IP 的来源策略；与手动设备重复且同组时合并，冲突组拒绝保存。DHCP 默认关闭，root 策略还需独立授权。完整网络资源、冲突检查和恢复机制见 [Linux 网关部署](linux-gateway.md)。
 

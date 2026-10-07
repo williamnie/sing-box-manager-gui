@@ -190,8 +190,8 @@ func (m *Manager) check(ctx context.Context, role string, c Config) (CheckResult
 		add("error", "access_mode_active", "接入模式切换前须先恢复已应用的系统接管")
 		return r, nil
 	}
-	if s.Active != nil && p.Config.AccessMode == "dns" && (s.Active.Plan.Config.FakeIPRange != p.Config.FakeIPRange || s.Active.Plan.Config.LANInterface != p.Config.LANInterface) {
-		add("error", "dns_route_active", "修改 FakeIP 地址池或 LAN 接口前须先恢复接管，停机切换后重新应用")
+	if s.Active != nil && p.Config.AccessMode == "dns" && (s.Active.Plan.Config.FakeIPRange != p.Config.FakeIPRange || s.Active.Plan.Config.LANInterface != p.Config.LANInterface || s.Active.Plan.Config.CaptureRoutedTraffic != p.Config.CaptureRoutedTraffic) {
+		add("error", "dns_route_active", "修改 FakeIP 地址池、LAN 接口或公网接管范围前须先恢复接管，停机切换后重新应用")
 		return r, nil
 	}
 	if e = m.completeForwardingPlan(ctx, &p, s.Active); e != nil {
@@ -275,6 +275,13 @@ func (m *Manager) Apply(ctx context.Context, role string, c Config) (Status, err
 	}
 	if s.Active != nil && s.Active.Plan.ConfigDigest == result.Plan.ConfigDigest {
 		return m.status(ctx, s)
+	}
+	// 空状态没有旧资源需要恢复；新事务必须绑定本次启动，不能沿用历史 boot ID。
+	if s.Active == nil && s.Pending == nil {
+		s.BootID, e = m.currentBootID()
+		if e != nil {
+			return Status{}, e
+		}
 	}
 	before, e := m.capture(ctx, result.Plan)
 	if e != nil {

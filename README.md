@@ -114,6 +114,7 @@ Connection statistics and STUN rules only cover traffic that actually passes thr
 | Guide | Contents |
 |-------|----------|
 | [Deployment, login, and configuration](docs/deployment-modes.md) | Authentication, HTTPS, device policies, configuration import, validation, and recovery |
+| [Mac mini / macOS deployment](docs/macos.md) | Native HTTP/SOCKS proxy, local TUN, and the Linux gateway boundary |
 | [DNS bypass](docs/dns-bypass.md) | Router DNS / static routes, FakeIP, source identity, and verification |
 | [Linux gateway](docs/linux-gateway.md) | Helper installation, system permissions, conflict checks, DHCP / NAT, and recovery |
 | [Built-in runtime panel](docs/builtin-panel.md) | Proxy switching, connections, traffic, incremental logs, and migration from external dashboards |
@@ -392,6 +393,7 @@ MIT License
 | 文档 | 内容 |
 |------|------|
 | [部署、登录与配置管理](docs/deployment-modes.md) | 登录鉴权、HTTPS、设备策略、配置导入、校验与恢复 |
+| [Mac mini / macOS 部署](docs/macos.md) | 原生 HTTP/SOCKS 代理、本机 TUN 与 Linux 家庭网关的边界 |
 | [DNS 分流旁路](docs/dns-bypass.md) | 主路由 DNS / 静态路由、FakeIP、来源识别与验收步骤 |
 | [Linux 网关部署与恢复](docs/linux-gateway.md) | helper 安装、系统权限、冲突检查、DHCP / NAT 与恢复 |
 | [内置运行面板](docs/builtin-panel.md) | 代理热切换、连接、流量、增量日志与外部面板迁移 |

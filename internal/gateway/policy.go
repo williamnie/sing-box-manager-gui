@@ -13,6 +13,7 @@ import (
 type Policy struct {
 	ManagedDataDir          string   `json:"managed_data_dir,omitempty"`
 	AllowDNSBypass          bool     `json:"allow_dns_bypass"`
+	AllowRoutedTraffic      bool     `json:"allow_routed_traffic"`
 	AllowGateway            bool     `json:"allow_gateway"`
 	AllowedLANInterfaces    []string `json:"allowed_lan_interfaces"`
 	AllowedUplinkInterfaces []string `json:"allowed_uplink_interfaces"`
@@ -74,6 +75,9 @@ func (p Policy) authorize(role string, c Config) error {
 	}
 	if Normalize(c).AccessMode == "dns" && !p.AllowDNSBypass {
 		return fmt.Errorf("root 辅助服务策略尚未允许 DNS 分流旁路（allow_dns_bypass）")
+	}
+	if c.CaptureRoutedTraffic && !p.AllowRoutedTraffic {
+		return fmt.Errorf("root 辅助服务策略尚未允许接收主路由转交的公网流量（allow_routed_traffic）")
 	}
 	if !p.AllowGateway {
 		return fmt.Errorf("root 辅助服务策略尚未允许网关操作")

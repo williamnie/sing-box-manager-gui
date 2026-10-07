@@ -25,13 +25,13 @@ func (b *ConfigBuilder) configureDNSBypass(c *SingBoxConfig) error {
 	}
 	servers := []any{}
 	for _, s := range c.DNS.Servers {
-		if s.Tag != "dns_fakeip" && s.Tag != "dns_proxy" {
+		if s.Tag != "dns_fakeip" {
 			servers = append(servers, s)
 		}
 	}
 	servers = append(servers, DNSServer{Type: "fakeip", Tag: "dns_fakeip", Inet4Range: g.FakeIPRange})
 	rules := []any{}
-	// 用户 hosts 永远优先，且内部代理节点解析不能得到 FakeIP。
+	// 用户 hosts 永远优先；内部业务解析需要真实地址，不能再次得到 FakeIP。
 	for _, r := range c.DNS.Rules {
 		if r.Server == "dns_hosts" {
 			rules = append(rules, r)
@@ -45,7 +45,9 @@ func (b *ConfigBuilder) configureDNSBypass(c *SingBoxConfig) error {
 		return fmt.Errorf("导入 DNS 与流量规则的组合超过 10000 项，请精简后再启用 DNS 旁路")
 	}
 	servers = append(servers, importedServers...)
-	rules = append(rules, map[string]any{"inbound": []string{"lan-dns"}, "invert": true, "action": "route", "server": "dns_direct"})
+	// resolve 等内部业务查询沿代理 DNS 解析，避免国内 DNS 污染后把错误 IP 送入代理。
+	// 节点引导与直连出站仍通过 route.default_domain_resolver 显式使用 dns_direct，避免循环。
+	rules = append(rules, map[string]any{"inbound": []string{"lan-dns"}, "invert": true, "action": "route", "server": "dns_proxy"})
 	for _, d := range b.settings.Devices {
 		if d.Enabled {
 			group := b.group(d.GroupID)
@@ -420,6 +422,10 @@ func (b *ConfigBuilder) importedDNSBypass() (rules []importedDNSRule, servers []
 }
 
 // DNSBypassWarnings 用于预览，说明无法投影的规则仍保留为进入实例后的流量规则。
-func DNSBypassWarnings() string {
-	return "DNS 旁路只覆盖使用本 DNS 且被 FakeIP 静态路由送达的连接；端口、协议、目的 IP 及不透明导入规则集只在流量进入实例后匹配。代理域名只对 A 返回 FakeIP，其余类型（含 AAAA/HTTPS/SVCB/ANY/TXT/MX）空答；需要非 A 记录的域名请配置直连或 Split DNS。动态混合选择组返回 FakeIP；直连预设按已保存出站生成，修改后需重新应用。导入 DNS 的默认解析器按流量最终出站重建，原始导入数据保留。"
+func DNSBypassWarnings(config gateway.Config) string {
+	scope := "DNS 旁路只覆盖使用本 DNS 且被 FakeIP 静态路由送达的连接"
+	if config.CaptureRoutedTraffic {
+		scope = "DNS 旁路同时接收主路由转交的公网 IPv4 TCP/UDP，包含 FakeIP 和真实 IP；未经过本机的连接仍不受控"
+	}
+	return scope + "；端口、协议、目的 IP 及不透明导入规则集只在流量进入实例后匹配。代理域名只对 A 返回 FakeIP，其余类型（含 AAAA/HTTPS/SVCB/ANY/TXT/MX）空答；需要非 A 记录的域名请配置直连或 Split DNS。动态混合选择组返回 FakeIP；直连预设按已保存出站生成，修改后需重新应用。导入 DNS 的默认解析器按流量最终出站重建，原始导入数据保留。"
 }

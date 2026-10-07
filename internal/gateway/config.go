@@ -18,7 +18,8 @@ const DNSRulePriority = 12030
 const DNSMark = "0x5342"
 
 type Config struct {
-	AccessMode           string     `json:"access_mode"` // full（旧配置）/dns
+	CaptureRoutedTraffic bool       `json:"capture_routed_traffic,omitempty"` // DNS 旁路额外接收主路由转交的公网 IPv4
+	AccessMode           string     `json:"access_mode"`                      // full（旧配置）/dns
 	FakeIPRange          string     `json:"fakeip_range"`
 	DNSSource            string     `json:"dns_source"` // client/router
 	StaticRouteConfirmed bool       `json:"static_route_confirmed"`
@@ -85,6 +86,9 @@ func Validate(c Config) error {
 	c = Normalize(c)
 	if c.AccessMode != "full" && c.AccessMode != "dns" {
 		return fmt.Errorf("接入方式必须为 full 或 dns")
+	}
+	if c.CaptureRoutedTraffic && c.AccessMode != "dns" {
+		return fmt.Errorf("接收主路由转交的公网流量仅适用于 DNS 分流旁路")
 	}
 	if c.AccessMode == "dns" {
 		if c.IPv6Mode != "disabled" || c.NAT || c.DHCP.Enabled {

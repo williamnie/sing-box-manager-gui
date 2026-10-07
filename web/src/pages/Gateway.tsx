@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button, Checkbox, Input, Switch, Tab, Tabs } from '@nextui-org/react';
 import { AppSelect, SelectItem } from '../components/AppSelect';
+import GatewayClients from '../components/GatewayClients';
 import { Plus, Trash2 } from 'lucide-react';
 import { errorMessage, gatewayApi, settingsApi } from '../api';
 import { useStore } from '../store';
@@ -108,13 +109,14 @@ export default function Gateway() {
     editGateway(access_mode === 'dns' ? {
       access_mode, ipv6_mode: 'disabled', nat: false, dns_port: 53,
       dhcp: { ...gateway.dhcp, enabled: false },
-    } : { access_mode });
+    } : { access_mode, capture_routed_traffic: false });
   };
-  const addDevice = () => {
+  const addDevice = (address?: string) => {
+    if (address && devices.some(device => device.addresses.includes(address) || device.addresses.includes(`${address}/32`))) return;
     const group = splitGroupForNewDevice(groups, crypto.randomUUID());
     edit({
       device_groups: groups.some((item) => item.id === group.id) ? groups : [...groups, group],
-      devices: [...devices, { id: crypto.randomUUID(), name: '', addresses: [], group_id: group.id, enabled: true }],
+      devices: [...devices, { id: crypto.randomUUID(), name: address ? `设备 ${address}` : '', addresses: address ? [address] : [], group_id: group.id, enabled: true }],
     });
   };
 
@@ -240,9 +242,9 @@ export default function Gateway() {
           </div>
           <div className="p-5 space-y-3 font-mono text-xs text-zinc-300">
             <ol className="list-decimal pl-5 space-y-1.5 leading-relaxed text-zinc-400">
-              <li>为旁路设备保留固定 LAN IP。主路由继续运行 DHCP，并在 LAN DNS 设置中填入此设备 IP 作为首选 DNS。</li>
+              <li>为旁路设备保留固定 LAN IP。需要接入的终端可手动将 DNS 指向此设备；也可由主路由 DHCP 统一下发，默认网关保持主路由。</li>
               <li>在主路由添加静态路由：<strong className="text-cyan-300">{gateway.fakeip_range || defaultGateway.fakeip_range} &rarr; {gateway.lan_address || '旁路 LAN 地址'}</strong>。</li>
-              <li>启用本实例后，终端重新连接 WiFi 或更新 DHCP 租约即可无感分流。</li>
+              <li>启用后重新连接 WiFi 或更新 DNS 缓存。核对终端没有混用其他 IPv4 / IPv6 DNS 或浏览器安全 DNS，设备无需预先登记。</li>
             </ol>
             <div className="pt-2">
               <Checkbox
@@ -300,6 +302,7 @@ export default function Gateway() {
 
           <Tab key="devices" title="// 设备与策略 (DEVICES)">
             <div className="space-y-4 mt-3">
+              {gatewayRole && linux ? <GatewayClients onConfigure={addDevice} /> : null}
               {/* 分组管理 */}
               <div className="rounded-[4px] border border-white/[0.08] bg-[#0b0c10] overflow-hidden">
                 <div className="h-9 px-4 border-b border-white/[0.08] bg-[#0e1017] flex items-center justify-between">
@@ -328,7 +331,7 @@ export default function Gateway() {
               <div className="rounded-[4px] border border-white/[0.08] bg-[#0b0c10] overflow-hidden">
                 <div className="h-9 px-4 border-b border-white/[0.08] bg-[#0e1017] flex items-center justify-between">
                   <span className="font-mono text-xs text-white font-semibold">// 受管设备列表 (LAN HOSTS)</span>
-                  <Button size="sm" className="rounded-[2px] font-mono text-xs bg-white/[0.06] text-zinc-200 hover:text-white" startContent={<Plus size={12} />} onPress={addDevice}>
+                  <Button size="sm" className="rounded-[2px] font-mono text-xs bg-white/[0.06] text-zinc-200 hover:text-white" startContent={<Plus size={12} />} onPress={() => addDevice()}>
                     添加设备
                   </Button>
                 </div>
@@ -368,8 +371,15 @@ export default function Gateway() {
 
               {dnsBypass && (
                 <div className="space-y-3 pt-2">
+                  <div className="flex items-center justify-between gap-4 rounded-[3px] border border-white/10 p-3">
+                    <div>
+                      <p className="text-xs text-zinc-200">接收主路由转交的公网 IP 流量</p>
+                      <p className="mt-1 text-xs leading-relaxed text-zinc-500">迁移已有透明代理时使用。除 FakeIP 外，也接收已经到达本机的真实 IPv4 TCP/UDP，例如 Telegram。需要 root 策略授权；修改前先恢复当前接管。</p>
+                    </div>
+                    <Switch aria-label="接收主路由转交的公网 IP 流量" size="sm" isSelected={gateway.capture_routed_traffic === true} onValueChange={(value) => editGateway({ capture_routed_traffic: value })} />
+                  </div>
                   <AppSelect label="终端 DNS 接入路径" selectedKeys={[gateway.dns_source || 'client']} onChange={(event) => editGateway({ dns_source: event.target.value as 'client' | 'router' })}>
-                    <SelectItem key="client" description="保留终端真实来源，可使用设备差异策略">DHCP 直接下发旁路 DNS（推荐）</SelectItem>
+                    <SelectItem key="client" description="手动设置或 DHCP 下发均可，保留终端真实来源">终端直接查询旁路 DNS（推荐）</SelectItem>
                     <SelectItem key="router" description="DNS 来源合并为主路由，不支持终端来源差异策略">主路由作为 DNS 转发器</SelectItem>
                   </AppSelect>
                 </div>

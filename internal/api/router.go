@@ -50,6 +50,7 @@ type Server struct {
 	operationMu       sync.Mutex
 	runtimeDelaySlots chan struct{}
 	runtimeWriteMu    sync.Mutex
+	observedClients   gatewayClientTracker
 	store             *storage.JSONStore
 	subService        *service.SubscriptionService
 	processManager    processController
@@ -106,10 +107,12 @@ func NewServer(store *storage.JSONStore, processManager *daemon.ProcessManager, 
 // StartScheduler 启动定时任务调度器
 func (s *Server) StartScheduler() {
 	s.scheduler.Start()
+	s.startGatewayClientObservation()
 }
 
 // StopScheduler 停止定时任务调度器
 func (s *Server) StopScheduler() {
+	s.stopGatewayClientObservation()
 	s.scheduler.Stop()
 }
 
