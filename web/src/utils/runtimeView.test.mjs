@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { connectionRates, filterConnections, formatBytes, formatEndpoint, selectedChain, sortConnections } from './runtimeView.ts';
+import { connectionRates, connectionSources, filterConnections, formatBytes, formatEndpoint, selectedChain, sortConnections } from './runtimeView.ts';
 
 const connection = (overrides = {}) => ({ id: 'a', source: '192.0.2.2', source_port: '1000', destination: '2001:db8::1', destination_port: '443', host: 'example.org', network: 'tcp', protocol: 'tls', process: '', chains: ['节点', 'Proxy'], rule: '', started_at: '2026-09-30T00:00:00Z', upload: 100, download: 200, ...overrides });
 const snapshot = (connections, overrides = {}) => ({ instance: 'same', sampled_at: 1000, upload_total: 0, download_total: 0, connections, ...overrides });
@@ -28,6 +28,35 @@ test('连接按来源、目标、代理链和协议交集筛选，不把链子�
   assert.deepEqual(filterConnections(rows, { search: 'EXAMPLE', source: '192.0.2.2', group: 'Proxy', network: 'TCP' }).map(row => row.id), ['a']);
   assert.deepEqual(filterConnections(rows, { search: '2001:db8', source: '', group: 'Proxy', network: '' }).map(row => row.id), ['a']);
   assert.deepEqual(filterConnections(rows, { search: '', source: '', group: '不存在', network: '' }), []);
+});
+
+test('选择来源 IP 只匹配该设备，不匹配相同前缀的其他设备', () => {
+  const rows = [connection(), connection({ id: 'b', source: '192.0.2.20' }), connection({ id: 'v6', source: 'fd00::a' }), connection({ id: 'v6-other', source: 'fd00::ab' })];
+  const filters = { search: '', source: '192.0.2.2', group: '', network: '' };
+  assert.deepEqual(filterConnections(rows, filters).map(row => row.id), ['a']);
+  assert.deepEqual(filterConnections(rows, { ...filters, source: 'FD00::A' }).map(row => row.id), ['v6']);
+  assert.equal(filterConnections(rows, { ...filters, source: '' }).length, rows.length);
+});
+
+test('来源选项合并活动、已结束和无活动连接的网关设备，去重并按 IP 排序', () => {
+  const active = [connection(), connection({ id: 'b', source: '192.0.2.10' }), connection({ id: 'empty', source: '' })];
+  const closed = [connection({ id: 'closed', source: '192.0.2.3' }), connection({ id: 'duplicate' })];
+  const clients = [{ address: '192.0.2.2', name: '手机' }, { address: '192.0.2.100', name: '' }, { address: 'FD00::A', name: 'IPv6 设备' }];
+  assert.deepEqual(connectionSources(active, closed, clients), [
+    { address: '192.0.2.2', name: '手机' },
+    { address: '192.0.2.3', name: '' },
+    { address: '192.0.2.10', name: '' },
+    { address: '192.0.2.100', name: '' },
+    { address: 'fd00::a', name: 'IPv6 设备' },
+  ]);
+  assert.equal(active.length, 3);
+  assert.equal(closed.length, 2);
+});
+
+test('网关设备为空时仍列出连接来源，IPv6 大小写不产生重复选项', () => {
+  assert.deepEqual(connectionSources([], [], []), []);
+  assert.deepEqual(connectionSources([connection({ source: 'FD00::A' })], [connection({ source: 'fd00::a' })], []), [{ address: 'fd00::a', name: '' }]);
+  assert.deepEqual(connectionSources([], [], [{ address: '192.0.2.2', name: '仅 DNS' }]), [{ address: '192.0.2.2', name: '仅 DNS' }]);
 });
 
 test('数值排序和速率排序不修改快照，缺少样本保持稳定', () => {

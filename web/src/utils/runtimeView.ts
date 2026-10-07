@@ -1,4 +1,5 @@
 import type { ConnectionSnapshot, RuntimeConnection, RuntimeProxy } from '../api/runtime';
+import type { ObservedGatewayClient } from '../api/gatewayClients';
 
 export function formatBytes(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return '0 B';
@@ -24,12 +25,28 @@ export function selectedChain(tag: string, proxies: Map<string, RuntimeProxy>): 
 }
 
 export interface ConnectionFilters { search: string; source: string; group: string; network: string }
+
+// 选项取自完整来源集合，不随当前视图、搜索条件或分页收缩。
+export function connectionSources(active: RuntimeConnection[], closed: RuntimeConnection[], clients: Pick<ObservedGatewayClient, 'address' | 'name'>[]): { address: string; name: string }[] {
+  const sources = new Map<string, string>();
+  for (const connection of [...active, ...closed]) {
+    const address = connection.source.trim().toLowerCase();
+    if (address) sources.set(address, '');
+  }
+  for (const client of clients) {
+    const address = client.address.trim().toLowerCase();
+    if (address) sources.set(address, client.name || sources.get(address) || '');
+  }
+  return [...sources].sort(([left], [right]) => left.localeCompare(right, 'en', { numeric: true }))
+    .map(([address, name]) => ({ address, name }));
+}
+
 export function filterConnections(connections: RuntimeConnection[], filters: ConnectionFilters): RuntimeConnection[] {
   const query = filters.search.trim().toLocaleLowerCase();
   const source = filters.source.trim().toLocaleLowerCase();
   return connections.filter(connection =>
     (!query || [connection.host, connection.destination, connection.destination_port, connection.source, connection.process, connection.id].some(value => value.toLocaleLowerCase().includes(query))) &&
-    (!source || connection.source.toLocaleLowerCase().includes(source)) &&
+    (!source || connection.source.trim().toLocaleLowerCase() === source) &&
     (!filters.group || connection.chains.includes(filters.group)) &&
     (!filters.network || connection.network.toLocaleLowerCase() === filters.network.toLocaleLowerCase()),
   );

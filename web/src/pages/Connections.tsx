@@ -3,12 +3,13 @@ import { Button, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader } from
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Columns3, Pause, Play, RefreshCw, Search, Unplug } from 'lucide-react';
 import { errorMessage } from '../api';
 import { runtimeApi, type RuntimeConnection } from '../api/runtime';
+import { gatewayClientsApi } from '../api/gatewayClients';
 import { usePanelPreferences } from '../store/panelPreferences';
 import ConfirmModal from '../components/ConfirmModal';
 import { toast } from '../components/Toast';
 import RuntimeStatus from '../components/runtime/RuntimeStatus';
 import useRuntimePolling from '../components/runtime/useRuntimePolling';
-import { connectionRates, filterConnections, formatBytes, formatEndpoint, sortConnections, type ConnectionSort } from '../utils/runtimeView';
+import { connectionRates, connectionSources, filterConnections, formatBytes, formatEndpoint, sortConnections, type ConnectionSort } from '../utils/runtimeView';
 import { updateConnectionHistory, type ConnectionHistory, type ClosedConnection } from '../utils/connectionHistory';
 
 const controlClass = 'rounded-[3px] border border-zinc-200 bg-white text-zinc-700 dark:border-white/10 dark:bg-[#12141d] dark:text-zinc-300';
@@ -31,6 +32,7 @@ export default function Connections() {
   const [preferences, updatePreferences] = usePanelPreferences();
   const [paused, setPaused] = useState(false);
   const runtime = useRuntimePolling(runtimeApi.connections, preferences.refreshInterval, paused);
+  const clients = useRuntimePolling(gatewayClientsApi.list, 5000, paused);
   const snapshot = runtime.data;
   const [history, setHistory] = useState<ConnectionHistory>({ snapshot: null, closed: [] });
   if (snapshot && snapshot !== history.snapshot) setHistory(updateConnectionHistory(history, snapshot));
@@ -50,6 +52,8 @@ export default function Connections() {
   const sorted = useMemo(() => sortConnections(filtered, sort, descending, rates), [filtered, sort, descending, rates]);
   const groups = useMemo(() => [...new Set((connections ?? []).flatMap(connection => connection.chains))].sort((a, b) => a.localeCompare(b)), [connections]);
   const networks = useMemo(() => [...new Set((connections ?? []).map(connection => connection.network).filter(Boolean))].sort(), [connections]);
+  const sources = useMemo(() => connectionSources(snapshot?.connections ?? [], history.closed, clients.data?.clients ?? []), [snapshot, history.closed, clients.data]);
+  const refresh = () => Promise.all([runtime.refresh(), clients.refresh()]);
   const pageCount = Math.max(1, Math.ceil(sorted.length / pageSize));
   const currentPage = Math.min(page, pageCount - 1);
   const pageConnections = sorted.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
@@ -94,7 +98,7 @@ export default function Connections() {
   return <div className="space-y-5">
     <header className="flex flex-wrap items-end justify-between gap-4 border-b border-zinc-200 pb-5 dark:border-white/10">
       <div><p className="mb-1.5 font-mono text-[11px] tracking-wider text-[#ff5722]">[ RUNTIME // CONNECTIONS ]</p><h1 className="text-2xl font-bold text-zinc-900 dark:text-white">连接</h1><p className="mt-2 text-xs text-zinc-500">当前 sing-box 实例经过的流量与活动连接</p></div>
-      <div className="flex flex-wrap items-center gap-2"><label className="flex items-center gap-2 text-xs text-zinc-500">刷新间隔<select aria-label="连接刷新间隔" value={preferences.refreshInterval} onChange={event => updatePreferences({ refreshInterval: Number(event.target.value) as 1000 | 2000 | 5000 })} className={`h-8 px-2 ${controlClass}`}><option value="1000">1 秒</option><option value="2000">2 秒</option><option value="5000">5 秒</option></select></label><Button size="sm" className={controlClass} startContent={paused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />} onPress={() => setPaused(previous => !previous)}>{paused ? '恢复刷新' : '暂停刷新'}</Button><Button size="sm" className={controlClass} startContent={<RefreshCw className={`size-3.5 ${runtime.loading ? 'animate-spin' : ''}`} />} onPress={() => void runtime.refresh()}>刷新</Button></div>
+      <div className="flex flex-wrap items-center gap-2"><label className="flex items-center gap-2 text-xs text-zinc-500">刷新间隔<select aria-label="连接刷新间隔" value={preferences.refreshInterval} onChange={event => updatePreferences({ refreshInterval: Number(event.target.value) as 1000 | 2000 | 5000 })} className={`h-8 px-2 ${controlClass}`}><option value="1000">1 秒</option><option value="2000">2 秒</option><option value="5000">5 秒</option></select></label><Button size="sm" className={controlClass} startContent={paused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />} onPress={() => setPaused(previous => !previous)}>{paused ? '恢复刷新' : '暂停刷新'}</Button><Button size="sm" className={controlClass} startContent={<RefreshCw className={`size-3.5 ${runtime.loading || clients.loading ? 'animate-spin' : ''}`} />} onPress={() => void refresh()}>刷新</Button></div>
     </header>
     <RuntimeStatus error={runtime.error} loading={runtime.loading} hasData={Boolean(snapshot)} />
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -108,7 +112,18 @@ export default function Connections() {
       <span className="text-xs text-zinc-500">{view === 'closed' ? '保留最近 5 分钟内采样到的结束连接，最多 1000 条' : '连接结束后移至「最近结束」；列表消失不代表网络异常断开'}</span>
     </div>
     <div className="space-y-3">
-      <div className="flex flex-wrap gap-2"><label className={`flex min-w-[14rem] flex-1 items-center gap-2 px-3 ${controlClass}`}><Search className="size-4 shrink-0 text-zinc-400" /><input aria-label="搜索目标域名或 IP" value={filters.search} onChange={event => setFilter('search', event.target.value)} placeholder="搜索目标域名、IP、进程…" className="h-9 min-w-0 flex-1 bg-transparent text-xs outline-none" /></label><input aria-label="筛选来源设备 IP" value={filters.source} onChange={event => setFilter('source', event.target.value)} placeholder="来源设备 IP" className={`h-9 w-40 px-3 text-xs ${controlClass}`} /><select aria-label="筛选代理组" value={filters.group} onChange={event => setFilter('group', event.target.value)} className={`h-9 max-w-52 px-2 text-xs ${controlClass}`}><option value="">全部代理链</option>{filters.group && !groups.includes(filters.group) && <option value={filters.group}>{filters.group}</option>}{groups.map(group => <option key={group} value={group}>{group}</option>)}</select><select aria-label="筛选网络协议" value={filters.network} onChange={event => setFilter('network', event.target.value)} className={`h-9 px-2 text-xs ${controlClass}`}><option value="">全部协议</option>{filters.network && !networks.includes(filters.network) && <option value={filters.network}>{filters.network.toUpperCase()}</option>}{networks.map(network => <option key={network} value={network}>{network.toUpperCase()}</option>)}</select></div>
+      <div className="flex flex-wrap gap-2">
+        <label className={`flex min-w-[14rem] flex-1 items-center gap-2 px-3 ${controlClass}`}><Search className="size-4 shrink-0 text-zinc-400" /><input aria-label="搜索目标域名或 IP" value={filters.search} onChange={event => setFilter('search', event.target.value)} placeholder="搜索目标域名、IP、进程…" className="h-9 min-w-0 flex-1 bg-transparent text-xs outline-none" /></label>
+        <select aria-label="筛选来源设备 IP" aria-describedby="connection-sources-help" value={filters.source} onChange={event => setFilter('source', event.target.value)} className={`h-9 min-w-40 max-w-full px-2 text-xs sm:max-w-72 ${controlClass}`}>
+          <option value="">全部来源 IP</option>
+          {filters.source && !sources.some(source => source.address === filters.source) && <option value={filters.source}>{filters.source}</option>}
+          {sources.map(source => <option key={source.address} value={source.address}>{source.address}{source.name ? `（${source.name}）` : ''}</option>)}
+        </select>
+        <select aria-label="筛选代理组" value={filters.group} onChange={event => setFilter('group', event.target.value)} className={`h-9 max-w-52 px-2 text-xs ${controlClass}`}><option value="">全部代理链</option>{filters.group && !groups.includes(filters.group) && <option value={filters.group}>{filters.group}</option>}{groups.map(group => <option key={group} value={group}>{group}</option>)}</select>
+        <select aria-label="筛选网络协议" value={filters.network} onChange={event => setFilter('network', event.target.value)} className={`h-9 px-2 text-xs ${controlClass}`}><option value="">全部协议</option>{filters.network && !networks.includes(filters.network) && <option value={filters.network}>{filters.network.toUpperCase()}</option>}{networks.map(network => <option key={network} value={network}>{network.toUpperCase()}</option>)}</select>
+      </div>
+      <p id="connection-sources-help" className="text-xs text-zinc-500">来源 IP 自动汇总活动、最近结束连接及网关最近接入设备；网关接入记录保留 24 小时，最多 512 个来源。</p>
+      {clients.error && <p role="alert" className="text-xs text-amber-600 dark:text-amber-400">最近接入设备读取失败，暂用连接记录和已获取的设备 IP。{clients.error}</p>}
       <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap items-center gap-2"><label className="flex items-center gap-2 text-xs text-zinc-500">排序<select aria-label="连接排序" value={sort} onChange={event => { setSort(event.target.value as ConnectionSort); setPage(0); }} className={`h-8 px-2 ${controlClass}`}><option value="started_at">开始时间</option><option value="source">来源设备</option><option value="host">目标</option><option value="upload">累计上传</option><option value="download">累计下载</option><option value="uploadRate">上传速率</option><option value="downloadRate">下载速率</option></select></label><button aria-label={descending ? '改为升序' : '改为降序'} onClick={() => setDescending(previous => !previous)} className={`p-2 ${controlClass}`}>{descending ? <ArrowDown className="size-3.5" /> : <ArrowUp className="size-3.5" />}</button><Button size="sm" className={`h-8 ${controlClass}`} startContent={<Columns3 className="size-3.5" />} aria-expanded={showColumns} onPress={() => setShowColumns(previous => !previous)}>表格列</Button></div><div className="flex gap-2"><Button size="sm" variant="light" className="h-8 text-xs text-rose-600 dark:text-rose-400" isDisabled={unavailable || closing || view !== 'active' || !filtered.length} onPress={() => captureClose('筛选结果', filtered)}>关闭筛选结果 ({filtered.length})</Button><Button size="sm" className="h-8 rounded-[3px] border border-rose-500/25 bg-rose-500/10 text-xs text-rose-600 dark:text-rose-400" isDisabled={unavailable || closing || view !== 'active' || !snapshot?.connections.length} startContent={<Unplug className="size-3" />} onPress={() => captureClose('全部连接', snapshot?.connections ?? [])}>关闭全部</Button></div></div>
     </div>
     {showColumns && <div className="grid grid-cols-1 gap-3 rounded border border-zinc-200 bg-white p-4 sm:grid-cols-2 xl:grid-cols-3 dark:border-white/10 dark:bg-[#0d0e12]">{columns.map(column => <div key={column.key} className="flex items-center justify-between gap-3 text-xs text-zinc-600 dark:text-zinc-400"><label className="flex min-w-28 items-center gap-2"><input type="checkbox" className="accent-[#ff5722]" checked={preferences.connectionColumns.includes(column.key)} onChange={() => toggleColumn(column.key)} />{column.label}</label><input type="range" aria-label={`${column.label}列宽`} min="80" max="480" step="10" value={preferences.connectionColumnWidths[column.key] ?? column.width} onChange={event => updatePreferences({ connectionColumnWidths: { ...preferences.connectionColumnWidths, [column.key]: Number(event.target.value) } })} className="min-w-0 flex-1 accent-[#ff5722]" /><span className="w-8 font-mono">{preferences.connectionColumnWidths[column.key] ?? column.width}</span></div>)}</div>}
