@@ -65,6 +65,8 @@ func (s *JSONStore) load() error {
 			RuleGroups:    DefaultRuleGroups(),
 			Settings:      DefaultSettings(),
 		}
+		// 新装与重新加载使用相同默认值，避免首次保存被误判为网关拓扑变更。
+		NormalizeSettings(s.data.Settings)
 		return s.saveInternal()
 	}
 
