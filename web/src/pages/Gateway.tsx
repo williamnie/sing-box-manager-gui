@@ -376,7 +376,7 @@ export default function Gateway() {
                       <p className="text-xs text-zinc-200">接收主路由转交的公网 IP 流量</p>
                       <p className="mt-1 text-xs leading-relaxed text-zinc-500">迁移已有透明代理时使用。除 FakeIP 外，也接收已经到达本机的真实 IPv4 TCP/UDP，例如 Telegram。需要 root 策略授权；修改前先恢复当前接管。</p>
                     </div>
-                    <Switch aria-label="接收主路由转交的公网 IP 流量" size="sm" isSelected={gateway.capture_routed_traffic === true} onValueChange={(value) => editGateway({ capture_routed_traffic: value })} />
+                    <Switch aria-label="接收主路由转交的公网 IP 流量" size="sm" isSelected={gateway.capture_routed_traffic === true} onValueChange={(value) => editGateway({ capture_routed_traffic: value })} classNames={{ wrapper: "group-data-[selected=true]:bg-[#ff5722]" }} />
                   </div>
                   <AppSelect label="终端 DNS 接入路径" selectedKeys={[gateway.dns_source || 'client']} onChange={(event) => editGateway({ dns_source: event.target.value as 'client' | 'router' })}>
                     <SelectItem key="client" description="手动设置或 DHCP 下发均可，保留终端真实来源">终端直接查询旁路 DNS（推荐）</SelectItem>

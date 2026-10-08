@@ -36,15 +36,24 @@ export const toast = {
 // Toast 单个项目组件
 const ToastItem = ({ toast, onClose }: { toast: Toast; onClose: () => void }) => {
   const icons = {
-    success: <CheckCircle className="size-4 text-emerald-400 shrink-0" />,
-    error: <XCircle className="size-4 text-rose-400 shrink-0" />,
+    success: <CheckCircle className="size-4 text-emerald-500 dark:text-emerald-400 shrink-0" />,
+    error: <XCircle className="size-4 text-rose-500 dark:text-rose-400 shrink-0" />,
     info: <AlertCircle className="size-4 text-[#ff5722] shrink-0" />,
   };
 
   const borderStyles = {
-    success: 'border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.15)]',
-    error: 'border-rose-500/40 shadow-[0_0_15px_rgba(244,63,94,0.15)]',
-    info: 'border-[#ff5722]/40 shadow-[0_0_15px_rgba(255,87,34,0.15)]',
+    success:
+      'border-emerald-500/30 dark:border-emerald-500/40 shadow-[0_4px_16px_rgba(16,185,129,0.12),0_1px_3px_rgba(0,0,0,0.05)] dark:shadow-[0_0_15px_rgba(16,185,129,0.15)]',
+    error:
+      'border-rose-500/30 dark:border-rose-500/40 shadow-[0_4px_16px_rgba(244,63,94,0.12),0_1px_3px_rgba(0,0,0,0.05)] dark:shadow-[0_0_15px_rgba(244,63,94,0.15)]',
+    info:
+      'border-[#ff5722]/30 dark:border-[#ff5722]/40 shadow-[0_4px_16px_rgba(255,87,34,0.12),0_1px_3px_rgba(0,0,0,0.05)] dark:shadow-[0_0_15px_rgba(255,87,34,0.15)]',
+  };
+
+  const tagColors = {
+    success: 'text-emerald-600 dark:text-emerald-400',
+    error: 'text-rose-600 dark:text-rose-400',
+    info: 'text-[#ff5722]',
   };
 
   const tagLabels = {
@@ -55,16 +64,19 @@ const ToastItem = ({ toast, onClose }: { toast: Toast; onClose: () => void }) =>
 
   return (
     <div
-      className={`flex items-center gap-3 px-3.5 py-2.5 rounded-[3px] border bg-[#0d0e14]/95 backdrop-blur-md ${borderStyles[toast.type]} animate-slide-in select-none`}
+      className={`flex items-center gap-3 px-3.5 py-2.5 rounded-[4px] border bg-white/95 dark:bg-[#0d0e14]/95 backdrop-blur-md ${borderStyles[toast.type]} animate-slide-in select-none`}
     >
       {icons[toast.type]}
-      <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-500 font-bold">
+      <span className={`font-mono text-[10px] uppercase tracking-wider font-bold shrink-0 ${tagColors[toast.type]}`}>
         [{tagLabels[toast.type]}]
       </span>
-      <span className="flex-1 text-xs text-zinc-200 font-medium whitespace-pre-wrap">{toast.message}</span>
+      <span className="flex-1 text-xs text-zinc-800 dark:text-zinc-100 font-medium whitespace-pre-wrap leading-relaxed">
+        {toast.message}
+      </span>
       <button
         onClick={onClose}
-        className="p-1 hover:bg-white/[0.1] rounded-[2px] transition-colors cursor-pointer text-zinc-400 hover:text-white"
+        aria-label="关闭提示"
+        className="p-1 hover:bg-zinc-100 dark:hover:bg-white/[0.1] rounded-[2px] transition-colors cursor-pointer text-zinc-400 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-white shrink-0"
       >
         <X className="size-3" />
       </button>

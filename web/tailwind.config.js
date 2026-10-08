@@ -11,6 +11,7 @@ export default {
   theme: {
     extend: {
       colors: {
+        "interface-orange": "#ff5722",
         e2b: {
           dark: "#070709",
           surface: "#0d0e12",

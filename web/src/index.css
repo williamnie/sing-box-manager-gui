@@ -497,3 +497,10 @@ html:not(.dark) {
 .animate-slide-in {
   animation: slide-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+/* ========================================================
+   5. 全局 NextUI 开关组件开启状态品牌色兜底
+   ======================================================== */
+.group[data-selected="true"] .group-data-\[selected\=true\]\:bg-primary {
+  background-color: #ff5722 !important;
+}

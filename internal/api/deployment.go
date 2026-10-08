@@ -33,6 +33,7 @@ func (s *Server) setupDeploymentRoutes(r *gin.RouterGroup) {
 	r.POST("/config/restore", s.restorePreviousConfig)
 	r.GET("/rules/overview", s.rulesOverview)
 	r.PUT("/rules/imported/:index", s.updateImportedRule)
+	r.DELETE("/rules/imported/:index", s.deleteImportedRule)
 	r.POST("/config/import/preview", s.migrationPreview)
 	r.POST("/config/import/apply", s.migrationImport)
 	r.POST("/config/import/rollback", s.migrationRollback)

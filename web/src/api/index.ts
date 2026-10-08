@@ -76,11 +76,12 @@ export const filterApi = {
 // 规则 API
 export const ruleApi = {
   updateImported: (index: number, revision: string, updates: Record<string, unknown>) => api.put(`/rules/imported/${index}`, { revision, updates }, { timeout: 120000 }),
+  deleteImported: (index: number, revision: string) => api.delete(`/rules/imported/${index}`, { data: { revision }, timeout: 120000 }),
   overview: () => api.get('/rules/overview'),
   getAll: () => api.get('/rules'),
   add: (data: unknown) => api.post('/rules', data),
   update: (id: string, data: unknown) => api.put(`/rules/${id}`, data),
-  delete: (id: string) => api.delete(`/rules/${id}`),
+  delete: (id: string) => api.delete(`/rules/${id}`, { timeout: 120000 }),
 };
 
 // 规则组 API

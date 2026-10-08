@@ -515,13 +515,8 @@ func (s *Server) deleteRule(c *gin.Context) {
 		return
 	}
 
-	// 自动应用配置
-	if err := s.autoApplyConfig(); err != nil {
-		c.JSON(http.StatusOK, gin.H{"warning": "删除成功，但自动应用配置失败: " + err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+	application, warning := s.applyRuleDeletion()
+	c.JSON(http.StatusOK, gin.H{"message": "删除成功", "application": application, "warning": warning})
 }
 
 // ==================== 规则组 API ====================

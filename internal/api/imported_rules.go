@@ -26,6 +26,64 @@ func importedPolicyRevision(p *storage.ImportedPolicy) string {
 	return configHash(raw)
 }
 
+func (s *Server) deleteImportedRule(c *gin.Context) {
+	index, err := strconv.Atoi(c.Param("index"))
+	if err != nil || index < 0 {
+		c.JSON(400, gin.H{"error": "规则位置无效"})
+		return
+	}
+	var req struct {
+		Revision string `json:"revision"`
+	}
+	if c.ShouldBindJSON(&req) != nil || req.Revision == "" {
+		c.JSON(400, gin.H{"error": "请提供规则列表版本，刷新后再删除"})
+		return
+	}
+	// writeMu 串行化写入；必须检查整个策略版本，防止列表变化后删错行。
+	data := s.store.Snapshot()
+	policy := data.Settings.ImportedPolicy
+	if policy == nil || index >= len(policy.Rules) {
+		c.JSON(404, gin.H{"error": "导入规则已不存在，请刷新列表"})
+		return
+	}
+	if req.Revision != importedPolicyRevision(policy) {
+		c.JSON(409, gin.H{"error": "导入策略已更新，请取消并刷新列表后再删除"})
+		return
+	}
+	policy.Rules = append(policy.Rules[:index], policy.Rules[index+1:]...)
+	candidate, err := s.buildData(data, true)
+	if err != nil {
+		c.JSON(400, gin.H{"error": "删除后无法生成有效配置，原规则未修改：" + err.Error()})
+		return
+	}
+	checked := false
+	if _, err := s.processManager.Version(); err == nil {
+		if err := s.processManager.CheckConfig([]byte(candidate)); err != nil {
+			c.JSON(400, gin.H{"error": "内核校验失败，原规则未修改：" + err.Error()})
+			return
+		}
+		checked = true
+	}
+	if err := s.store.UpdateSettings(data.Settings); err != nil {
+		c.JSON(500, gin.H{"error": "保存规则删除失败"})
+		return
+	}
+	application, warning := s.applyRuleDeletion()
+	c.Header("Cache-Control", "no-store")
+	c.JSON(200, gin.H{"message": "删除成功", "application": application, "warning": warning, "checked": checked})
+}
+
+func (s *Server) applyRuleDeletion() (application, warning string) {
+	if err := s.autoApplyConfig(); err != nil {
+		return "failed", "规则已删除，但自动应用失败，请在配置审阅中检查并应用：" + err.Error()
+	}
+	settings := s.store.GetSettings()
+	if settings.AutoApply && (settings.DeploymentRole != "gateway" || settings.Gateway.Enabled) && s.processManager.IsRunning() {
+		return "applied", ""
+	}
+	return "saved", ""
+}
+
 func validateImportedField(key string, value any) error {
 	typ, ok := importedRuleFields[key]
 	if !ok {

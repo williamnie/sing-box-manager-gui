@@ -523,11 +523,11 @@ export const useStore = create<AppState>((set, get) => ({
       if (res.data.warning) {
         toast.info(res.data.warning);
       } else {
-        toast.success('规则已删除');
+        toast.success(res.data.application === 'applied' ? '规则已删除并应用，sing-box 已自动重启' : '规则已删除，请在配置审阅中检查并应用');
       }
-    } catch (error: any) {
-
-      toast.error(error.response?.data?.error || '删除规则失败');
+    } catch (error: unknown) {
+      toast.error(errorMessage(error, '删除规则失败'));
+      throw error;
     }
   },
 

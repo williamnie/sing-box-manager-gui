@@ -90,6 +90,7 @@ export default function Rules() {
   const [formData, setFormData] = useState<Omit<Rule, 'id'>>(defaultRule);
   const [valuesText, setValuesText] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Rule | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [portsText, setPortsText] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [overviewRevision, setOverviewRevision] = useState(0);
@@ -284,6 +285,19 @@ export default function Rules() {
   };
 
   const handleDeleteRule = (rule: Rule) => setDeleteTarget(rule);
+  const autoApply = settings?.auto_apply === true && (settings.deployment_role !== 'gateway' || settings.gateway?.enabled === true);
+
+  const confirmDeleteRule = async () => {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    try {
+      await deleteRule(deleteTarget.id);
+      setDeleteTarget(null);
+      setOverviewRevision(value => value + 1);
+    } catch {
+      // Store 已显示错误，保留弹窗以便重试。
+    } finally { setDeleting(false); }
+  };
 
   const getSTUNOutboundOptions = () => {
     const importedTypes = new Map<string, string>();
@@ -400,7 +414,7 @@ export default function Rules() {
       <DomainBlocklistEditor isOpen={blocklistOpen} onClose={() => setBlocklistOpen(false)} onSaved={() => { void fetchRules(); setOverviewRevision(value => value + 1); }} />
       <RuleOverview
         onEditBlocklist={() => setBlocklistOpen(true)}
-        autoApply={settings?.auto_apply === true}
+        autoApply={autoApply}
         revision={overviewRevision}
         rules={rules}
         groups={ruleGroups}
@@ -670,7 +684,10 @@ export default function Rules() {
           </ModalFooter>
         </ModalContent>
       </Modal>
-      <ConfirmModal isOpen={!!deleteTarget} title="删除规则" onClose={() => setDeleteTarget(null)} onConfirm={async () => { if (deleteTarget) await deleteRule(deleteTarget.id); setDeleteTarget(null); setOverviewRevision((value) => value + 1); }} confirmLabel="删除"><p>删除规则「{deleteTarget?.name}」后，启用自动应用时会触发配置校验与应用。</p></ConfirmModal>
+      <ConfirmModal isOpen={!!deleteTarget} title="删除规则" busy={deleting} onClose={() => setDeleteTarget(null)} onConfirm={() => void confirmDeleteRule()} confirmLabel="删除">
+        <p>确定删除规则「{deleteTarget?.name}」？删除后，这部分流量会继续匹配后续规则或默认出站。</p>
+        <p>{autoApply ? '删除后会自动校验并应用配置；运行中的 sing-box 会自动重启，无需手动重启。已停止的内核不会自动启动。' : '删除后需点击“检查与应用”才能生效；应用时会自动重启运行中的 sing-box。'}</p>
+      </ConfirmModal>
     </div>
   );
 }

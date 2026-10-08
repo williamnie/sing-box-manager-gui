@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, Download, Pause, Play, RefreshCw, Search, Server, Terminal, Trash2 } from 'lucide-react';
 import { api, authApi, errorMessage } from '../api';
 import { toast } from '../components/Toast';
@@ -46,6 +46,12 @@ export default function Logs() {
   const cursors = useRef<Record<LogSource, string>>({ singbox: readCursor('singbox'), sbm: readCursor('sbm') });
   const nextID = useRef(0);
   const logContainerRef = useRef<HTMLDivElement>(null);
+  const isAutoScrollingRef = useRef(false);
+  const pendingLinesRef = useRef<Record<LogSource, { lines: LogLine[]; gap: boolean; received: boolean }>>({
+    singbox: { lines: [], gap: false, received: false },
+    sbm: { lines: [], gap: false, received: false },
+  });
+  const rafIdRef = useRef<number | null>(null);
   const bufferLimit = preferences.logBuffer;
 
   useEffect(() => {
@@ -54,6 +60,35 @@ export default function Logs() {
     const params = new URLSearchParams({ source: activeTab });
     if (cursors.current[activeTab]) params.set('cursor', cursors.current[activeTab]);
     const stream = new EventSource(`/api/monitor/logs/stream?${params.toString()}`);
+
+    const flushPending = () => {
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+      const queued = pendingLinesRef.current[activeTab];
+      if (!queued.received) return;
+      const incomingBatch = queued.lines;
+      const hasGap = queued.gap;
+      pendingLinesRef.current[activeTab] = { lines: [], gap: false, received: false };
+
+      setBuffers((current) => {
+        const previous = current[activeTab];
+        const combined = [...previous.lines, ...incomingBatch];
+        const lines = limitBuffer(combined, bufferLimit);
+        return {
+          ...current,
+          [activeTab]: {
+            lines,
+            ready: true,
+            gap: previous.gap || hasGap,
+            discarded: previous.discarded + combined.length - lines.length,
+          },
+        };
+      });
+      setConnection({ source: activeTab, state: 'live' });
+    };
+
     stream.addEventListener('logs', (event: MessageEvent<string>) => {
       if (disposed) return;
       let batch: LogBatch;
@@ -61,14 +96,24 @@ export default function Logs() {
       if (!Array.isArray(batch.lines) || typeof batch.cursor !== 'string') return;
       cursors.current[activeTab] = batch.cursor;
       saveCursor(activeTab, batch.cursor);
-      const incoming = batch.lines.filter((line): line is string => typeof line === 'string').map((text) => ({ id: nextID.current++, text, level: logLevel(text) }));
-      setBuffers((current) => {
-        const previous = current[activeTab];
-        const combined = [...previous.lines, ...incoming];
-        const lines = limitBuffer(combined, bufferLimit);
-        return { ...current, [activeTab]: { lines, ready: true, gap: previous.gap || batch.gap, discarded: previous.discarded + combined.length - lines.length } };
-      });
-      setConnection({ source: activeTab, state: 'live' });
+      const incoming = batch.lines
+        .filter((line): line is string => typeof line === 'string')
+        .map((text) => ({ id: nextID.current++, text, level: logLevel(text) }));
+
+      const pending = pendingLinesRef.current[activeTab];
+      pending.received = true;
+      pending.lines.push(...incoming);
+      if (batch.gap) pending.gap = true;
+
+      // 后台页的动画帧可能暂停，及时提交以保持缓冲上限。
+      if (document.hidden) {
+        flushPending();
+      } else if (rafIdRef.current === null) {
+        rafIdRef.current = requestAnimationFrame(() => {
+          rafIdRef.current = null;
+          flushPending();
+        });
+      }
     });
     stream.addEventListener('auth_expired', () => {
       if (disposed) return;
@@ -98,7 +143,12 @@ export default function Logs() {
         }
       }).catch(() => { /* 管理服务暂时离线时保留 EventSource 的自动重连。 */ });
     };
-    return () => { disposed = true; stream.close(); };
+    return () => {
+      disposed = true;
+      stream.close();
+      // 游标已消费的批次在暂停或切换来源前入缓冲，避免丢行。
+      flushPending();
+    };
   }, [activeTab, paused, reconnect, bufferLimit]);
 
   const current = buffers[activeTab];
@@ -107,13 +157,47 @@ export default function Logs() {
     return current.lines.filter((line) => (level === 'all' || line.level === level) && (!term || line.text.toLowerCase().includes(term)));
   }, [current.lines, search, level]);
 
-  useEffect(() => {
-    if (preferences.logFollow && logContainerRef.current) logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+  // 在绘制到屏幕之前对齐最新底部，避免后置更新导致的视觉闪跳
+  useLayoutEffect(() => {
+    if (!preferences.logFollow || !logContainerRef.current) return;
+    isAutoScrollingRef.current = true;
+    logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+    requestAnimationFrame(() => {
+      isAutoScrollingRef.current = false;
+    });
   }, [visibleLines, activeTab, preferences.logFollow]);
+
+  const handleScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    if (isAutoScrollingRef.current) return;
+    const element = event.currentTarget;
+    const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+
+    if (preferences.logFollow) {
+      if (distanceFromBottom > 40) {
+        updatePreferences({ logFollow: false });
+      }
+    } else {
+      if (distanceFromBottom <= 12) {
+        updatePreferences({ logFollow: true });
+      }
+    }
+  };
+
+  const scrollToBottomAndFollow = () => {
+    updatePreferences({ logFollow: true });
+    if (logContainerRef.current) {
+      logContainerRef.current.scrollTo({ top: logContainerRef.current.scrollHeight, behavior: 'smooth' });
+    }
+  };
 
   const clear = () => {
     // 保留已消费游标，手动重连、切换标签和刷新页面均不重放清屏前的历史。
     saveCursor(activeTab, cursors.current[activeTab]);
+    pendingLinesRef.current[activeTab] = { lines: [], gap: false, received: false };
+    if (rafIdRef.current !== null) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
     setBuffers((current) => ({ ...current, [activeTab]: { ...emptyBuffer(), ready: true } }));
   };
   const download = async () => {
@@ -159,17 +243,42 @@ export default function Logs() {
             </select>
             <label className="relative"><Search className="pointer-events-none absolute left-2.5 top-2.5 size-3 text-zinc-500" /><input aria-label="过滤日志关键字" placeholder="过滤日志关键字" value={search} onChange={(event) => setSearch(event.target.value)} className="h-8 w-40 rounded-[3px] border border-white/10 bg-black/30 pl-7 pr-2 text-xs text-zinc-300 outline-none focus:border-[#ff5722] sm:w-52" /></label>
             <label className="flex items-center gap-1.5 px-1 text-xs text-zinc-400"><input type="checkbox" checked={preferences.logFollow} onChange={(event) => updatePreferences({ logFollow: event.target.checked })} className="accent-[#ff5722]" />跟随</label>
-            <button aria-label="滚动到底部并开启跟随" className={`${buttonStyle} !px-2`} onClick={() => { updatePreferences({ logFollow: true }); if (logContainerRef.current) logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight; }}><ArrowDown className="size-3.5" /></button>
+            <button aria-label="滚动到底部并开启跟随" className={`${buttonStyle} !px-2`} onClick={scrollToBottomAndFollow}><ArrowDown className="size-3.5" /></button>
           </div>
         </div>
         {current.gap && <div role="status" className="shrink-0 border-b border-amber-500/20 bg-amber-500/10 px-4 py-2 text-xs text-amber-700 dark:text-amber-300">接续位置已超出日志保留范围，或文件已重建。已接入当前尾部，期间部分日志不可恢复。</div>}
-        <div ref={logContainerRef} onScroll={(event) => {
-          const element = event.currentTarget;
-          if (preferences.logFollow && element.scrollHeight - element.scrollTop - element.clientHeight > 48) updatePreferences({ logFollow: false });
-        }} className="min-h-0 flex-1 overflow-auto bg-[#050608] p-3 font-mono text-xs leading-relaxed text-zinc-300 selection:bg-[#ff5722] selection:text-white">
-          {visibleLines.length === 0 ? <div className="flex h-full min-h-24 flex-col items-center justify-center gap-2 text-zinc-500"><Terminal className="size-7" /><p>{search || level !== 'all' ? '没有符合过滤条件的日志' : current.ready ? '暂无新日志，或已清屏' : '正在读取日志尾部…'}</p></div> : visibleLines.map((line) => <div key={line.id} className="flex items-start gap-3 rounded-[2px] px-1 py-0.5 hover:bg-white/[0.03]" style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 24px' }}>
-            <span className="w-10 shrink-0 select-none text-right text-[10px] text-zinc-600">{line.id + 1}</span><span className={`min-w-0 flex-1 whitespace-pre-wrap break-all ${levelStyles[line.level]}`}>{line.text}</span>
-          </div>)}
+        <div className="relative min-h-0 flex-1 overflow-hidden">
+          <div
+            ref={logContainerRef}
+            onScroll={handleScroll}
+            style={{ overflowAnchor: 'auto' }}
+            className="h-full overflow-auto bg-[#050608] p-3 font-mono text-xs leading-relaxed text-zinc-300 selection:bg-[#ff5722] selection:text-white"
+          >
+            {visibleLines.length === 0 ? (
+              <div className="flex h-full min-h-24 flex-col items-center justify-center gap-2 text-zinc-500">
+                <Terminal className="size-7" />
+                <p>{search || level !== 'all' ? '没有符合过滤条件的日志' : current.ready ? '暂无新日志，或已清屏' : '正在读取日志尾部…'}</p>
+              </div>
+            ) : (
+              visibleLines.map((line) => (
+                <div key={line.id} className="flex items-start gap-3 rounded-[2px] px-1 py-0.5 hover:bg-white/[0.03]">
+                  <span className="w-10 shrink-0 select-none text-right text-[10px] text-zinc-600">{line.id + 1}</span>
+                  <span className={`min-w-0 flex-1 whitespace-pre-wrap break-all ${levelStyles[line.level]}`}>{line.text}</span>
+                </div>
+              ))
+            )}
+          </div>
+          {!preferences.logFollow && (
+            <button
+              type="button"
+              onClick={scrollToBottomAndFollow}
+              className="absolute bottom-4 right-4 flex items-center gap-1.5 rounded-full border border-white/20 bg-[#12141d]/90 px-3 py-1.5 text-xs text-zinc-200 shadow-xl backdrop-blur transition-all hover:border-[#ff5722] hover:bg-[#ff5722] hover:text-white"
+              title="回到底部并恢复跟随"
+            >
+              <ArrowDown className="size-3.5" />
+              <span>回到底部</span>
+            </button>
+          )}
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-white/[0.08] bg-[#0c0d13] px-4 py-2 text-[11px] text-zinc-500">
           <span>显示 {visibleLines.length} / {current.lines.length} 行 · 缓冲上限 {bufferLimit} 行 / 4 MiB{current.discarded > 0 ? ` · 已淘汰 ${current.discarded} 行` : ''}</span>

@@ -622,7 +622,7 @@ export default function Settings() {
                 isSelected={formData.deployment_role === 'gateway' ? formData.gateway?.access_mode !== 'dns' : formData.tun_enabled}
                 onValueChange={(enabled) => setFormData({ ...formData, tun_enabled: enabled })}
                 classNames={{
-                  wrapper: 'group-data-[selected=true]:bg-interface-orange',
+                  wrapper: 'group-data-[selected=true]:bg-[#ff5722]',
                 }}
               />
             </div>
@@ -651,7 +651,7 @@ export default function Settings() {
                 setFormData({ ...formData, ...updates });
               }}
               classNames={{
-                wrapper: 'group-data-[selected=true]:bg-interface-orange',
+                wrapper: 'group-data-[selected=true]:bg-[#ff5722]',
               }}
             />
           </div>
@@ -844,7 +844,7 @@ export default function Settings() {
                           isSelected={host.enabled}
                           onValueChange={(enabled) => handleToggleHost(host.id, enabled)}
                           classNames={{
-                            wrapper: 'group-data-[selected=true]:bg-interface-orange',
+                            wrapper: 'group-data-[selected=true]:bg-[#ff5722]',
                           }}
                         />
                       </div>
@@ -993,7 +993,7 @@ export default function Settings() {
                 isSelected={formData.auto_apply}
                 onValueChange={(enabled) => setFormData({ ...formData, auto_apply: enabled })}
                 classNames={{
-                  wrapper: 'group-data-[selected=true]:bg-interface-orange',
+                  wrapper: 'group-data-[selected=true]:bg-[#ff5722]',
                 }}
               />
             </div>
@@ -1247,7 +1247,7 @@ export default function Settings() {
                 isSelected={hostFormData.enabled}
                 onValueChange={(enabled) => setHostFormData({ ...hostFormData, enabled })}
                 classNames={{
-                  wrapper: 'group-data-[selected=true]:bg-interface-orange',
+                  wrapper: 'group-data-[selected=true]:bg-[#ff5722]',
                 }}
               />
             </div>

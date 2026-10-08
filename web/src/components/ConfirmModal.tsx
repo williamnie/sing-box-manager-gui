@@ -9,6 +9,7 @@ export default function ConfirmModal({ title, children, isOpen, busy = false, on
       isOpen={isOpen}
       onClose={onClose}
       isDismissable={!busy}
+      isKeyboardDismissDisabled={busy}
       hideCloseButton={busy}
       classNames={{
         base: "bg-[#0b0c10] border border-white/[0.12] text-zinc-100 rounded-[4px] shadow-[0_16px_50px_rgba(0,0,0,0.85)]",
@@ -46,4 +47,3 @@ export default function ConfirmModal({ title, children, isOpen, busy = false, on
     </Modal>
   );
 }
-

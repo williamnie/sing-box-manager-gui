@@ -714,6 +714,7 @@ export default function Subscriptions() {
                 <Switch
                   isSelected={nodeEnabled}
                   onValueChange={setNodeEnabled}
+                  classNames={{ wrapper: "group-data-[selected=true]:bg-[#ff5722]" }}
                 />
               </div>
             </div>
@@ -817,6 +818,7 @@ export default function Subscriptions() {
                 <Switch
                   isSelected={filterForm.all_nodes}
                   onValueChange={(checked) => setFilterForm({ ...filterForm, all_nodes: checked })}
+                  classNames={{ wrapper: "group-data-[selected=true]:bg-[#ff5722]" }}
                 />
               </div>
 
@@ -882,6 +884,7 @@ export default function Subscriptions() {
                 <Switch
                   isSelected={filterForm.enabled}
                   onValueChange={(checked) => setFilterForm({ ...filterForm, enabled: checked })}
+                  classNames={{ wrapper: "group-data-[selected=true]:bg-[#ff5722]" }}
                 />
               </div>
             </div>

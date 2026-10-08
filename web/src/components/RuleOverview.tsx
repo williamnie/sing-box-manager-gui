@@ -7,6 +7,8 @@ import type { DevicePolicy, Rule, RuleGroup } from '../store';
 import { actionLabel, applicationStatus, customRuleMatch, describeMatch, outboundLabel } from '../utils/rulePresentation';
 import ImportedRuleEditor from './ImportedRuleEditor';
 import type { ImportedRuleSelection } from './ImportedRuleEditor';
+import ConfirmModal from './ConfirmModal';
+import { toast } from './Toast';
 
 interface RouteSnapshot { rules: Record<string, unknown>[]; final: string }
 interface Overview {
@@ -100,6 +102,23 @@ export default function RuleOverview(props: Props) {
   const [limit, setLimit] = useState(20);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [editingImported, setEditingImported] = useState<ImportedRuleSelection | null>(null);
+  const [deletingImported, setDeletingImported] = useState<{ index: number; revision: string; traffic: string; outcome: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+
+  const deleteImportedRule = async () => {
+    if (!deletingImported || deleting) return;
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      const result = await ruleApi.deleteImported(deletingImported.index, deletingImported.revision);
+      if (!result.data.warning) toast.success(result.data.application === 'applied' ? '规则已删除并应用，sing-box 已自动重启' : '规则已删除，请在配置审阅中检查并应用');
+      setDeletingImported(null);
+      setRefresh(value => value + 1);
+    } catch (cause) {
+      setDeleteError(errorMessage(cause, '删除失败，请重试'));
+    } finally { setDeleting(false); }
+  };
 
   useEffect(() => {
     let active = true;
@@ -117,6 +136,11 @@ export default function RuleOverview(props: Props) {
   return (
     <div className="space-y-5">
       {editingImported && <ImportedRuleEditor selection={editingImported} outbounds={props.outboundOptions} autoApply={props.autoApply} onClose={() => setEditingImported(null)} onSaved={() => setRefresh(value => value + 1)} />}
+      <ConfirmModal isOpen={!!deletingImported} title={`删除导入规则 · 第 ${(deletingImported?.index ?? 0) + 1} 条`} busy={deleting} onClose={() => setDeletingImported(null)} onConfirm={() => void deleteImportedRule()} confirmLabel="删除">
+        <p className="break-words">确定删除「{deletingImported?.traffic} → {deletingImported?.outcome}」？删除后，这部分流量会继续匹配后续规则或默认出站。</p>
+        <p>{props.autoApply ? '删除后会自动校验并应用配置；运行中的 sing-box 会自动重启，无需手动重启。已停止的内核不会自动启动。' : '删除后需点击“检查与应用”才能生效；应用时会自动重启运行中的 sing-box。'}</p>
+        {deleteError && <p role="alert" className="rounded bg-rose-500/10 p-3 text-rose-700 dark:text-rose-300">{deleteError}</p>}
+      </ConfirmModal>
       {/* 极客状态条 */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-[3px] border border-white/[0.08] px-4 py-2.5 bg-[#0b0c10]" role="status">
         <div className="flex flex-wrap items-center gap-3 font-mono text-xs">
@@ -289,7 +313,10 @@ export default function RuleOverview(props: Props) {
                             classNames={{ wrapper: "group-data-[selected=true]:bg-[#ff5722]" }}
                           />
                         ) : row.importedRule && row.importedIndex !== undefined && overview ? (
-                          <Button size="sm" variant="light" className="h-7 min-w-0 rounded px-2 text-[#ff5722]" aria-label={`编辑导入规则 第${row.importedIndex + 1}条`} startContent={<Pencil className="size-3" />} onPress={() => setEditingImported({ index: row.importedIndex!, rule: row.importedRule!, revision: overview.imported_revision, ruleSets: overview.imported_rule_sets })}>编辑</Button>
+                          <>
+                            <Button size="sm" variant="light" className="h-7 min-w-0 rounded px-2 text-[#ff5722]" aria-label={`编辑导入规则 第${row.importedIndex + 1}条`} startContent={<Pencil className="size-3" />} onPress={() => setEditingImported({ index: row.importedIndex!, rule: row.importedRule!, revision: overview.imported_revision, ruleSets: overview.imported_rule_sets })}>编辑</Button>
+                            <Button size="sm" variant="light" className="h-7 min-w-0 rounded px-2 text-rose-700 dark:text-rose-400" aria-label={`删除导入规则 第${row.importedIndex + 1}条`} startContent={<Trash2 className="size-3" />} onPress={() => { setDeleteError(''); setDeletingImported({ index: row.importedIndex!, revision: overview.imported_revision, traffic: row.traffic, outcome: row.outcome }); }}>删除</Button>
+                          </>
                         ) : (
                           <Link className="text-[#ff5722] hover:underline" to={row.origin === '设备' ? '/gateway' : '/configuration/import'}>
                             {row.origin === '设备' ? '设备' : '导入'}
