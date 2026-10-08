@@ -26,9 +26,10 @@ api.interceptors.response.use((response) => {
 
 export const authApi = {
   status: () => api.get('/auth/status'),
-  login: (password: string) => api.post('/auth/login', { password }),
-  setup: (password: string, setupToken: string) => api.post('/auth/setup', { password, setup_token: setupToken }),
+  login: (password: string, rememberMe = false) => api.post('/auth/login', { password, remember_me: rememberMe }),
+  setup: (password: string, setupToken: string, rememberMe = false) => api.post('/auth/setup', { password, setup_token: setupToken, remember_me: rememberMe }),
   logout: () => api.post('/auth/logout'),
+  changePassword: (currentPassword: string, newPassword: string) => api.post('/auth/password', { current_password: currentPassword, new_password: newPassword }),
 };
 
 export const gatewayApi = {

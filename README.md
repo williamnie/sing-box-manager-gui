@@ -220,6 +220,7 @@ The script reuses `web/dist` if it already exists. After frontend changes, run `
    ```
 
 3. Enter the token and set a management password of 12–72 bytes. The setup token is removed after initialization; subsequent logins use the password.
+   You can use a memorable passphrase and change it under **Settings → Management password** by entering your current password. Changing it signs out all devices. The forms support browser password managers (fixed account identifier: `admin`); save prompts depend on browser settings. Select **Remember me for 30 days** on your own device to stay signed in across browser and manager restarts; otherwise sessions expire after 8 hours or a manager restart. Logout revokes the current session.
 4. Add subscriptions or import a sing-box JSON draft, install the core in settings, then review, validate, and apply the configuration. Applying a standalone configuration while the core is stopped does not start it; use the service start control afterward.
 
 For remote management, forward the local-only interface over SSH and open `http://127.0.0.1:19090`:
@@ -248,7 +249,7 @@ For direct LAN management, explicitly configure a listening IP, TLS certificate 
 ```text
 ~/.singbox-manager/
 ├── data.json           # Configuration data
-├── auth.json           # Management password hash
+├── auth.json           # Management password hash and remembered session hashes
 ├── setup-token         # First-run token; removed after initialization
 ├── migration-before.json # Pre-import recovery point, when available
 ├── generated/
@@ -499,6 +500,7 @@ cd singbox-manager
    ```
 
 3. 在页面输入令牌，设置 12–72 字节的管理密码。初始化完成后令牌文件会删除，之后使用密码登录。
+   可使用自己好记的短语，登录后在「设置 → 管理密码」验证当前密码并修改；改密会使所有设备退出登录。表单支持浏览器密码管理器保存及自动填充（固定账号标识为 `admin`），保存提示取决于浏览器设置。在自己的设备上可勾选「记住登录 30 天」，关闭浏览器或重启管理器后仍保持登录；未勾选时，会话在 8 小时后或管理器重启后失效。退出登录会撤销当前会话。
 4. 添加订阅或导入 sing-box JSON 草案，在设置页安装内核，再审阅、校验并应用配置。单机内核原本停止时，应用只更新配置，之后需手动启动服务。
 
 远程管理可使用 SSH 转发本机管理端口，再打开 `http://127.0.0.1:19090`：
@@ -527,7 +529,7 @@ ssh -L 19090:127.0.0.1:9090 user@gateway-host
 ```text
 ~/.singbox-manager/
 ├── data.json           # 配置数据
-├── auth.json           # 管理密码摘要
+├── auth.json           # 管理密码摘要与记住的会话摘要
 ├── setup-token         # 首次设置令牌，初始化后删除
 ├── migration-before.json # 导入前恢复点，按需生成
 ├── generated/

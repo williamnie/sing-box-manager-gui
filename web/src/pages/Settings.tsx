@@ -41,6 +41,7 @@ import { daemonApi, kernelApi, settingsApi } from '../api';
 import { toast } from '../components/Toast';
 import ConfirmModal from '../components/ConfirmModal';
 import PanelPreferences from '../components/PanelPreferences';
+import PasswordSettings from '../components/PasswordSettings';
 import { Link } from 'react-router-dom';
 
 function randomSecret() {
@@ -436,6 +437,8 @@ export default function Settings() {
       </div>
 
       <PanelPreferences />
+
+      <PasswordSettings />
 
       {/* 快捷导航定位 */}
       <div className="flex flex-wrap items-center gap-2 p-2 rounded-[3px] border border-white/[0.06] bg-default-100/40 dark:bg-black/30 text-xs font-mono">

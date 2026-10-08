@@ -134,6 +134,7 @@ func (s *Server) setupRoutes() {
 		c.Next()
 	})
 	{
+		api.POST("/auth/password", s.changePassword)
 		s.setupRuntimeRoutes(api)
 		s.setupDeploymentRoutes(api)
 		// 订阅管理

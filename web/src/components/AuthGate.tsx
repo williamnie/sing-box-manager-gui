@@ -9,8 +9,6 @@ interface AuthStatus { authenticated: boolean; setup_required: boolean }
 
 export default function AuthGate({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus | null>(null);
-  const [password, setPassword] = useState('');
-  const [setupToken, setSetupToken] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -28,7 +26,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     void refresh();
     const unauthorized = () => {
       setStatus((previous) => ({ authenticated: false, setup_required: previous?.setup_required ?? false }));
-      // 退出后清除包含订阅和节点的内存状态，凭据始终不写浏览器存储。
+      // 退出后清除包含订阅和节点的内存状态，不将密码写入 Web Storage。
       useStore.setState({ settings: null, subscriptions: [], manualNodes: [], filters: [], rules: [], ruleGroups: [], serviceStatus: null, countryGroups: [], systemInfo: null });
     };
     window.addEventListener('sbm:unauthorized', unauthorized);
@@ -37,17 +35,24 @@ export default function AuthGate({ children }: { children: ReactNode }) {
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (busy) return;
+    // 从原生表单读取，兼容未触发 React change 事件的浏览器自动填充。
+    const data = new FormData(event.currentTarget);
+    const password = String(data.get('password') || '');
+    const setupToken = String(data.get('setup_token') || '');
+    const rememberMe = data.get('remember_me') === 'on';
     const passwordBytes = new TextEncoder().encode(password).length;
     if (status?.setup_required && (passwordBytes < 12 || passwordBytes > 72)) {
       setError('密码需为 12–72 字节（中文等字符可能占多个字节）'); return;
     }
+    if (status?.setup_required && password !== data.get('confirm_password')) {
+      setError('两次输入的密码不一致'); return;
+    }
     setBusy(true);
     setError('');
     try {
-      if (status?.setup_required) await authApi.setup(password, setupToken);
-      else await authApi.login(password);
-      setPassword('');
-      setSetupToken('');
+      if (status?.setup_required) await authApi.setup(password, setupToken, rememberMe);
+      else await authApi.login(password, rememberMe);
       await refresh();
     } catch (cause) {
       setError(errorMessage(cause, '认证失败'));
@@ -98,30 +103,30 @@ export default function AuthGate({ children }: { children: ReactNode }) {
               )}
             </div>
           ) : (
-            <form onSubmit={submit} className="space-y-4">
+            <form key={status.setup_required ? 'setup' : 'login'} id={status.setup_required ? 'setup' : 'login'} method="post" onSubmit={submit} className="space-y-4">
+              <input type="text" name="username" autoComplete="username" value="admin" readOnly hidden />
               <div className="space-y-1">
                 <h2 className="text-lg font-bold font-sans tracking-tight text-white flex items-center gap-2">
                   <LockKeyhole className="size-4 text-[#ff5722]" />
-                  {status.setup_required ? '初始化管理员密钥' : '管理员控制台验证'}
+                  {status.setup_required ? '设置管理密码' : '登录管理页面'}
                 </h2>
                 <p className="text-xs text-zinc-400 font-mono">
                   {status.setup_required
                     ? '首次启动：请从数据目录 setup-token 文件读取初始令牌'
-                    : '请输入凭据以访问底层网络转发控制台'}
+                    : '使用自己设置的管理密码，可由浏览器保存和自动填充'}
                 </p>
               </div>
 
               {status.setup_required && (
                 <div className="space-y-3 pt-2">
                   <div className="p-2.5 rounded-[3px] bg-amber-500/10 border border-amber-500/20 text-[11px] font-mono text-amber-800 dark:text-amber-300/90 leading-relaxed">
-                    从管理服务数据目录权限为 0600 的 setup-token 文件读取令牌。请设置 12–72 字节独立密码。
+                    初始化令牌仅使用一次。请另设自己好记的管理密码或短语，长度为 12–72 字节。
                   </div>
                   <Input
                     label="本机初始化令牌 (Setup Token)"
+                    name="setup_token"
                     type="password"
-                    autoComplete="off"
-                    value={setupToken}
-                    onValueChange={setSetupToken}
+                    autoComplete="one-time-code"
                     isRequired
                     variant="bordered"
                     classNames={{
@@ -134,11 +139,10 @@ export default function AuthGate({ children }: { children: ReactNode }) {
               )}
 
               <Input
-                label="管理员密码 (Master Password)"
+                label={status.setup_required ? '自定义管理密码' : '管理密码'}
+                name="password"
                 type="password"
                 autoComplete={status.setup_required ? 'new-password' : 'current-password'}
-                value={password}
-                onValueChange={setPassword}
                 isRequired
                 variant="bordered"
                 classNames={{
@@ -148,8 +152,29 @@ export default function AuthGate({ children }: { children: ReactNode }) {
                 }}
               />
 
+              {status.setup_required && (
+                <Input
+                  label="确认管理密码"
+                  name="confirm_password"
+                  type="password"
+                  autoComplete="new-password"
+                  isRequired
+                  variant="bordered"
+                  classNames={{
+                    inputWrapper: "bg-black/40 border-white/[0.1] hover:border-white/[0.2] focus-within:!border-[#ff5722] rounded-[3px]",
+                    label: "text-zinc-400 font-mono text-xs",
+                    input: "font-mono text-sm text-white",
+                  }}
+                />
+              )}
+
+              <label className="flex items-start gap-2.5 text-xs text-zinc-400 cursor-pointer">
+                <input type="checkbox" name="remember_me" className="mt-0.5 accent-[#ff5722]" />
+                <span>记住登录 30 天<span className="block mt-1 text-[11px] text-zinc-500">仅在自己的设备上勾选，重启管理器后仍可保持登录。</span></span>
+              </label>
+
               {error && (
-                <div className="p-2.5 rounded-[2px] bg-rose-500/10 border border-rose-500/30 text-rose-400 font-mono text-xs">
+                <div role="alert" className="p-2.5 rounded-[2px] bg-rose-500/10 border border-rose-500/30 text-rose-400 font-mono text-xs">
                   [AUTH_FAILED] {error}
                 </div>
               )}
@@ -159,7 +184,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
                 className="w-full h-10 font-mono text-xs uppercase tracking-wider rounded-[3px] bg-[#ff5722] hover:bg-[#ff6e40] text-black font-bold shadow-geek-glow transition-all"
                 isLoading={busy}
               >
-                {status.setup_required ? 'INITIALIZE & SIGN IN' : 'AUTHENTICATE & ENTER'}
+                {status.setup_required ? '设置密码并登录' : '登录'}
               </Button>
             </form>
           )}
@@ -171,7 +196,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
           )}
 
           <div className="pt-2 border-t border-white/[0.06] text-[11px] font-mono text-zinc-500 leading-normal">
-            SingBox Manager 守护进程 · 本机受限管理 · 凭据不写入浏览器存储
+            登录后可在「设置 → 管理密码」中修改密码
           </div>
         </div>
       </div>
