@@ -14,6 +14,7 @@ import {
   Menu,
   X,
   Cpu,
+  Search,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { authApi, errorMessage } from '../api';
@@ -29,7 +30,8 @@ const menuItems = [
   { path: '/gateway', icon: Network, label: '部署与设备', code: '06' },
   { path: '/configuration', icon: FileCheck, label: '配置审阅', code: '07' },
   { path: '/logs', icon: ScrollText, label: '实时日志', code: '08' },
-  { path: '/settings', icon: Settings, label: '系统设置', code: '09' },
+  { path: '/dns-queries', icon: Search, label: 'DNS 查询记录', code: '09' },
+  { path: '/settings', icon: Settings, label: '系统设置', code: '10' },
 ];
 
 interface LayoutProps {

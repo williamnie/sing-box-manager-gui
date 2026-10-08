@@ -240,6 +240,10 @@ func (b *ConfigBuilder) buildLog() *LogConfig {
 	if level == "" {
 		level = "info"
 	}
+	// 查询事件在 debug 级别输出；关闭归档后恢复用户选择的日志级别。
+	if b.settings.DNSQueryLogEnabled && level != "trace" {
+		level = "debug"
+	}
 	return &LogConfig{
 		Level:     level,
 		Timestamp: true,

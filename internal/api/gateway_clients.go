@@ -55,6 +55,8 @@ func (s *Server) startGatewayClientObservation() {
 		defer ticker.Stop()
 		for {
 			settings := s.store.GetSettings()
+			// 采集错误在查询页展示，不阻断 DNS 或反复写入正在被采集的日志。
+			_ = s.dnsQueries.Scan(filepath.Join(s.store.GetDataDir(), "logs", "singbox.log"), settings.DNSQueryLogEnabled, time.Now())
 			if s.platform == "linux" && settings.DeploymentRole == "gateway" {
 				t.scan(filepath.Join(s.store.GetDataDir(), "logs", "singbox.log"), settings, time.Now())
 			}

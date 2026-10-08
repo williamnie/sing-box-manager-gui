@@ -115,6 +115,7 @@ export interface Settings {
   clash_ui_path: string;
   clash_api_secret: string;        // ClashAPI 密钥
   log_level?: 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal' | 'panic';
+  dns_query_log_enabled?: boolean;
   final_outbound: string;
   ruleset_base_url: string;
   auto_apply: boolean;           // 配置变更后自动应用

@@ -13,6 +13,7 @@ const ConfigurationImport = lazy(() => import('./pages/ConfigurationImport'));
 const Configuration = lazy(() => import('./pages/Configuration'));
 const Proxies = lazy(() => import('./pages/Proxies'));
 const Connections = lazy(() => import('./pages/Connections'));
+const DNSQueries = lazy(() => import('./pages/DNSQueries'));
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
           <Route path="/subscriptions" element={<Subscriptions />} />
           <Route path="/proxies" element={<Proxies />} />
           <Route path="/connections" element={<Connections />} />
+          <Route path="/dns-queries" element={<DNSQueries />} />
           <Route path="/rules" element={<Rules />} />
           <Route path="/logs" element={<Logs />} />
           <Route path="/settings" element={<Settings />} />

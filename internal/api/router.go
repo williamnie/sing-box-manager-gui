@@ -21,6 +21,8 @@ import (
 	"github.com/shirou/gopsutil/v3/process"
 	"github.com/xiaobei/singbox-manager/internal/builder"
 	"github.com/xiaobei/singbox-manager/internal/daemon"
+	"github.com/xiaobei/singbox-manager/internal/dnsquery"
+	"github.com/xiaobei/singbox-manager/internal/domaincheck"
 	"github.com/xiaobei/singbox-manager/internal/gateway"
 	"github.com/xiaobei/singbox-manager/internal/kernel"
 	"github.com/xiaobei/singbox-manager/internal/logger"
@@ -51,6 +53,8 @@ type Server struct {
 	runtimeDelaySlots chan struct{}
 	runtimeWriteMu    sync.Mutex
 	observedClients   gatewayClientTracker
+	dnsQueries        *dnsquery.Journal
+	dnsDomainCheck    *domaincheck.Checker
 	store             *storage.JSONStore
 	subService        *service.SubscriptionService
 	processManager    processController
@@ -88,6 +92,8 @@ func NewServer(store *storage.JSONStore, processManager *daemon.ProcessManager, 
 		port:              port,
 		version:           version,
 		runtimeDelaySlots: make(chan struct{}, 4),
+		dnsQueries:        dnsquery.New(filepath.Join(store.GetDataDir(), "dns-queries")),
+		dnsDomainCheck:    domaincheck.New(filepath.Join(store.GetDataDir(), "domain-lists", "anti-ad.txt")),
 	}
 
 	s.auth, _ = newAuth(store.GetDataDir())
@@ -137,6 +143,10 @@ func (s *Server) setupRoutes() {
 		api.POST("/auth/password", s.changePassword)
 		s.setupRuntimeRoutes(api)
 		s.setupDeploymentRoutes(api)
+		api.GET("/dns/queries", s.getDNSQueries)
+		api.GET("/dns/queries/export", s.exportDNSQueries)
+		api.PUT("/dns/queries/settings", s.updateDNSQuerySettings)
+		api.POST("/dns/queries/domain-list/refresh", s.refreshDNSDomainList)
 		// 订阅管理
 		api.GET("/subscriptions", s.getSubscriptions)
 		api.POST("/subscriptions", s.addSubscription)
@@ -153,6 +163,9 @@ func (s *Server) setupRoutes() {
 
 		// 规则管理
 		api.GET("/rules", s.getRules)
+		api.GET("/rules/domain-blocklist", s.getDomainBlocklist)
+		api.PUT("/rules/domain-blocklist", s.updateDomainBlocklist)
+		api.POST("/rules/domain-blocklist/domains", s.addBlockedDomain)
 		api.POST("/rules", s.addRule)
 		api.PUT("/rules/:id", s.updateRule)
 		api.DELETE("/rules/:id", s.deleteRule)

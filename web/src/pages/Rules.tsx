@@ -22,6 +22,8 @@ import ListInput from '../components/ListInput';
 import { parseList } from '../utils/lists';
 import { toast } from '../components/Toast';
 import RuleOverview from '../components/RuleOverview';
+import DomainBlocklistEditor from '../components/DomainBlocklistEditor';
+import { domainBlocklistID } from '../api/domainBlocklist';
 import { createSTUNRule, isScopedSTUNRule, isSTUNOutboundAllowed, validateSTUNRule } from '../utils/rulePolicy';
 
 // 规则集验证结果类型
@@ -94,6 +96,7 @@ export default function Rules() {
   const [stunTemplate, setSTUNTemplate] = useState(false);
   const [requireSource, setRequireSource] = useState(false);
   const [sourceText, setSourceText] = useState('');
+  const [blocklistOpen, setBlocklistOpen] = useState(false);
 
   // 规则集验证状态
   const [validationResults, setValidationResults] = useState<Record<string, ValidationResult>>({});
@@ -252,6 +255,9 @@ export default function Rules() {
   };
 
   const handleEditRule = (rule: Rule) => {
+    if (rule.id === domainBlocklistID && rule.rule_type === 'domain' && rule.outbound === 'REJECT' && ![rule.source_cidrs, rule.network, rule.protocol, rule.ports, rule.port_ranges, rule.process_names].some(values => values?.length)) {
+      setBlocklistOpen(true); return;
+    }
     const scopedSTUN = isScopedSTUNRule(rule);
     setRequireSource(scopedSTUN);
     setSTUNTemplate(scopedSTUN && !validateSTUNRule(rule, getSTUNOutboundOptions().map((option) => option.value)));
@@ -364,6 +370,7 @@ export default function Rules() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 font-mono text-xs">
+          <Button size="sm" className="rounded border border-zinc-200 bg-white text-zinc-700 dark:border-white/10 dark:bg-[#12141d] dark:text-zinc-200" onPress={() => setBlocklistOpen(true)}>编辑拦截集合</Button>
           <Button
             size="sm"
             className="rounded-[3px] font-mono text-xs border border-zinc-200 dark:border-white/[0.1] bg-white dark:bg-[#12141d] hover:bg-zinc-100 dark:hover:bg-[#181c28] text-zinc-700 dark:text-zinc-300 shadow-2xs"
@@ -390,7 +397,9 @@ export default function Rules() {
         </div>
       )}
 
+      <DomainBlocklistEditor isOpen={blocklistOpen} onClose={() => setBlocklistOpen(false)} onSaved={() => { void fetchRules(); setOverviewRevision(value => value + 1); }} />
       <RuleOverview
+        onEditBlocklist={() => setBlocklistOpen(true)}
         autoApply={settings?.auto_apply === true}
         revision={overviewRevision}
         rules={rules}

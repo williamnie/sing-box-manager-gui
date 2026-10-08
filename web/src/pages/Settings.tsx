@@ -963,6 +963,7 @@ export default function Settings() {
                 {['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'panic'].map(level => <option key={level} value={level}>{level}</option>)}
               </select>
               <span className="block leading-relaxed">随配置保存并按自动应用设置生效；对运行中的内核应用会重启服务。日志页的级别过滤只改变显示。端口设为 0 会停用代理和连接控制。</span>
+              {formData.dns_query_log_enabled && <span className="block text-amber-700 dark:text-amber-300">DNS 查询记录已开启，实际输出至少为 debug；关闭采集后恢复这里选择的级别。</span>}
             </label>
           </div>
         </div>

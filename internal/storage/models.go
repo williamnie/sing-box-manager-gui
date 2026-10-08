@@ -126,9 +126,10 @@ type Settings struct {
 	AllowLAN   bool `json:"allow_lan"`   // 允许局域网访问
 
 	// DNS 配置
-	ProxyDNS  string      `json:"proxy_dns"`       // 代理 DNS
-	DirectDNS string      `json:"direct_dns"`      // 直连 DNS
-	Hosts     []HostEntry `json:"hosts,omitempty"` // DNS hosts 映射
+	ProxyDNS           string      `json:"proxy_dns"`             // 代理 DNS
+	DirectDNS          string      `json:"direct_dns"`            // 直连 DNS
+	Hosts              []HostEntry `json:"hosts,omitempty"`       // DNS hosts 映射
+	DNSQueryLogEnabled bool        `json:"dns_query_log_enabled"` // 独立归档 LAN DNS 查询
 
 	// 控制面板
 	WebPort        int    `json:"web_port"`         // 管理界面端口

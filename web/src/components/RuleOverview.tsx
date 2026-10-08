@@ -27,6 +27,7 @@ interface Props {
   onToggle: (rule: Rule) => void;
   onToggleGroup: (id: string, enabled: boolean) => void;
   onGroupOutbound: (group: RuleGroup, outbound: string) => void;
+  onEditBlocklist: () => void;
 }
 interface ReadableRule {
   id: string; title: string; source: string; traffic: string; outcome: string;
@@ -207,6 +208,7 @@ export default function RuleOverview(props: Props) {
                     <td className="py-3 px-4 min-w-56 max-w-xl break-words">
                       <div className="font-semibold text-zinc-200">{row.title || row.traffic}</div>
                       {row.title && <div className="text-[11px] text-zinc-400 mt-0.5">{row.traffic}</div>}
+                      {row.group?.id === 'ad-block' && <button className="mt-1 text-[11px] text-[#ff5722] hover:underline" onClick={props.onEditBlocklist}>补充 / 编辑自定义拦截域名</button>}
                       <div className="text-[10px] text-zinc-500 mt-1 flex items-center gap-1.5">
                         <span>{row.source}</span>
                         {!row.enabled && <span className="text-zinc-600">· DISABLED</span>}
