@@ -5,6 +5,8 @@ import { Link } from 'react-router-dom';
 import { errorMessage, ruleApi } from '../api';
 import type { DevicePolicy, Rule, RuleGroup } from '../store';
 import { actionLabel, applicationStatus, customRuleMatch, describeMatch, outboundLabel } from '../utils/rulePresentation';
+import ImportedRuleEditor from './ImportedRuleEditor';
+import type { ImportedRuleSelection } from './ImportedRuleEditor';
 
 interface RouteSnapshot { rules: Record<string, unknown>[]; final: string }
 interface Overview {
@@ -12,6 +14,7 @@ interface Overview {
   applied: RouteSnapshot | null; applied_error: string;
   applied_hash: string; changed: boolean | null; running: boolean; role: string;
   imported_rules: Record<string, unknown>[];
+  imported_revision: string;
   imported_rule_sets: Record<string, unknown>[]; imported_final: string;
   devices: { id: string; name: string; addresses: string[]; enabled: boolean; policy: DevicePolicy; outbound: string; dns: string; explanation: string }[];
 }
@@ -33,6 +36,7 @@ interface ReadableRule {
   id: string; title: string; source: string; traffic: string; outcome: string;
   origin: '自定义' | '预设' | '导入' | '设备'; enabled: boolean; advanced?: boolean;
   rule?: Rule; group?: RuleGroup; inactive?: string;
+  importedIndex?: number; importedRule?: Record<string, unknown>;
 }
 
 function savedRules(overview: Overview | null, props: Props): ReadableRule[] {
@@ -55,6 +59,7 @@ function savedRules(overview: Overview | null, props: Props): ReadableRule[] {
   const imported = (overview?.imported_rules || []).map((rule, index): ReadableRule => ({
     id: `imported-${index}`, title: '', ...describeMatch(rule), origin: '导入', enabled: true,
     outcome: actionLabel(rule, props.outbounds),
+    importedIndex: index, importedRule: rule,
   }));
   return [...devices, ...custom, ...groups, ...imported];
 }
@@ -94,6 +99,7 @@ export default function RuleOverview(props: Props) {
   const [query, setQuery] = useState('');
   const [limit, setLimit] = useState(20);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [editingImported, setEditingImported] = useState<ImportedRuleSelection | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -110,6 +116,7 @@ export default function RuleOverview(props: Props) {
 
   return (
     <div className="space-y-5">
+      {editingImported && <ImportedRuleEditor selection={editingImported} outbounds={props.outboundOptions} autoApply={props.autoApply} onClose={() => setEditingImported(null)} onSaved={() => setRefresh(value => value + 1)} />}
       {/* 极客状态条 */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-[3px] border border-white/[0.08] px-4 py-2.5 bg-[#0b0c10]" role="status">
         <div className="flex flex-wrap items-center gap-3 font-mono text-xs">
@@ -281,6 +288,8 @@ export default function RuleOverview(props: Props) {
                             onValueChange={(enabled) => props.onToggleGroup(row.group!.id, enabled)}
                             classNames={{ wrapper: "group-data-[selected=true]:bg-[#ff5722]" }}
                           />
+                        ) : row.importedRule && row.importedIndex !== undefined && overview ? (
+                          <Button size="sm" variant="light" className="h-7 min-w-0 rounded px-2 text-[#ff5722]" aria-label={`编辑导入规则 第${row.importedIndex + 1}条`} startContent={<Pencil className="size-3" />} onPress={() => setEditingImported({ index: row.importedIndex!, rule: row.importedRule!, revision: overview.imported_revision, ruleSets: overview.imported_rule_sets })}>编辑</Button>
                         ) : (
                           <Link className="text-[#ff5722] hover:underline" to={row.origin === '设备' ? '/gateway' : '/configuration/import'}>
                             {row.origin === '设备' ? '设备' : '导入'}

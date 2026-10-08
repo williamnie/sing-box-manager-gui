@@ -75,6 +75,7 @@ export const filterApi = {
 
 // 规则 API
 export const ruleApi = {
+  updateImported: (index: number, revision: string, updates: Record<string, unknown>) => api.put(`/rules/imported/${index}`, { revision, updates }, { timeout: 120000 }),
   overview: () => api.get('/rules/overview'),
   getAll: () => api.get('/rules'),
   add: (data: unknown) => api.post('/rules', data),

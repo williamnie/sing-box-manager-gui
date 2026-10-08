@@ -32,7 +32,8 @@ func (s *Server) rulesOverview(c *gin.Context) {
 	data := s.store.Snapshot()
 	settings := data.Settings
 	result := gin.H{
-		"draft": nil, "draft_error": "", "applied": nil, "applied_error": "",
+		"imported_revision": importedPolicyRevision(settings.ImportedPolicy),
+		"draft":             nil, "draft_error": "", "applied": nil, "applied_error": "",
 		"applied_hash": "", "changed": nil, "running": s.processManager.IsRunning(),
 		"role": settings.DeploymentRole, "devices": devicePolicySummary(settings),
 		"imported_rules": []map[string]any{}, "imported_rule_sets": []map[string]any{}, "imported_final": "",
