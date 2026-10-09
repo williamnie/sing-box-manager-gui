@@ -46,6 +46,7 @@ const nodeTypeOptions = [
   { value: 'hysteria2', label: 'Hysteria2' },
   { value: 'tuic', label: 'TUIC' },
   { value: 'socks', label: 'SOCKS' },
+  { value: 'http', label: 'HTTP' },
 ];
 
 const countryOptions = [
