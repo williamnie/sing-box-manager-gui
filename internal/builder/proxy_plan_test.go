@@ -201,3 +201,83 @@ func TestRealKernelCompactProxyPlan(t *testing.T) {
 		})
 	}
 }
+
+func TestManagedDefaultProxyFollowsEnabledNodesWithoutImplicitGroups(t *testing.T) {
+	settings := storage.DefaultSettings()
+	settings.ProxyPlan = &storage.ProxyPlan{Primary: "Proxy", ManagedOnly: true, DefaultNode: "removed"}
+	settings.ImportedPolicy = &storage.ImportedPolicy{Final: "Proxy"}
+	nodes := []storage.Node{{Tag: "node", Type: "socks", Server: "192.0.2.1", ServerPort: 1080, Country: "US"}}
+	filters := []storage.Filter{{Name: "家庭代理", Mode: "selector", Enabled: false, AllNodes: true}}
+	b := NewConfigBuilder(settings, nodes, filters, nil, nil)
+	config, err := b.Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	groups := []string{}
+	for _, out := range config.Outbounds {
+		if out["type"] == "selector" || out["type"] == "urltest" {
+			groups = append(groups, out["tag"].(string))
+			if out["default"] != "node" {
+				t.Fatal("stale preferred node retained")
+			}
+		}
+	}
+	if !reflect.DeepEqual(groups, []string{"Proxy"}) {
+		t.Fatal(groups)
+	}
+	b.nodes = nil
+	config, err = b.Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, out := range config.Outbounds {
+		if out["tag"] == "Proxy" {
+			found = true
+			if out["type"] != "block" {
+				t.Fatal("empty node source must not silently go direct")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("missing fail-closed default")
+	}
+}
+
+func TestRealKernelManagedDefaultProxy(t *testing.T) {
+	binary := os.Getenv("SBM_TEST_SINGBOX")
+	if binary == "" {
+		t.Skip("set SBM_TEST_SINGBOX for real kernel validation")
+	}
+	version, err := exec.Command(binary, "version").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, empty := range []bool{false, true} {
+		settings := dnsBypassSettings()
+		settings.ProxyPlan = &storage.ProxyPlan{Primary: "Proxy", ManagedOnly: true, DefaultNode: "node"}
+		settings.ImportedPolicy = &storage.ImportedPolicy{Final: "Proxy", Rules: []map[string]any{{"domain": []string{"example.com"}, "outbound": "Proxy"}, {"domain": []string{"blocked.example"}, "action": "reject"}}}
+		nodes := []storage.Node{{Tag: "node", Type: "socks", Server: "192.0.2.1", ServerPort: 1080}}
+		if empty {
+			nodes = nil
+		}
+		raw, err := NewConfigBuilder(settings, nodes, nil, nil, nil).WithPlatform("linux").WithSingBoxVersion(string(version)).BuildJSON()
+		if err != nil {
+			t.Fatal(err)
+		}
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config.json")
+		if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
+			t.Fatal(err)
+		}
+		action := "check"
+		if runtime.GOOS != "linux" {
+			action = "format"
+		}
+		cmd := exec.Command(binary, action, "-c", path)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("kernel rejected empty=%v: %v\n%s", empty, err, out)
+		}
+	}
+}

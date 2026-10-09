@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -143,7 +144,7 @@ func TestProxyPlanCheckFailureDoesNotSaveAndApplyFailureIsVisible(t *testing.T) 
 	p.failApply = true
 	revision = previewPlan(t, s, cookie, plan)
 	w = request(s, "PUT", "/api/proxy-plan", proxyPlanRequest{Plan: plan, Revision: revision}, cookie, "")
-	if w.Code != 200 || !strings.Contains(w.Body.String(), `"warning"`) || !strings.Contains(w.Body.String(), `"failed"`) {
+	if w.Code != 500 || s.store.GetSettings().ProxyPlan != nil || !strings.Contains(w.Body.String(), "已恢复") {
 		t.Fatal(w.Code, w.Body.String())
 	}
 }
@@ -180,5 +181,65 @@ func TestRuntimeProxyRouteUsesAppliedConfig(t *testing.T) {
 	raw, _ := json.Marshal(snapshot)
 	if snapshot.RouteFinal != "applied-group" || strings.Contains(string(raw), "secret") {
 		t.Fatal(string(raw))
+	}
+}
+
+func TestManagedSourceMigrationRepairsDisabledFilterAndBacksUpData(t *testing.T) {
+	s, cookie, _ := proxyPlanFixture(t)
+	data := s.store.Snapshot()
+	data.Filters[0].Enabled = false
+	data.Rules = []storage.Rule{{ID: "stun", Name: "STUN", RuleType: "match", Protocol: []string{"stun"}, Outbound: "家庭代理", Enabled: true}}
+	data.Settings.ImportedPolicy.Outbounds = append(data.Settings.ImportedPolicy.Outbounds, map[string]any{"type": "socks", "tag": "SMbox/专用", "server": "192.0.2.10", "server_port": 1080})
+	data.Settings.ImportedPolicy.Rules = append(data.Settings.ImportedPolicy.Rules, map[string]any{"domain": []string{"special.example"}, "outbound": "SMbox/专用"})
+	if err := s.store.Replace(data); err != nil {
+		t.Fatal(err)
+	}
+	plan := &storage.ProxyPlan{Primary: "Proxy", ManagedOnly: true, DefaultNode: "新节点"}
+	w := request(s, "POST", "/api/proxy-plan/preview", proxyPlanRequest{Plan: plan}, cookie, "")
+	if w.Code != 200 {
+		t.Fatal(w.Body.String())
+	}
+	var response struct {
+		Data struct {
+			Revision string           `json:"revision"`
+			After    proxyPlanSummary `json:"after"`
+			Adopted  []string         `json:"adopted_nodes"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(response.Data.After.Groups, []string{"Proxy"}) || !reflect.DeepEqual(response.Data.Adopted, []string{"专用"}) {
+		t.Fatal(response.Data)
+	}
+	if len(s.store.GetSettings().ImportedPolicy.Outbounds) == 0 {
+		t.Fatal("preview mutated stored data")
+	}
+	w = request(s, "PUT", "/api/proxy-plan", proxyPlanRequest{Plan: plan, Revision: response.Data.Revision}, cookie, "")
+	if w.Code != 200 {
+		t.Fatal(w.Body.String())
+	}
+	saved := s.store.Snapshot()
+	if !saved.Settings.ProxyPlan.ManagedOnly || len(saved.Settings.ImportedPolicy.Outbounds) != 0 || len(saved.ManualNodes) != 1 || saved.Filters[0].Enabled || saved.Rules[0].Outbound != "Proxy" {
+		t.Fatal("source migration incomplete")
+	}
+	backups, err := filepath.Glob(filepath.Join(s.store.GetDataDir(), "managed-nodes-before-*.json"))
+	if err != nil || len(backups) != 1 {
+		t.Fatal("missing backup")
+	}
+	raw, err := os.ReadFile(backups[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var backup storage.AppData
+	if err := json.Unmarshal(raw, &backup); err != nil {
+		t.Fatal(err)
+	}
+	if backup.Settings.ProxyPlan != nil || len(backup.Settings.ImportedPolicy.Outbounds) != 4 || backup.Filters[0].Enabled {
+		t.Fatal("backup not original data")
+	}
+	stat, err := os.Stat(backups[0])
+	if err != nil || stat.Mode().Perm() != 0600 {
+		t.Fatal("unsafe backup permissions")
 	}
 }

@@ -3,6 +3,9 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/xiaobei/singbox-manager/internal/migration"
+	"os"
+	"path/filepath"
 	"slices"
 
 	"github.com/gin-gonic/gin"
@@ -49,7 +52,42 @@ func (s *Server) prepareProxyPlan(data *storage.AppData, plan *storage.ProxyPlan
 	if plan != nil && (plan.Primary == "" || len(plan.MergeGroups) > 2000) {
 		return "", fmt.Errorf("请选择默认代理组，合并组不能超过 2000 个")
 	}
-	data.Settings.ProxyPlan = plan
+	if data.Settings.ProxyPlan != nil && data.Settings.ProxyPlan.ManagedOnly && (plan == nil || !plan.ManagedOnly) {
+		return "", fmt.Errorf("已统一节点来源；如需回退，请恢复迁移前配置备份")
+	}
+	if plan != nil && plan.ManagedOnly {
+		if plan.Primary != "Proxy" {
+			return "", fmt.Errorf("统一节点来源必须使用默认代理入口")
+		}
+		if _, err := migration.AdoptManagedNodes(data); err != nil {
+			return "", err
+		}
+		if plan.DefaultNode != "" {
+			found := false
+			for _, sub := range data.Subscriptions {
+				if sub.Enabled {
+					for _, node := range sub.Nodes {
+						if node.Tag == plan.DefaultNode {
+							found = true
+						}
+					}
+				}
+			}
+			for _, node := range data.ManualNodes {
+				if node.Enabled && node.Node.Tag == plan.DefaultNode {
+					found = true
+				}
+			}
+			if !found {
+				return "", fmt.Errorf("所选默认节点已不存在或停用，请刷新节点列表")
+			}
+		}
+		value := *plan
+		value.MergeGroups = nil
+		data.Settings.ProxyPlan = &value
+	} else {
+		data.Settings.ProxyPlan = plan
+	}
 	return s.buildData(data, true)
 }
 func (s *Server) previewProxyPlan(c *gin.Context) {
@@ -60,11 +98,26 @@ func (s *Server) previewProxyPlan(c *gin.Context) {
 	}
 	data := s.store.Snapshot()
 	revision := proxyPlanRevision(data, req.Plan)
+	oldManualIDs := map[string]bool{}
+	for _, node := range data.ManualNodes {
+		oldManualIDs[node.ID] = true
+	}
 	before, beforeErr := s.buildData(data, true)
 	candidate, err := s.prepareProxyPlan(data, req.Plan)
 	if err != nil {
 		c.JSON(400, gin.H{"error": "无法整理分组：" + err.Error()})
 		return
+	}
+	if beforeErr != nil {
+		if applied, err := os.ReadFile(s.resolvePath(data.Settings.ConfigPath)); err == nil {
+			before = string(applied)
+		}
+	}
+	adopted := []string{}
+	for _, node := range data.ManualNodes {
+		if !oldManualIDs[node.ID] {
+			adopted = append(adopted, node.Node.Tag)
+		}
 	}
 	old, next := summarizeProxyPlan(before), summarizeProxyPlan(candidate)
 	removed := []string{}
@@ -78,7 +131,7 @@ func (s *Server) previewProxyPlan(c *gin.Context) {
 		beforeError = beforeErr.Error()
 	}
 	c.Header("Cache-Control", "no-store")
-	c.JSON(200, gin.H{"data": gin.H{"revision": revision, "before": old, "after": next, "removed_nodes": removed, "before_error": beforeError, "auto_apply": data.Settings.AutoApply}})
+	c.JSON(200, gin.H{"data": gin.H{"revision": revision, "before": old, "after": next, "removed_nodes": removed, "before_error": beforeError, "auto_apply": data.Settings.AutoApply, "adopted_nodes": adopted}})
 }
 func (s *Server) saveProxyPlan(c *gin.Context) {
 	var req proxyPlanRequest
@@ -91,12 +144,13 @@ func (s *Server) saveProxyPlan(c *gin.Context) {
 		c.JSON(409, gin.H{"error": "节点、规则或方案已变化，请重新预览"})
 		return
 	}
+	previous := s.store.Snapshot()
 	candidate, err := s.prepareProxyPlan(data, req.Plan)
 	if err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-	// 保存前执行可用内核校验；原始导入数据始终保留，可预览撤销方案。
+	// 保存前执行内核校验；统一节点来源时先写完整私有备份。
 	checked := false
 	if _, err := s.processManager.Version(); err == nil {
 		if err := s.processManager.CheckConfig([]byte(candidate)); err != nil {
@@ -105,13 +159,30 @@ func (s *Server) saveProxyPlan(c *gin.Context) {
 		}
 		checked = true
 	}
-	if err := s.store.UpdateSettings(data.Settings); err != nil {
+	if req.Plan != nil && req.Plan.ManagedOnly && (previous.Settings.ProxyPlan == nil || !previous.Settings.ProxyPlan.ManagedOnly) {
+		backup, err := json.Marshal(previous)
+		if err != nil {
+			c.JSON(500, gin.H{"error": "无法生成迁移备份"})
+			return
+		}
+		backupPath := filepath.Join(s.store.GetDataDir(), "managed-nodes-before-"+configHash(backup)[:16]+".json")
+		if err := privateWrite(backupPath, backup); err != nil {
+			c.JSON(500, gin.H{"error": "无法保存迁移备份"})
+			return
+		}
+	}
+	if err := s.store.Replace(data); err != nil {
 		c.JSON(500, gin.H{"error": "保存整理方案失败"})
 		return
 	}
 	application, warning := "saved", ""
 	if err := s.autoApplyConfig(); err != nil {
-		application, warning = "failed", "整理方案已保存，但自动应用失败，请检查并重新应用："+err.Error()
+		if restoreErr := s.store.Replace(previous); restoreErr != nil {
+			c.JSON(500, gin.H{"error": "应用失败且无法恢复草案，请检查配置：" + err.Error()})
+			return
+		}
+		c.JSON(500, gin.H{"error": "应用失败，已恢复迁移前草案：" + err.Error()})
+		return
 	} else if data.Settings.AutoApply && (data.Settings.DeploymentRole != "gateway" || data.Settings.Gateway.Enabled) && s.processManager.IsRunning() {
 		application = "applied"
 	}

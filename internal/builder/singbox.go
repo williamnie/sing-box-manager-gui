@@ -565,6 +565,17 @@ func (b *ConfigBuilder) buildOutbounds() []Outbound {
 
 	// 创建按国家分组的出站选择器
 	if b.settings.ProxyPlan != nil {
+		if b.settings.ProxyPlan.Primary == "Proxy" {
+			if len(allNodeTags) == 0 {
+				outbounds = append(outbounds, Outbound{"type": "block", "tag": "Proxy"})
+			} else {
+				preferred := b.settings.ProxyPlan.DefaultNode
+				if !slices.Contains(allNodeTags, preferred) {
+					preferred = allNodeTags[0]
+				}
+				outbounds = append(outbounds, Outbound{"type": "selector", "tag": "Proxy", "outbounds": allNodeTags, "default": preferred})
+			}
+		}
 		return outbounds
 	}
 	var countryGroupTags []string

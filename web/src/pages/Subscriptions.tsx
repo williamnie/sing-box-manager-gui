@@ -371,7 +371,7 @@ export default function Subscriptions() {
         </div>
       </div>
 
-      {settings?.imported_policy ? (
+      {Array.isArray(settings?.imported_policy?.outbounds) && settings.imported_policy.outbounds.length > 0 ? (
         <div className="relative rounded-[3px] border border-cyan-200 dark:border-cyan-500/20 bg-cyan-50 dark:bg-cyan-500/5 p-3.5 text-sm text-cyan-950 dark:text-cyan-200/90 leading-6 overflow-hidden">
           <div className="absolute left-0 top-0 bottom-0 w-1 bg-cyan-400"></div>
           <span className="font-semibold text-cyan-800 dark:text-cyan-300 mr-2">[POLICY_INFO]</span>

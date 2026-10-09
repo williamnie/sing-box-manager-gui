@@ -30,8 +30,8 @@ export default function Proxies() {
   const context = useMemo(() => ({
     importedTags: new Set((Array.isArray(settings?.imported_policy?.outbounds) ? settings.imported_policy.outbounds : []).map((outbound: Record<string, unknown>) => String(outbound.tag))),
     filters: new Map(filters.map(filter => [filter.name, filter.id])),
-    hasImported: Boolean(settings?.imported_policy),
-  }), [settings?.imported_policy, filters]);
+    hasImported: Boolean(settings?.imported_policy) && !settings?.proxy_plan?.managed_only,
+  }), [settings?.imported_policy, settings?.proxy_plan?.managed_only, filters]);
   const [switching, setSwitching] = useState('');
   const runtime = useRuntimePolling(runtimeApi.proxies, preferences.refreshInterval, Boolean(switching));
   const [testing, setTesting] = useState<string[]>([]);
@@ -45,7 +45,7 @@ export default function Proxies() {
   const unavailable = !snapshot || Boolean(runtime.error);
   const actionBusy = Boolean(switching) || closing;
   const query = search.trim().toLocaleLowerCase();
-  const groups = (snapshot?.proxies ?? []).filter(proxy => proxy.members.length || proxy.selectable || /urltest|selector/i.test(proxy.type));
+  const groups = (snapshot?.proxies ?? []).filter(proxy => !(proxy.tag === 'GLOBAL' && proxy.type.toLowerCase() === 'fallback') && (proxy.members.length || proxy.selectable || /urltest|selector/i.test(proxy.type)));
   const describe = (proxy: RuntimeProxy) => proxyPresentation(proxy, context);
   const matchesQuery = (group: RuntimeProxy) => !query || `${group.tag} ${describe(group).name}`.toLocaleLowerCase().includes(query);
   const visibleGroups = groups.filter(group => !preferences.hiddenGroups.includes(group.tag) &&
@@ -119,24 +119,19 @@ export default function Proxies() {
   return <div className="space-y-5">
     <header className="flex flex-wrap items-end justify-between gap-4 border-b border-zinc-200 pb-5 dark:border-white/10">
       <div><p className="mb-1.5 font-mono text-[11px] tracking-wider text-[#ff5722]">[ RUNTIME // PROXIES ]</p><h1 className="text-2xl font-bold text-zinc-900 dark:text-white">代理</h1><p className="mt-2 text-xs text-zinc-500">先找到业务使用的代理组，再查看它当前选中的出口</p></div>
-      <div className="flex gap-2"><Button size="sm" className={controlClass} isDisabled={!settings || actionBusy} onPress={() => setShowPlan(true)}>整理分组</Button><Button size="sm" className={controlClass} isDisabled={Boolean(switching)} onPress={() => void runtime.refresh()} startContent={<RefreshCw className={`size-3.5 ${runtime.loading ? 'animate-spin' : ''}`} />}>刷新</Button></div>
+      <div className="flex gap-2">{!settings?.proxy_plan?.managed_only && <Button size="sm" className={controlClass} isDisabled={!settings || actionBusy} onPress={() => setShowPlan(true)}>统一节点来源</Button>}<Button size="sm" className={controlClass} isDisabled={Boolean(switching)} onPress={() => void runtime.refresh()} startContent={<RefreshCw className={`size-3.5 ${runtime.loading ? 'animate-spin' : ''}`} />}>刷新</Button></div>
     </header>
     <section className="rounded border border-zinc-200 bg-white p-4 text-xs leading-relaxed text-zinc-600 dark:border-white/10 dark:bg-[#0d0e12] dark:text-zinc-400">
       <p className="font-medium text-zinc-900 dark:text-white">当前默认出口</p>
-      <p className="mt-2 break-words text-sm text-zinc-900 dark:text-zinc-100">{snapshot?.route_final ? selectedChain(snapshot.route_final, proxies).join(' → ') : '暂时无法读取默认出口'}</p>
-      <p className="mt-1">上方是未命中特殊规则时的选择路径；专用规则可以指定其他出口。</p>
-      <p className="mt-1">流量先匹配分流规则，再进入指定代理组。下方箭头表示「分组逐层选择 → 最终节点」，不代表流量经过多个代理服务器。每条连接实际使用的规则与出口可在<Link to="/connections" className="ml-1 text-[#ff5722]">连接页</Link>查看。</p>
-      <details className="mt-2"><summary className="cursor-pointer text-[#ff5722]">Managed、SMbox 和订阅有什么关系？</summary><div className="mt-2 space-y-1">
-        <p>Managed Proxy（订阅节点选择）：管理器生成的选择入口，可选择自动测速、国家组或过滤器。</p>
-        <p>Managed Auto（订阅自动测速）：在启用的订阅和手动节点中自动测速选出口。Managed Final 只有被规则或默认出口引用时才生效。</p>
-        <p>SMbox/ 是旧导入配置中的名称前缀。导入配置是一份独立快照；刷新订阅不会删除其中的旧节点。清理前需要处理引用它的分组与规则。</p>
-      </div></details>
+      <p className="mt-2 break-words text-sm text-zinc-900 dark:text-zinc-100">{snapshot?.route_final ? selectedChain(snapshot.route_final, proxies).map(tag => proxies.has(tag) ? describe(proxies.get(tag)!).name : tag).join(' → ') : '暂时无法读取默认出口'}</p>
+      <Link to="/connections" className="mt-2 inline-block text-[#ff5722]">查看实际连接 →</Link>
+
     </section>
     <div className="flex flex-wrap gap-3">
       <label className={`flex min-w-0 flex-1 items-center gap-2 px-3 ${controlClass}`}><Search className="size-4 shrink-0 text-zinc-400" /><input aria-label="搜索代理组或节点" className="h-9 min-w-0 flex-1 bg-transparent text-sm outline-none" placeholder="搜索代理组或节点…" value={search} onChange={event => setSearch(event.target.value)} /></label>
       <label className="flex items-center gap-2 text-xs text-zinc-500">节点排序<select aria-label="节点排序" value={preferences.proxySort} onChange={event => updatePreferences({ proxySort: event.target.value as typeof preferences.proxySort })} className={`h-9 px-2 ${controlClass}`}><option value="default">配置顺序</option><option value="name">名称</option><option value="delay">延迟</option></select></label>
       <select aria-label="代理组来源" value={source} onChange={event => setSource(event.target.value)} className={`h-9 max-w-full px-2 text-xs ${controlClass}`}><option value="">全部来源</option>{[...new Set(groups.map(group => describe(group).source))].map(value => <option key={value}>{value}</option>)}</select>
-      <label className="flex items-center gap-2 text-xs text-zinc-500"><input type="checkbox" checked={showAuxiliary} onChange={event => setShowAuxiliary(event.target.checked)} />显示辅助组 ({auxiliaryCount})</label>
+      {auxiliaryCount > 0 && <label className="flex items-center gap-2 text-xs text-zinc-500"><input type="checkbox" checked={showAuxiliary} onChange={event => setShowAuxiliary(event.target.checked)} />显示辅助组 ({auxiliaryCount})</label>}
       {preferences.hiddenGroups.length > 0 && <Button size="sm" className={controlClass} startContent={<Eye className="size-3.5" />} onPress={() => updatePreferences({ hiddenGroups: [] })}>恢复隐藏组 ({preferences.hiddenGroups.length})</Button>}
     </div>
     <RuntimeStatus error={runtime.error} loading={runtime.loading} hasData={Boolean(snapshot)} />
@@ -169,7 +164,7 @@ export default function Proxies() {
       })}
     </div>
     <p className="text-xs leading-relaxed text-zinc-500">切换立即影响新连接。已建立的连接是否中断由内核配置决定；需要主动重连时，可单独关闭该组的相关连接。</p>
-    {showPlan && settings && <ProxyPlanPanel settings={settings} filters={filters} onClose={() => setShowPlan(false)} onSaved={async () => { await fetchSettings(); await runtime.refresh(); }} />}
+    {showPlan && settings && <ProxyPlanPanel settings={settings} preferredNode={(snapshot?.route_final ? selectedChain(snapshot.route_final, proxies).at(-1) ?? '' : '').replace(/^SMbox\/(自建\s+)?/, '')} onClose={() => setShowPlan(false)} onSaved={async () => { await fetchSettings(); await runtime.refresh(); }} />}
     <ConfirmModal title="关闭代理组相关连接" isOpen={Boolean(closeTarget)} busy={closing} onClose={() => setCloseTarget(null)} onConfirm={() => void closeCaptured()} confirmLabel={closeTarget?.ids.length ? `关闭 ${closeTarget.ids.length} 条` : '确认'}><p>将关闭「{closeTarget?.group}」在读取时匹配的 <strong>{closeTarget?.ids.length ?? 0}</strong> 条连接。应用可能自动重连；之后新建的连接不受此操作影响。</p></ConfirmModal>
   </div>;
 }

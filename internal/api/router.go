@@ -382,66 +382,43 @@ func (s *Server) getFilters(c *gin.Context) {
 func (s *Server) addFilter(c *gin.Context) {
 	var filter storage.Filter
 	if err := c.ShouldBindJSON(&filter); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-
-	// 生成 ID
 	filter.ID = uuid.New().String()
-
-	if err := s.store.AddFilter(filter); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	// 自动应用配置
-	if err := s.autoApplyConfig(); err != nil {
-		c.JSON(http.StatusOK, gin.H{"data": filter, "warning": "添加成功，但自动应用配置失败: " + err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"data": filter})
+	before, candidate := s.store.Snapshot(), s.store.Snapshot()
+	candidate.Filters = append(candidate.Filters, filter)
+	s.saveFilterChange(c, before, candidate, &filter)
 }
 
 func (s *Server) updateFilter(c *gin.Context) {
-	id := c.Param("id")
-
 	var filter storage.Filter
 	if err := c.ShouldBindJSON(&filter); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-
-	filter.ID = id
-	if err := s.store.UpdateFilter(filter); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+	filter.ID = c.Param("id")
+	before, candidate := s.store.Snapshot(), s.store.Snapshot()
+	for i := range candidate.Filters {
+		if candidate.Filters[i].ID == filter.ID {
+			candidate.Filters[i] = filter
+			s.saveFilterChange(c, before, candidate, &filter)
+			return
+		}
 	}
-
-	// 自动应用配置
-	if err := s.autoApplyConfig(); err != nil {
-		c.JSON(http.StatusOK, gin.H{"warning": "更新成功，但自动应用配置失败: " + err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "更新成功"})
+	c.JSON(404, gin.H{"error": "过滤器不存在，请刷新"})
 }
 
 func (s *Server) deleteFilter(c *gin.Context) {
-	id := c.Param("id")
-
-	if err := s.store.DeleteFilter(id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+	before, candidate := s.store.Snapshot(), s.store.Snapshot()
+	for i := range candidate.Filters {
+		if candidate.Filters[i].ID == c.Param("id") {
+			candidate.Filters = append(candidate.Filters[:i], candidate.Filters[i+1:]...)
+			s.saveFilterChange(c, before, candidate, nil)
+			return
+		}
 	}
-
-	// 自动应用配置
-	if err := s.autoApplyConfig(); err != nil {
-		c.JSON(http.StatusOK, gin.H{"warning": "删除成功，但自动应用配置失败: " + err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+	c.JSON(404, gin.H{"error": "过滤器不存在，请刷新"})
 }
 
 // ==================== 规则 API ====================

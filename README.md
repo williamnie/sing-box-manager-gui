@@ -65,8 +65,9 @@ A web-based management panel for [sing-box](https://github.com/SagerNet/sing-box
 - **Built-in Proxy and Connection Panel**
   - Read live proxy groups and selection chains; switch selector members without applying configuration or restarting the core
   - Show the applied default exit and distinguish imported groups from subscription/filter groups
-  - Preview an optional group consolidation plan: choose one primary filter, merge selected imported groups, and remove automatically generated intermediate groups and unreferenced runtime nodes
-  - Consolidation preserves the original imported data, direct/reject actions, and retained independent groups; explicit automatic filters remain available. Saving follows the auto-apply setting, and undoing consolidation also requires a preview
+  - Migrate legacy node sources into subscriptions and editable manual nodes: one default selector plus enabled filters, with no implicit country or automatic groups
+  - Preview the migration and preferred node before applying. Rule-only dedicated nodes become manual nodes; unused legacy copies leave the active data. A private full-data backup is saved first, and direct/reject actions and match conditions are preserved
+  - Filter changes are validated before saving; disabling a referenced group is rejected, and failed application restores the previous filter state
   - Test individual nodes or whole groups; search, sort, collapse, and hide groups
   - Inspect active connections by source, destination, proxy chain, and protocol, with traffic / speed sorting, details, and pagination
   - Close individual connections, filtered results, all captured connections, or connections for a proxy group after confirmation

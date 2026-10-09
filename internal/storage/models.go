@@ -159,6 +159,8 @@ type Settings struct {
 type ProxyPlan struct {
 	Primary     string   `json:"primary"`
 	MergeGroups []string `json:"merge_groups"`
+	ManagedOnly bool     `json:"managed_only,omitempty"`
+	DefaultNode string   `json:"default_node,omitempty"`
 }
 
 // DefaultSettings 默认设置

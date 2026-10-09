@@ -353,6 +353,14 @@ func (b *ConfigBuilder) applyImported(c *SingBoxConfig) error {
 		c.Outbounds = append(c.Outbounds, Outbound(deepMap(o)))
 	}
 	rename := map[string]string{"Auto": "Managed Auto", "Proxy": "Managed Proxy", "Final": "Managed Final"}
+	if b.settings.ProxyPlan != nil && b.settings.ProxyPlan.ManagedOnly {
+		rename = map[string]string{}
+		for _, o := range p.Outbounds {
+			if o["type"] != "direct" && o["type"] != "block" {
+				return fmt.Errorf("节点来源尚未统一，请先迁移旧节点")
+			}
+		}
+	}
 	for _, o := range generated {
 		original, _ := o["tag"].(string)
 		if original == "DIRECT" || original == "REJECT" {
@@ -362,7 +370,7 @@ func (b *ConfigBuilder) applyImported(c *SingBoxConfig) error {
 			}
 			continue
 		}
-		if len(b.nodes) == 0 {
+		if len(b.nodes) == 0 && b.settings.ProxyPlan == nil {
 			continue
 		}
 		item := Outbound(deepMap(o))

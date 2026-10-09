@@ -533,7 +533,7 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       const res = await filterApi.add(filter);
       await get().fetchFilters();
-      if (!res.data.warning) toast.success('过滤器添加成功');
+      if (!res.data.warning) toast.success(res.data.application === 'applied' ? '过滤器已添加并应用' : '过滤器已保存，需应用配置后生效');
     } catch (error: any) {
 
       toast.error(error.response?.data?.error || '添加过滤器失败');
@@ -545,7 +545,7 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       const res = await filterApi.update(id, filter);
       await get().fetchFilters();
-      if (!res.data.warning) toast.success('过滤器更新成功');
+      if (!res.data.warning) toast.success(res.data.application === 'applied' ? '过滤器已更新并应用' : '过滤器已保存，需应用配置后生效');
     } catch (error: any) {
 
       toast.error(error.response?.data?.error || '更新过滤器失败');
@@ -555,9 +555,9 @@ export const useStore = create<AppState>((set, get) => ({
 
   deleteFilter: async (id: string) => {
     try {
-      await filterApi.delete(id);
+      const res = await filterApi.delete(id);
       await get().fetchFilters();
-      toast.success('过滤器已删除');
+      if (!res.data.warning) toast.success(res.data.application === 'applied' ? '过滤器已删除并应用' : '过滤器删除已保存，需应用配置后生效');
     } catch (error: any) {
 
       toast.error(error.response?.data?.error || '删除过滤器失败');
@@ -569,12 +569,13 @@ export const useStore = create<AppState>((set, get) => ({
     const filter = get().filters.find(f => f.id === id);
     if (filter) {
       try {
-        await filterApi.update(id, { ...filter, enabled });
+        const res = await filterApi.update(id, { ...filter, enabled });
         await get().fetchFilters();
-        toast.success(`过滤器已${enabled ? '启用' : '禁用'}`);
+        if (!res.data.warning) toast.success(res.data.application === 'applied' ? `过滤器已${enabled ? '启用' : '关闭'}并应用` : '过滤器状态已保存，需应用配置后生效');
       } catch (error: any) {
 
         toast.error(error.response?.data?.error || '切换过滤器状态失败');
+        await get().fetchFilters();
       }
     }
   },

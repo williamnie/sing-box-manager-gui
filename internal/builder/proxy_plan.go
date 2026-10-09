@@ -12,7 +12,7 @@ import (
 func (b *ConfigBuilder) prepareProxyPlan() (*ConfigBuilder, error) {
 	plan := b.settings.ProxyPlan
 	primary := plan.Primary
-	found := false
+	found := primary == "Proxy"
 	for _, f := range b.filters {
 		if f.Enabled && f.Name == primary {
 			found = true
@@ -47,7 +47,7 @@ func (b *ConfigBuilder) prepareProxyPlan() (*ConfigBuilder, error) {
 	}
 	for _, name := range []string{"Auto", "Proxy", "Final"} {
 		tag := prefix + name
-		if primary == tag {
+		if primary == tag && primary != "Proxy" {
 			return nil, fmt.Errorf("默认代理名称与系统分组 %s 冲突", tag)
 		}
 		if imported[tag] == nil {
