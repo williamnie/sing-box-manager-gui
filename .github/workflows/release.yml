@@ -37,9 +37,13 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm run build
 
+      - name: Test backend
+        run: go test ./...
+
       - name: Build binaries
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
+          BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
           mkdir -p dist
 
           for os in linux darwin; do
@@ -47,10 +51,28 @@ jobs:
               output="dist/sbm-${os}-${arch}"
               echo "Building ${os}/${arch}..."
               CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build \
-                -ldflags "-s -w -X main.Version=${VERSION}" \
+                -ldflags "-s -w -X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME} -X main.GitCommit=${GITHUB_SHA}" \
                 -o "$output" ./cmd/sbm/
             done
           done
+
+          for arch in amd64 arm64; do
+            echo "Building Linux gateway helper/${arch}..."
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build \
+              -ldflags "-s -w" \
+              -o "dist/sbm-gateway-linux-${arch}" ./cmd/sbm-gateway/
+          done
+
+          cp scripts/install-gateway.sh dist/
+          jq -n \
+            --arg version "$VERSION" \
+            --arg commit "$GITHUB_SHA" \
+            --arg build_time "$BUILD_TIME" \
+            --arg go_version "$(go version)" \
+            --arg workflow_url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            '{version: $version, commit: $commit, build_time: $build_time, go_version: $go_version, workflow_url: $workflow_url}' \
+            > dist/build-info.json
+          (cd dist && sha256sum sbm-* install-gateway.sh build-info.json > SHA256SUMS)
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
