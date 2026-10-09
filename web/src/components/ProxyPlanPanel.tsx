@@ -39,13 +39,13 @@ export default function ProxyPlanPanel({ settings, preferredNode, onClose, onSav
   };
   return <Modal isOpen onClose={onClose} isDismissable={!busy} isKeyboardDismissDisabled={busy} hideCloseButton={busy} size="2xl" scrollBehavior="inside">
     <ModalContent><ModalHeader>统一节点来源</ModalHeader><ModalBody className="space-y-4">
-      <p className="text-sm leading-relaxed text-default-600">代理节点统一由订阅与手动节点提供，只保留一个默认代理组和已启用的过滤器。旧分组会被移除，分流规则改用默认代理；仍被单独引用的专用节点会移入手动节点。</p>
+      <p className="text-sm leading-relaxed text-default-600">代理节点统一由订阅与手动节点提供，自动生成 GLOBAL、Proxy、国家组和已启用的过滤器。旧分组会被移除，分流规则改用 Proxy；仍被单独引用的专用节点会移入手动节点。</p>
       <label className="space-y-2 text-sm"><span>默认代理先使用哪个节点</span><select aria-label="默认代理节点" value={target} disabled={busy || !nodes.length} onChange={event => { setSelected(event.target.value); setPreview(null); }} className="block h-10 w-full rounded border border-default-300 bg-content1 px-2">
         {!nodes.length && <option value="">暂无启用节点</option>}{nodes.map(node => <option key={node.tag}>{node.tag}</option>)}
       </select></label>
       {preview && <section className="space-y-3 rounded border border-[#ff5722]/30 bg-[#ff5722]/5 p-3 text-xs">
         <h3 className="text-sm font-medium">分组：{preview.before.groups.length} → {preview.after.groups.length}</h3>
-        <p>默认出口：{preview.before.final || '未知'} → <strong>默认代理 → {target || '拦截（无可用节点）'}</strong></p>
+        <p>默认出口：{preview.before.final || '未知'} → <strong>Proxy → {target || '拦截（无可用节点）'}</strong></p>
         <p>保留 {preview.after.nodes.length} 个节点，移除 {preview.removed_nodes.length} 个旧节点记录。</p>
         {!!preview.adopted_nodes?.length && <p>移入手动节点：{preview.adopted_nodes.join('、')}</p>}
         <p>现有设置将在迁移前完整备份。直连、拦截和规则匹配条件保持不变。</p>

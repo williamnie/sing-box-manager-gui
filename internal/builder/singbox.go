@@ -576,6 +576,9 @@ func (b *ConfigBuilder) buildOutbounds() []Outbound {
 				outbounds = append(outbounds, Outbound{"type": "selector", "tag": "Proxy", "outbounds": allNodeTags, "default": preferred})
 			}
 		}
+		if b.settings.ProxyPlan.ManagedOnly {
+			outbounds = b.appendManagedGroups(outbounds, allNodeTags, countryNodes, filterGroupTags)
+		}
 		return outbounds
 	}
 	var countryGroupTags []string

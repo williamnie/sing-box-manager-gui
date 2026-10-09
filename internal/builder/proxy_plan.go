@@ -64,7 +64,7 @@ func (b *ConfigBuilder) prepareProxyPlan() (*ConfigBuilder, error) {
 			country = "OTHER"
 		}
 		tag := fmt.Sprintf("%s %s", storage.GetCountryEmoji(country), storage.GetCountryName(country))
-		if tag != primary && imported[tag] == nil {
+		if !plan.ManagedOnly && tag != primary && imported[tag] == nil {
 			aliases[tag] = primary
 		}
 	}
@@ -198,6 +198,9 @@ func (b *ConfigBuilder) pruneProxyOutbounds(c *SingBoxConfig) {
 		}
 	}
 	visit(c.Route.Final)
+	if b.settings.ProxyPlan.ManagedOnly {
+		visit("GLOBAL")
+	}
 	visit("DIRECT")
 	visit("REJECT")
 	for _, f := range b.filters {

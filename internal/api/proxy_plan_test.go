@@ -209,7 +209,7 @@ func TestManagedSourceMigrationRepairsDisabledFilterAndBacksUpData(t *testing.T)
 	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(response.Data.After.Groups, []string{"Proxy"}) || !reflect.DeepEqual(response.Data.Adopted, []string{"专用"}) {
+	if !reflect.DeepEqual(response.Data.After.Groups, []string{"Proxy", "🌐 其他", "GLOBAL"}) || !reflect.DeepEqual(response.Data.Adopted, []string{"专用"}) {
 		t.Fatal(response.Data)
 	}
 	if len(s.store.GetSettings().ImportedPolicy.Outbounds) == 0 {

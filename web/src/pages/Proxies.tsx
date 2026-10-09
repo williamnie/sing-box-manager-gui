@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useStore } from '../store';
-import { proxyPresentation } from '../utils/proxyPresentation';
+import { proxyPresentation, proxyGroupRank } from '../utils/proxyPresentation';
 import { Button } from '@nextui-org/react';
 import { Check, ChevronDown, ChevronRight, Eye, EyeOff, Globe, RefreshCw, Search, Unplug, Zap } from 'lucide-react';
 import { errorMessage } from '../api';
@@ -31,6 +31,7 @@ export default function Proxies() {
     importedTags: new Set((Array.isArray(settings?.imported_policy?.outbounds) ? settings.imported_policy.outbounds : []).map((outbound: Record<string, unknown>) => String(outbound.tag))),
     filters: new Map(filters.map(filter => [filter.name, filter.id])),
     hasImported: Boolean(settings?.imported_policy) && !settings?.proxy_plan?.managed_only,
+    managedOnly: Boolean(settings?.proxy_plan?.managed_only),
   }), [settings?.imported_policy, settings?.proxy_plan?.managed_only, filters]);
   const [switching, setSwitching] = useState('');
   const runtime = useRuntimePolling(runtimeApi.proxies, preferences.refreshInterval, Boolean(switching));
@@ -45,13 +46,13 @@ export default function Proxies() {
   const unavailable = !snapshot || Boolean(runtime.error);
   const actionBusy = Boolean(switching) || closing;
   const query = search.trim().toLocaleLowerCase();
-  const groups = (snapshot?.proxies ?? []).filter(proxy => !(proxy.tag === 'GLOBAL' && proxy.type.toLowerCase() === 'fallback') && (proxy.members.length || proxy.selectable || /urltest|selector/i.test(proxy.type)));
+  const groups = (snapshot?.proxies ?? []).filter(proxy => proxy.members.length || proxy.selectable || /urltest|selector/i.test(proxy.type));
   const describe = (proxy: RuntimeProxy) => proxyPresentation(proxy, context);
   const matchesQuery = (group: RuntimeProxy) => !query || `${group.tag} ${describe(group).name}`.toLocaleLowerCase().includes(query);
   const visibleGroups = groups.filter(group => !preferences.hiddenGroups.includes(group.tag) &&
     (!source || describe(group).source === source) && (showAuxiliary || query || !describe(group).auxiliary) &&
     (matchesQuery(group) || group.members.some(member => member.toLocaleLowerCase().includes(query))))
-    .sort((a, b) => Number(context.filters.has(b.tag)) - Number(context.filters.has(a.tag)));
+    .sort((a, b) => proxyGroupRank(a.tag) - proxyGroupRank(b.tag) || Number(context.filters.has(b.tag)) - Number(context.filters.has(a.tag)));
   const auxiliaryCount = groups.filter(group => describe(group).auxiliary).length;
 
   useEffect(() => () => testController.current?.abort(), []);

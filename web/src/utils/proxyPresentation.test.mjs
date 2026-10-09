@@ -14,3 +14,15 @@ test('different imported tags must not become identically named groups', () => {
   const ctx = {...context, importedTags:new Set(['Proxy','SMbox/Proxy'])};
   assert.notEqual(proxyPresentation({tag:'Proxy'},ctx).name,proxyPresentation({tag:'SMbox/Proxy'},ctx).name);
 });
+
+test('GLOBAL, Proxy, and managed country groups retain their names and are visible', () => {
+  const ctx = { importedTags: new Set(), filters: new Map(), hasImported: false, managedOnly: true };
+  for (const tag of ['GLOBAL', 'Proxy', '🇺🇸 美国']) {
+    const view = proxyPresentation({tag,type:'Selector',selectable:true,members:['node']},ctx);
+    assert.equal(view.name,tag);
+    assert.equal(view.auxiliary,false);
+  }
+  assert.equal(proxyPresentation({tag:'GLOBAL',type:'Fallback',members:['Proxy']},ctx).auxiliary,false);
+  assert.equal(proxyPresentation({tag:'DIRECT',type:'Direct'},ctx).name,'DIRECT · 直连');
+  assert.equal(proxyPresentation({tag:'REJECT',type:'Reject'},ctx).name,'REJECT · 拒绝');
+});

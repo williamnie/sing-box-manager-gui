@@ -401,3 +401,60 @@ func assertIntegrationSelection(t *testing.T, client *Client, group, expected st
 	}
 	t.Fatalf("实际内核中缺少代理组 %q", group)
 }
+
+func TestSingBoxIntegrationExplicitGLOBAL(t *testing.T) {
+	binary := os.Getenv("SBM_TEST_SINGBOX")
+	if binary == "" {
+		t.Skip("set SBM_TEST_SINGBOX for real GLOBAL selector verification")
+	}
+	controller := integrationLoopbackAddress(t)
+	directory := t.TempDir()
+	path := filepath.Join(directory, "config.json")
+	members := []string{"DIRECT", "REJECT", "Proxy", "🇺🇸 美国", "node-a", "node-b"}
+	config := map[string]any{
+		"experimental": map[string]any{"clash_api": map[string]any{"external_controller": controller, "secret": "global-fixture"}},
+		"outbounds": []any{
+			map[string]any{"type": "direct", "tag": "DIRECT"}, map[string]any{"type": "block", "tag": "REJECT"},
+			map[string]any{"type": "http", "tag": "node-a", "server": "127.0.0.1", "server_port": 9}, map[string]any{"type": "http", "tag": "node-b", "server": "127.0.0.1", "server_port": 19},
+			map[string]any{"type": "selector", "tag": "Proxy", "outbounds": []string{"node-a", "node-b"}, "default": "node-a"},
+			map[string]any{"type": "selector", "tag": "🇺🇸 美国", "outbounds": []string{"node-a"}},
+			map[string]any{"type": "selector", "tag": "GLOBAL", "outbounds": members, "default": "Proxy"},
+		},
+		"route": map[string]any{"final": "Proxy"},
+	}
+	raw, err := json.Marshal(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	client, err := NewClient(controller, "global-fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	process := startIntegrationKernel(t, binary, path, directory, client)
+	proxies, err := client.Proxies(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	globalCount := 0
+	for _, proxy := range proxies {
+		if proxy.Tag == "GLOBAL" {
+			globalCount++
+			if !proxy.Selectable || !slices.Equal(proxy.Members, members) {
+				t.Fatalf("GLOBAL still synthetic: %+v", proxy)
+			}
+		}
+	}
+	if globalCount != 1 {
+		t.Fatal("GLOBAL must occur exactly once")
+	}
+	for _, member := range []string{"DIRECT", "REJECT", "🇺🇸 美国", "node-b", "Proxy"} {
+		if err := client.Select(context.Background(), "GLOBAL", member); err != nil {
+			t.Fatalf("select %s: %v\n%s", member, err, process.output.String())
+		}
+		assertIntegrationSelection(t, client, "GLOBAL", member)
+	}
+	assertIntegrationSelection(t, client, "Proxy", "node-a")
+}

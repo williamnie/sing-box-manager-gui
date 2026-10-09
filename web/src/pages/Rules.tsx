@@ -35,7 +35,7 @@ interface ValidationResult {
 }
 
 const baseOutboundOptions = [
-  { value: 'Proxy', label: '默认代理' },
+  { value: 'Proxy', label: 'Proxy（全部代理节点）' },
   { value: 'DIRECT', label: 'DIRECT (直连)' },
   { value: 'REJECT', label: 'REJECT (拦截)' },
 ];
@@ -209,6 +209,7 @@ export default function Rules() {
       ...subscriptions.filter((subscription) => subscription.enabled).flatMap((subscription) => subscription.nodes || []),
       ...manualNodes.filter((node) => node.enabled).map((node) => node.node),
     ];
+    if (settings?.proxy_plan?.managed_only) addOption('GLOBAL', 'GLOBAL（全部出口）');
     if (nativeNodes.length > 0 && !settings?.proxy_plan) {
       for (const group of ['Auto', 'Proxy', 'Final']) {
         const tag = imported ? `Managed ${group}` : group;
@@ -218,7 +219,7 @@ export default function Rules() {
     for (const node of nativeNodes) addOption(node.tag, `${node.tag} (节点)`);
 
     // 添加国家节点组
-    if (!settings?.proxy_plan) countryGroups.forEach((group) => {
+    if (!settings?.proxy_plan || settings.proxy_plan.managed_only) countryGroups.forEach((group) => {
       const label = `${group.emoji} ${group.name}`;
       addOption(label, `${label} (${group.node_count}节点)`);
     });

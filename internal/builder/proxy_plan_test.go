@@ -202,7 +202,7 @@ func TestRealKernelCompactProxyPlan(t *testing.T) {
 	}
 }
 
-func TestManagedDefaultProxyFollowsEnabledNodesWithoutImplicitGroups(t *testing.T) {
+func TestManagedDefaultProxyFollowsEnabledNodes(t *testing.T) {
 	settings := storage.DefaultSettings()
 	settings.ProxyPlan = &storage.ProxyPlan{Primary: "Proxy", ManagedOnly: true, DefaultNode: "removed"}
 	settings.ImportedPolicy = &storage.ImportedPolicy{Final: "Proxy"}
@@ -217,12 +217,12 @@ func TestManagedDefaultProxyFollowsEnabledNodesWithoutImplicitGroups(t *testing.
 	for _, out := range config.Outbounds {
 		if out["type"] == "selector" || out["type"] == "urltest" {
 			groups = append(groups, out["tag"].(string))
-			if out["default"] != "node" {
+			if out["tag"] != "GLOBAL" && out["default"] != "node" {
 				t.Fatal("stale preferred node retained")
 			}
 		}
 	}
-	if !reflect.DeepEqual(groups, []string{"Proxy"}) {
+	if !reflect.DeepEqual(groups, []string{"Proxy", "🇺🇸 美国", "GLOBAL"}) {
 		t.Fatal(groups)
 	}
 	b.nodes = nil
