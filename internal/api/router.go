@@ -350,7 +350,7 @@ func (s *Server) refreshSubscription(c *gin.Context) {
 
 	// 自动应用配置
 	if err := s.autoApplyConfig(); err != nil {
-		c.JSON(http.StatusOK, gin.H{"message": "刷新成功，但自动应用配置失败: " + err.Error()})
+		c.JSON(http.StatusOK, gin.H{"warning": "刷新成功，但自动应用配置失败: " + err.Error()})
 		return
 	}
 
@@ -365,7 +365,7 @@ func (s *Server) refreshAllSubscriptions(c *gin.Context) {
 
 	// 自动应用配置
 	if err := s.autoApplyConfig(); err != nil {
-		c.JSON(http.StatusOK, gin.H{"message": "刷新成功，但自动应用配置失败: " + err.Error()})
+		c.JSON(http.StatusOK, gin.H{"warning": "刷新成功，但自动应用配置失败: " + err.Error()})
 		return
 	}
 
@@ -636,6 +636,7 @@ func (s *Server) updateSettings(c *gin.Context) {
 	storage.NormalizeSettings(&settings)
 	previous := s.store.GetSettings()
 	settings.ImportedPolicy = previous.ImportedPolicy
+	settings.ProxyPlan = previous.ProxyPlan
 	if settings.DeploymentRole != previous.DeploymentRole || !reflect.DeepEqual(settings.Gateway, previous.Gateway) {
 		c.JSON(400, gin.H{"error": "请从部署与网关页面保存角色并显式应用"})
 		return

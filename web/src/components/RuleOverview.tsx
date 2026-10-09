@@ -12,6 +12,7 @@ import { toast } from './Toast';
 
 interface RouteSnapshot { rules: Record<string, unknown>[]; final: string }
 interface Overview {
+  outbound_redirects?: Record<string, string>;
   draft: RouteSnapshot | null; draft_error: string;
   applied: RouteSnapshot | null; applied_error: string;
   applied_hash: string; changed: boolean | null; running: boolean; role: string;
@@ -42,25 +43,26 @@ interface ReadableRule {
 }
 
 function savedRules(overview: Overview | null, props: Props): ReadableRule[] {
+  const effective = (tag: string) => overview?.outbound_redirects?.[tag] || tag;
   const devices = (overview?.devices || []).map((device): ReadableRule => ({
     id: `device-${device.id}`, title: device.name || '未命名设备', origin: '设备',
     source: `来自 ${device.addresses.join('、')}`, enabled: device.enabled,
     traffic: device.policy === 'split' ? '按下面的分流规则处理' : '该设备的全部流量，优先于分流规则',
-    outcome: device.policy === 'split' ? '普通分流' : device.policy === 'direct' ? '整机直连' : device.policy === 'bypass' ? '绕过接管' : `严格全代理 · ${device.outbound}`,
+    outcome: device.policy === 'split' ? '普通分流' : device.policy === 'direct' ? '整机直连' : device.policy === 'bypass' ? '绕过接管' : `严格全代理 · ${effective(device.outbound)}`,
     inactive: overview?.role !== 'gateway' ? '仅网关模式使用' : undefined,
   }));
   const custom = [...props.rules].sort((a, b) => a.priority - b.priority).map((rule): ReadableRule => ({
     id: `custom-${rule.id}`, title: rule.name, ...describeMatch(customRuleMatch(rule)),
-    origin: '自定义', enabled: rule.enabled, outcome: outboundLabel(rule.outbound, props.outbounds), rule,
+    origin: '自定义', enabled: rule.enabled, outcome: outboundLabel(effective(rule.outbound), props.outbounds), rule,
   }));
   const groups = props.groups.map((group): ReadableRule => ({
     id: `group-${group.id}`, title: group.name, source: '所有来源',
     traffic: [group.site_rules?.length ? `网站分类：${group.site_rules.join('、')}` : '', group.ip_rules?.length ? `IP 分类：${group.ip_rules.join('、')}` : ''].filter(Boolean).join(' · ') || '尚未配置匹配条件',
-    origin: '预设', enabled: group.enabled, outcome: outboundLabel(group.outbound, props.outbounds), group,
+    origin: '预设', enabled: group.enabled, outcome: outboundLabel(effective(group.outbound), props.outbounds), group,
   }));
   const imported = (overview?.imported_rules || []).map((rule, index): ReadableRule => ({
     id: `imported-${index}`, title: '', ...describeMatch(rule), origin: '导入', enabled: true,
-    outcome: actionLabel(rule, props.outbounds),
+    outcome: actionLabel({ ...rule, outbound: effective(String(rule.outbound || '')) }, props.outbounds),
     importedIndex: index, importedRule: rule,
   }));
   return [...devices, ...custom, ...groups, ...imported];
@@ -268,6 +270,7 @@ export default function RuleOverview(props: Props) {
                           <span>{row.outcome}</span>
                         </span>
                       )}
+                      {row.group && overview?.outbound_redirects?.[row.group.outbound] && <p className="mt-1 text-[11px] text-[#ff5722]">整理后：{row.outcome}</p>}
                     </td>
                     <td className="py-3 px-3">
                       <span className="text-[10px] px-1.5 py-0.5 rounded-[2px] bg-white/[0.04] border border-white/[0.08] text-zinc-400">

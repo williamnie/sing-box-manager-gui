@@ -48,6 +48,7 @@ A web-based management panel for [sing-box](https://github.com/SagerNet/sing-box
 - **Filter System**
   - Include/exclude by keywords
   - Country-based filtering
+  - Select exact node members with a live preview, or dynamically filter selected subscriptions
   - Proxy modes: URL-test (auto) / Select (manual)
 
 - **DNS Management**
@@ -63,6 +64,9 @@ A web-based management panel for [sing-box](https://github.com/SagerNet/sing-box
 
 - **Built-in Proxy and Connection Panel**
   - Read live proxy groups and selection chains; switch selector members without applying configuration or restarting the core
+  - Show the applied default exit and distinguish imported groups from subscription/filter groups
+  - Preview an optional group consolidation plan: choose one primary filter, merge selected imported groups, and remove automatically generated intermediate groups and unreferenced runtime nodes
+  - Consolidation preserves the original imported data, direct/reject actions, and retained independent groups; explicit automatic filters remain available. Saving follows the auto-apply setting, and undoing consolidation also requires a preview
   - Test individual nodes or whole groups; search, sort, collapse, and hide groups
   - Inspect active connections by source, destination, proxy chain, and protocol, with traffic / speed sorting, details, and pagination
   - Close individual connections, filtered results, all captured connections, or connections for a proxy group after confirmation

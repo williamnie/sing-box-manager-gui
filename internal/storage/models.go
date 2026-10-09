@@ -27,13 +27,14 @@ type Traffic struct {
 
 // Node 节点
 type Node struct {
-	Tag          string                 `json:"tag"`
-	Type         string                 `json:"type"` // shadowsocks/vmess/vless/trojan/hysteria2/tuic
-	Server       string                 `json:"server"`
-	ServerPort   int                    `json:"server_port"`
-	Extra        map[string]interface{} `json:"extra,omitempty"`         // 协议特定字段
-	Country      string                 `json:"country,omitempty"`       // 国家代码
-	CountryEmoji string                 `json:"country_emoji,omitempty"` // 国家 emoji
+	SubscriptionID string                 `json:"-"` // 构建时的来源信息，不写入订阅或内核配置
+	Tag            string                 `json:"tag"`
+	Type           string                 `json:"type"` // shadowsocks/vmess/vless/trojan/hysteria2/tuic
+	Server         string                 `json:"server"`
+	ServerPort     int                    `json:"server_port"`
+	Extra          map[string]interface{} `json:"extra,omitempty"`         // 协议特定字段
+	Country        string                 `json:"country,omitempty"`       // 国家代码
+	CountryEmoji   string                 `json:"country_emoji,omitempty"` // 国家 emoji
 }
 
 // ManualNode 手动添加的节点
@@ -53,6 +54,7 @@ type CountryGroup struct {
 
 // Filter 过滤器
 type Filter struct {
+	NodeTags         []string       `json:"node_tags"` // nil 按条件动态匹配；空数组明确表示不选择节点
 	ID               string         `json:"id"`
 	Name             string         `json:"name"`
 	Include          []string       `json:"include"`           // 包含关键字
@@ -110,6 +112,7 @@ type HostEntry struct {
 
 // Settings 全局设置
 type Settings struct {
+	ProxyPlan      *ProxyPlan      `json:"proxy_plan,omitempty"`
 	DeploymentRole string          `json:"deployment_role"`
 	Gateway        gateway.Config  `json:"gateway"`
 	Devices        []Device        `json:"devices"`
@@ -150,6 +153,12 @@ type Settings struct {
 
 	// GitHub 代理设置
 	GithubProxy string `json:"github_proxy"` // GitHub 代理地址，如 https://ghproxy.com/
+}
+
+// ProxyPlan 保留原始策略，仅在构建运行配置时合并选择组。
+type ProxyPlan struct {
+	Primary     string   `json:"primary"`
+	MergeGroups []string `json:"merge_groups"`
 }
 
 // DefaultSettings 默认设置

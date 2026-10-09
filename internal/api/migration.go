@@ -104,6 +104,7 @@ func (s *Server) migrationRollback(c *gin.Context) {
 // 保留 ImportedPolicy 和恢复文件的存储格式；仅准备候选快照，不触碰运行态。
 func prepareImport(data *storage.AppData, policy *storage.ImportedPolicy) *storage.AppData {
 	data.Settings.ImportedPolicy = policy
+	data.Settings.ProxyPlan = nil
 	data.Settings.AutoApply = false
 	data.Settings.Gateway.Enabled = false
 	data.Settings.TunEnabled = false

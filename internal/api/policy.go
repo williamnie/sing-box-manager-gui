@@ -47,7 +47,9 @@ func (s *Server) rulesOverview(c *gin.Context) {
 		}
 		result["imported_final"] = p.Final
 	}
-	candidate, buildErr := s.buildData(data, true)
+	builder := s.dataBuilder(data, true)
+	result["outbound_redirects"] = builder.ProxyRedirects()
+	candidate, buildErr := builder.BuildJSON()
 	if buildErr != nil {
 		result["draft_error"] = buildErr.Error()
 	} else {

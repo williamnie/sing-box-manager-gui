@@ -1,6 +1,7 @@
 import { toast } from '../components/Toast';
 import { errorMessage } from '../api';
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Card,
   CardBody,
@@ -26,6 +27,8 @@ import { useStore } from '../store';
 import { nodeApi } from '../api';
 import type { Subscription, ManualNode, Node, Filter } from '../store';
 import ConfirmModal from '../components/ConfirmModal';
+import FilterMembers from '../components/FilterMembers';
+import { filterCandidates, matchesFilter } from '../utils/filterMembers';
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -72,6 +75,7 @@ const defaultNode: Node = {
 };
 
 export default function Subscriptions() {
+  const [params] = useSearchParams();
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'subscription' | 'node' | 'filter'; id: string } | null>(null);
   const {
     subscriptions,
@@ -269,6 +273,7 @@ export default function Subscriptions() {
     setEditingFilter(filter);
     setFilterForm({
       name: filter.name,
+      node_tags: filter.node_tags ?? null,
       include: filter.include || [],
       exclude: filter.exclude || [],
       include_countries: filter.include_countries || [],
@@ -280,7 +285,7 @@ export default function Subscriptions() {
         tolerance: 50,
       },
       subscriptions: filter.subscriptions || [],
-      all_nodes: filter.all_nodes ?? true,
+      all_nodes: filter.all_nodes || !filter.subscriptions?.length,
       enabled: filter.enabled,
     });
     onFilterOpen();
@@ -288,6 +293,11 @@ export default function Subscriptions() {
 
   const handleSaveFilter = async () => {
     if (!filterForm.name) return;
+    if (!filterForm.all_nodes && !filterForm.subscriptions.length) { toast.error('请选择来源订阅，或开启全部节点来源'); return; }
+    if (filterForm.enabled && !filterCandidates(subscriptions, manualNodes, filterForm).some(({ node }) => matchesFilter(node, filterForm))) {
+      toast.error('请选择至少一个可用节点，或先停用此过滤器');
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -365,12 +375,12 @@ export default function Subscriptions() {
         <div className="relative rounded-[3px] border border-cyan-200 dark:border-cyan-500/20 bg-cyan-50 dark:bg-cyan-500/5 p-3.5 text-sm text-cyan-950 dark:text-cyan-200/90 leading-6 overflow-hidden">
           <div className="absolute left-0 top-0 bottom-0 w-1 bg-cyan-400"></div>
           <span className="font-semibold text-cyan-800 dark:text-cyan-300 mr-2">[POLICY_INFO]</span>
-          当前保留导入配置的原有选择组及其成员。这里新增或启用的节点可通过 Managed Proxy / Managed Auto 使用，也可在规则页直接指定节点、国家组或过滤器；存在可用原生节点时才生成 Managed 组。同名节点或自定义组冲突会在配置校验时提示。
+          这里管理订阅与手动节点。SMbox/ 等导入节点属于独立的配置快照，不会随订阅刷新或删除而变化。订阅节点通过“订阅节点选择 / 订阅自动测速”使用；清理导入节点需先处理旧分组和规则对它的引用。
         </div>
       ) : null}
 
       <Tabs
-        aria-label="节点管理"
+        aria-label="节点管理" defaultSelectedKey={params.get('tab') === 'filters' ? 'filters' : 'subscriptions'}
         variant="underlined"
         classNames={{
           tabList: "gap-6 border-b border-zinc-200 dark:border-white/[0.08] p-0 font-mono text-xs",
@@ -478,6 +488,7 @@ export default function Subscriptions() {
                     </div>
                     <div>
                       <h3 className="font-mono text-sm font-semibold text-white">{filter.name}</h3>
+                      <p className="mt-1 text-xs text-zinc-400">{filter.node_tags != null ? '逐个选择' : '按条件动态匹配'} · 当前 {filterCandidates(subscriptions, manualNodes, filter).filter(({ node }) => matchesFilter(node, filter)).length} 个节点</p>
                       <div className="flex flex-wrap gap-1.5 mt-1 font-mono text-[10px]">
                         {filter.include_countries?.length > 0 && (
                           <span className="px-1.5 py-0.5 rounded-[2px] bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
@@ -502,12 +513,12 @@ export default function Subscriptions() {
                   </div>
                   <div className="flex items-center gap-2 self-end sm:self-auto font-mono">
                     <Button
-                      isIconOnly
+                      aria-label={`编辑 ${filter.name} 的节点`}
                       size="sm"
-                      className="size-7 rounded-[2px] bg-white/[0.05] border border-white/[0.08] text-zinc-300 hover:text-white"
+                      className="rounded-[2px] bg-white/[0.05] border border-white/[0.08] text-zinc-300 hover:text-white"
                       onPress={() => handleOpenEditFilter(filter)}
                     >
-                      <Pencil className="size-3.5" />
+                      <Pencil className="size-3.5" />编辑节点
                     </Button>
                     <Button
                       isIconOnly
@@ -736,7 +747,7 @@ export default function Subscriptions() {
       </Modal>
 
       {/* 添加/编辑过滤器弹窗 */}
-      <Modal isOpen={isFilterOpen} onClose={onFilterClose} size="2xl">
+      <Modal isOpen={isFilterOpen} onClose={onFilterClose} size="2xl" scrollBehavior="inside">
         <ModalContent>
           <ModalHeader>{editingFilter ? '编辑过滤器' : '添加过滤器'}</ModalHeader>
           <ModalBody>
@@ -749,6 +760,15 @@ export default function Subscriptions() {
                 onChange={(e) => setFilterForm({ ...filterForm, name: e.target.value })}
                 isRequired
               />
+              <div className="flex items-center justify-between gap-3">
+                <div><span className="text-sm font-medium">全部订阅与手动节点</span><p className="text-xs text-default-500">关闭后只使用指定订阅中的节点</p></div>
+                <Switch aria-label="使用全部节点来源" isSelected={filterForm.all_nodes} onValueChange={checked => setFilterForm({ ...filterForm, all_nodes: checked, subscriptions: checked ? [] : subscriptions.map(sub => sub.id) })} />
+              </div>
+              {!filterForm.all_nodes && <AppSelect label="节点来源订阅" selectionMode="multiple" selectedKeys={filterForm.subscriptions} onSelectionChange={keys => setFilterForm({ ...filterForm, subscriptions: Array.from(keys) as string[] })}>
+                {subscriptions.map(sub => <SelectItem key={sub.id} textValue={sub.name}>{sub.name}{sub.enabled ? '' : '（已停用）'}</SelectItem>)}
+              </AppSelect>}
+              <FilterMembers form={filterForm} onChange={setFilterForm} subscriptions={subscriptions} manualNodes={manualNodes} />
+              {filterForm.node_tags == null && <>
               {/* 包含国家 */}
               <AppSelect
                 label="包含国家"
@@ -809,18 +829,7 @@ export default function Subscriptions() {
                 })}
               />
 
-              {/* 全部节点开关 */}
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="font-medium">应用于全部节点</span>
-                  <p className="text-xs text-gray-400">启用后将匹配所有订阅的节点</p>
-                </div>
-                <Switch
-                  isSelected={filterForm.all_nodes}
-                  onValueChange={(checked) => setFilterForm({ ...filterForm, all_nodes: checked })}
-                  classNames={{ wrapper: "group-data-[selected=true]:bg-[#ff5722]" }}
-                />
-              </div>
+              </>}
 
               {/* 模式选择 */}
               <AppSelect

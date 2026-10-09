@@ -50,6 +50,7 @@ export interface URLTestConfig {
 }
 
 export interface Filter {
+  node_tags?: string[] | null;
   id: string;
   name: string;
   include: string[];
@@ -96,6 +97,7 @@ export interface HostEntry {
 }
 
 export interface Settings {
+  proxy_plan?: import('../api/proxyPlan').ProxyPlan | null;
   deployment_role?: 'desktop' | 'gateway';
   gateway?: GatewayConfig;
   device_groups?: DeviceGroup[];
@@ -359,12 +361,8 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await subscriptionApi.refresh(id);
       await get().fetchSubscriptions();
       await get().fetchCountryGroups();
-      // 检查后端返回的 warning
-      if (res.data.warning) {
-        toast.info(res.data.warning);
-      } else {
-        toast.success('订阅刷新成功');
-      }
+      // 自动应用失败的提示由 API 拦截器统一显示。
+      if (!res.data.warning) toast.success('订阅刷新成功');
     } catch (error: any) {
 
       toast.error(error.response?.data?.error || '刷新订阅失败');
@@ -533,9 +531,9 @@ export const useStore = create<AppState>((set, get) => ({
 
   addFilter: async (filter: Omit<Filter, 'id'>) => {
     try {
-      await filterApi.add(filter);
+      const res = await filterApi.add(filter);
       await get().fetchFilters();
-      toast.success('过滤器添加成功');
+      if (!res.data.warning) toast.success('过滤器添加成功');
     } catch (error: any) {
 
       toast.error(error.response?.data?.error || '添加过滤器失败');
@@ -545,9 +543,9 @@ export const useStore = create<AppState>((set, get) => ({
 
   updateFilter: async (id: string, filter: Partial<Filter>) => {
     try {
-      await filterApi.update(id, filter);
+      const res = await filterApi.update(id, filter);
       await get().fetchFilters();
-      toast.success('过滤器更新成功');
+      if (!res.data.warning) toast.success('过滤器更新成功');
     } catch (error: any) {
 
       toast.error(error.response?.data?.error || '更新过滤器失败');

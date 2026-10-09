@@ -3,7 +3,7 @@ import { api, errorMessage } from './index';
 export interface RuntimeProxy {
   tag: string; type: string; selectable: boolean; members: string[]; selected: string; delay: number | null;
 }
-export interface ProxySnapshot { instance: string; version: string; proxies: RuntimeProxy[] }
+export interface ProxySnapshot { route_final?: string; instance: string; version: string; proxies: RuntimeProxy[] }
 export interface DelayResult { tag: string; delay: number | null; error?: string }
 export interface RuntimeConnection {
   id: string; source: string; source_port: string; destination: string; destination_port: string;

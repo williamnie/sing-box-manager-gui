@@ -32,6 +32,8 @@ func (s *Server) setupDeploymentRoutes(r *gin.RouterGroup) {
 	r.GET("/config/versions", s.configVersions)
 	r.POST("/config/restore", s.restorePreviousConfig)
 	r.GET("/rules/overview", s.rulesOverview)
+	r.POST("/proxy-plan/preview", s.previewProxyPlan)
+	r.PUT("/proxy-plan", s.saveProxyPlan)
 	r.PUT("/rules/imported/:index", s.updateImportedRule)
 	r.DELETE("/rules/imported/:index", s.deleteImportedRule)
 	r.POST("/config/import/preview", s.migrationPreview)
@@ -49,11 +51,18 @@ func (s *Server) buildSettings(settings *storage.Settings, preview bool) (string
 }
 
 func (s *Server) buildData(data *storage.AppData, preview bool) (string, error) {
+	return s.dataBuilder(data, preview).BuildJSON()
+}
+
+func (s *Server) dataBuilder(data *storage.AppData, preview bool) *builder.ConfigBuilder {
 	settings := data.Settings
 	var nodes []storage.Node
 	for _, sub := range data.Subscriptions {
 		if sub.Enabled {
-			nodes = append(nodes, sub.Nodes...)
+			for _, node := range sub.Nodes {
+				node.SubscriptionID = sub.ID
+				nodes = append(nodes, node)
+			}
 		}
 	}
 	for _, n := range data.ManualNodes {
@@ -70,7 +79,7 @@ func (s *Server) buildData(data *storage.AppData, preview bool) (string, error) 
 	if preview && settings.DeploymentRole == "gateway" {
 		b.WithPlatform("linux")
 	}
-	return b.BuildJSON()
+	return b
 }
 func (s *Server) applyManagedConfig() error {
 	settings := s.store.GetSettings()
@@ -94,6 +103,7 @@ func (s *Server) saveGatewaySettings(c *gin.Context) {
 	storage.NormalizeSettings(&settings)
 	old := s.store.GetSettings()
 	settings.ImportedPolicy = old.ImportedPolicy
+	settings.ProxyPlan = old.ProxyPlan
 	// Enabled 由显式应用/恢复维护，保存草案不能启动系统操作。
 	settings.Gateway.Enabled = old.Gateway.Enabled
 	if old.Gateway.Enabled && (settings.DeploymentRole != old.DeploymentRole || !reflect.DeepEqual(gateway.Normalize(settings.Gateway), gateway.Normalize(old.Gateway))) {

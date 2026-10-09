@@ -2,8 +2,10 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -19,9 +21,10 @@ type runtimeProvider interface {
 var errStaleRuntime = errors.New("内核实例已变化，请刷新页面后重试")
 
 type proxySnapshot struct {
-	Instance string                 `json:"instance"`
-	Version  string                 `json:"version"`
-	Proxies  []runtimecontrol.Proxy `json:"proxies"`
+	RouteFinal string                 `json:"route_final,omitempty"`
+	Instance   string                 `json:"instance"`
+	Version    string                 `json:"version"`
+	Proxies    []runtimecontrol.Proxy `json:"proxies"`
 }
 type connectionSnapshot struct {
 	Instance  string `json:"instance"`
@@ -98,6 +101,9 @@ func (s *Server) runtimeProxies(c *gin.Context) {
 	err := s.withRuntime(ctx, "", func(client *runtimecontrol.Client, instance string) error {
 		var err error
 		result, err = readProxySnapshot(ctx, client, instance)
+		if err == nil {
+			s.annotateProxyRoute(&result)
+		}
 		return err
 	})
 	if err != nil {
@@ -147,6 +153,9 @@ func (s *Server) runtimeSelect(c *gin.Context) {
 		}
 		var err error
 		result, err = readProxySnapshot(ctx, client, instance)
+		if err == nil {
+			s.annotateProxyRoute(&result)
+		}
 		return err
 	})
 	if err != nil {
@@ -334,3 +343,19 @@ func (s *Server) runtimeDelay(c *gin.Context) {
 
 // 保留编译期接口检查，生产环境不允许通过草案设置拼装控制目标。
 var _ runtimeProvider = (*daemon.ProcessManager)(nil)
+
+// 在受管运行实例锁内读取已应用配置，只返回默认出站，不暴露节点凭据。
+func (s *Server) annotateProxyRoute(snapshot *proxySnapshot) {
+	raw, err := os.ReadFile(s.resolvePath(s.store.GetSettings().ConfigPath))
+	if err != nil {
+		return
+	}
+	var config struct {
+		Route struct {
+			Final string `json:"final"`
+		} `json:"route"`
+	}
+	if json.Unmarshal(raw, &config) == nil {
+		snapshot.RouteFinal = config.Route.Final
+	}
+}

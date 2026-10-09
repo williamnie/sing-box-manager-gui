@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -150,13 +151,15 @@ type CacheFileConfig struct {
 
 // ConfigBuilder 配置生成器
 type ConfigBuilder struct {
-	settings   *storage.Settings
-	nodes      []storage.Node
-	filters    []storage.Filter
-	rules      []storage.Rule
-	ruleGroups []storage.RuleGroup
-	profile    CompatProfile
-	platform   string
+	settings       *storage.Settings
+	nodes          []storage.Node
+	filters        []storage.Filter
+	rules          []storage.Rule
+	ruleGroups     []storage.RuleGroup
+	profile        CompatProfile
+	platform       string
+	proxyPrepared  bool
+	proxyRedirects map[string]string
 }
 
 // NewConfigBuilder 创建配置生成器
@@ -188,6 +191,13 @@ func (b *ConfigBuilder) buildRuleSetURL(originalURL string) string {
 
 // Build 构建 sing-box 配置
 func (b *ConfigBuilder) Build() (*SingBoxConfig, error) {
+	if b.settings != nil && b.settings.ProxyPlan != nil && !b.proxyPrepared {
+		prepared, err := b.prepareProxyPlan()
+		if err != nil {
+			return nil, err
+		}
+		return prepared.Build()
+	}
 	if err := b.validate(); err != nil {
 		return nil, err
 	}
@@ -213,6 +223,12 @@ func (b *ConfigBuilder) Build() (*SingBoxConfig, error) {
 	}
 	if b.dnsBypass() {
 		if err := b.configureDNSBypass(config); err != nil {
+			return nil, err
+		}
+	}
+	if b.settings.ProxyPlan != nil {
+		b.pruneProxyOutbounds(config)
+		if err := b.validateOutbounds(config); err != nil {
 			return nil, err
 		}
 	}
@@ -291,7 +307,11 @@ func ParseSystemHosts() map[string][]string {
 
 // buildDNS 构建 DNS 配置
 func (b *ConfigBuilder) buildDNS() *DNSConfig {
-	proxy, _ := parseDNSServer(b.settings.ProxyDNS, "dns_proxy", "Proxy")
+	proxyTag := "Proxy"
+	if b.settings.ProxyPlan != nil {
+		proxyTag = b.settings.ProxyPlan.Primary
+	}
+	proxy, _ := parseDNSServer(b.settings.ProxyDNS, "dns_proxy", proxyTag)
 	direct, _ := parseDNSServer(b.settings.DirectDNS, "dns_direct", "")
 	servers := []DNSServer{proxy, direct, {Tag: "dns_bootstrap", Type: "udp", Server: "223.5.5.5"}}
 	if b.settings.DeploymentRole == "gateway" {
@@ -544,6 +564,9 @@ func (b *ConfigBuilder) buildOutbounds() []Outbound {
 	}
 
 	// 创建按国家分组的出站选择器
+	if b.settings.ProxyPlan != nil {
+		return outbounds
+	}
 	var countryGroupTags []string
 	// 按国家代码排序，确保顺序一致
 	var countryCodes []string
@@ -687,6 +710,14 @@ func (b *ConfigBuilder) ensureTUICOutboundTLS(outbound Outbound) {
 
 // matchFilter 检查节点是否匹配过滤器
 func (b *ConfigBuilder) matchFilter(node storage.Node, filter storage.Filter) bool {
+	// 旧配置未指定订阅时仍匹配全部；指定来源后不混入手动节点或其他订阅。
+	if !filter.AllNodes && len(filter.Subscriptions) > 0 && !slices.Contains(filter.Subscriptions, node.SubscriptionID) {
+		return false
+	}
+	// 逐个选择使用完整名称匹配，不受关键字的子串匹配影响。
+	if filter.NodeTags != nil {
+		return slices.Contains(filter.NodeTags, node.Tag)
+	}
 	name := strings.ToLower(node.Tag)
 
 	// 1. 检查国家包含条件
@@ -745,7 +776,7 @@ func (b *ConfigBuilder) buildRoute() *RouteConfig {
 			RewriteTTL: 60,
 		},
 	}
-	if b.dnsBypass() {
+	if b.dnsBypass() || b.settings.ProxyPlan != nil {
 		route.Final = b.settings.FinalOutbound
 	}
 
@@ -943,7 +974,7 @@ func (b *ConfigBuilder) buildRoute() *RouteConfig {
 
 		// Site 规则
 		outbound := rg.Name
-		if b.dnsBypass() {
+		if b.dnsBypass() || b.settings.ProxyPlan != nil {
 			outbound = rg.Outbound
 		}
 		if len(rg.SiteRules) > 0 {
