@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,9 +9,44 @@ import (
 	"testing"
 	"time"
 
+	"github.com/xiaobei/singbox-manager/internal/gateway"
 	"github.com/xiaobei/singbox-manager/internal/runtimecontrol"
 	"github.com/xiaobei/singbox-manager/internal/storage"
 )
+
+func TestGatewayClientsUseRuntimeIPv6WithoutMutatingSettings(t *testing.T) {
+	s, _, g := prepareGateway(t)
+	settings := s.store.GetSettings()
+	settings.Gateway.IPv6Mode, settings.Gateway.IPv6LANSource = "proxy", "auto"
+	settings.Gateway.Enabled = true
+	plan, err := gateway.Preview("gateway", settings.Gateway)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.applied, g.digest = true, plan.ConfigDigest
+	g.ipv6 = &gateway.IPv6Status{Prefixes: []string{"2001:db8:2::/64"}, Generation: 2}
+	before, _ := json.Marshal(settings)
+	observed := s.gatewayClientSettings(context.Background(), settings)
+	s.gatewayClientSettings(context.Background(), settings)
+	if g.statusCalls.Load() != 1 {
+		t.Fatal("client observation repeatedly captured gateway resources")
+	}
+	if _, ok := gatewayClientAddress("2001:db8:2::205", observed); !ok {
+		t.Fatal("new IPv6 client hidden")
+	}
+	if _, ok := gatewayClientAddress("2001:db8:1::205", observed); ok {
+		t.Fatal("stale prefix accepted")
+	}
+	after, _ := json.Marshal(settings)
+	if string(before) != string(after) {
+		t.Fatal("runtime prefixes mutated stored configuration")
+	}
+	g.digest = "foreign-config"
+	s.observedClients.ipv6CheckedAt = time.Now().Add(-time.Minute)
+	if got := s.gatewayClientSettings(context.Background(), settings); got != settings {
+		t.Fatal("foreign helper topology was trusted")
+	}
+}
 
 func TestGatewayClientsDiscoverUnregisteredDNSClientWithoutChangingPolicy(t *testing.T) {
 	s, _, _ := prepareGateway(t)

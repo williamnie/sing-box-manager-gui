@@ -144,6 +144,7 @@ export interface GatewayConfig {
   upstream_gateway: string;
   uplink_interface: string;
   ipv6_mode: 'disabled' | 'proxy';
+  ipv6_lan_source?: '' | 'manual' | 'auto';
   nat: boolean;
   exclude_cidrs: string[];
   dns_port: number;

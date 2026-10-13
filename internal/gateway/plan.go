@@ -11,6 +11,7 @@ import (
 )
 
 type Plan struct {
+	IPv6Prefixes []string          `json:"ipv6_prefixes,omitempty"` // helper 读取的运行态，不计入配置摘要
 	Config       Config            `json:"config"`
 	ConfigDigest string            `json:"config_digest"`
 	NFTables     string            `json:"nftables"`
@@ -31,14 +32,15 @@ type CheckResult struct {
 	Plan     Plan      `json:"plan"`
 }
 type Status struct {
-	Rebooted         bool      `json:"rebooted"`
-	ManagerService   string    `json:"manager_service"`
-	Applied          bool      `json:"applied"`
-	Drift            bool      `json:"drift"`
-	RecoveryRequired bool      `json:"recovery_required"`
-	ConfigDigest     string    `json:"config_digest,omitempty"`
-	AppliedAt        string    `json:"applied_at,omitempty"`
-	Findings         []Finding `json:"findings"`
+	IPv6             *IPv6Status `json:"ipv6,omitempty"`
+	Rebooted         bool        `json:"rebooted"`
+	ManagerService   string      `json:"manager_service"`
+	Applied          bool        `json:"applied"`
+	Drift            bool        `json:"drift"`
+	RecoveryRequired bool        `json:"recovery_required"`
+	ConfigDigest     string      `json:"config_digest,omitempty"`
+	AppliedAt        string      `json:"applied_at,omitempty"`
+	Findings         []Finding   `json:"findings"`
 }
 
 // Preview 仅生成文本，不执行命令，也不会更改操作系统。
@@ -90,7 +92,12 @@ func Preview(role string, config Config) (Plan, error) {
 		}
 	}
 	var bld strings.Builder
-	fmt.Fprintf(&bld, "table inet %s {\n comment \"singbox-manager gateway owned v1\"\n chain dns_access {\n  type filter hook input priority -10; policy accept;\n", TableName)
+	fmt.Fprintf(&bld, "table inet %s {\n comment \"singbox-manager gateway owned v1\"\n", TableName)
+	if c.AutoIPv6() {
+		bld.WriteString(ipv6SetDeclaration + " }\n")
+		p.Warnings = append(p.Warnings, "自动 IPv6 依赖已授权 LAN 的可信地址和直连路由；预览不读取系统前缀。未知来源仍受断核保护；不支持固定 IPv6 设备策略。")
+	}
+	bld.WriteString(" chain dns_access {\n  type filter hook input priority -10; policy accept;\n")
 	bld.WriteString("  iifname \"lo\" return\n")
 	fmt.Fprintf(&bld, "  ip daddr %s meta l4proto { tcp, udp } th dport %d iifname != \"%s\" counter drop\n", c.LANAddress, c.DNSPort, c.LANInterface)
 	fmt.Fprintf(&bld, "  ip daddr %s meta l4proto { tcp, udp } th dport %d ip saddr != { %s } counter drop\n", c.LANAddress, c.DNSPort, strings.Join(v4, ", "))
@@ -103,13 +110,22 @@ func Preview(role string, config Config) (Plan, error) {
 		fmt.Fprintf(&bld, "  iifname \"%s\" %s saddr %s return\n", c.LANInterface, proto, s)
 	}
 	fmt.Fprintf(&bld, "  iifname \"%s\" ip saddr { %s } ip daddr != { %s } oifname != \"%s\" counter reject with icmp type admin-prohibited\n", c.LANInterface, strings.Join(v4, ", "), strings.Join(excluded4, ", "), TUNInterface)
-	if c.IPv6Mode == "proxy" {
+	if c.AutoIPv6() {
+		fmt.Fprintf(&bld, "  iifname \"%s\" oifname \"%s\" ip6 daddr @ipv6_lan return\n", c.LANInterface, c.LANInterface)
+		if len(excluded6) > 0 {
+			fmt.Fprintf(&bld, "  iifname \"%s\" ip6 daddr { %s } return\n", c.LANInterface, strings.Join(excluded6, ", "))
+		}
+		fmt.Fprintf(&bld, "  iifname \"%s\" meta nfproto ipv6 oifname != \"%s\" counter reject with icmpv6 type admin-prohibited\n", c.LANInterface, TUNInterface)
+	} else if c.IPv6Mode == "proxy" {
 		fmt.Fprintf(&bld, "  iifname \"%s\" ip6 saddr { %s } ip6 daddr != { %s } oifname != \"%s\" counter reject with icmpv6 type admin-prohibited\n", c.LANInterface, strings.Join(v6, ", "), strings.Join(excluded6, ", "), TUNInterface)
 	}
 	if c.IPv6Mode == "disabled" {
 		fmt.Fprintf(&bld, "  iifname \"%s\" meta nfproto ipv6 counter reject with icmpv6 type admin-prohibited\n", c.LANInterface)
 	}
 	bld.WriteString(" }\n")
+	if c.AutoIPv6() {
+		fmt.Fprintf(&bld, " chain ipv6_redirect {\n  type filter hook output priority -10; policy accept;\n  oifname \"%s\" meta l4proto ipv6-icmp icmpv6 type nd-redirect counter drop\n }\n", c.LANInterface)
+	}
 	if c.NAT {
 		fmt.Fprintf(&bld, " chain optional_nat {\n  type nat hook postrouting priority srcnat; policy accept;\n  iifname \"%s\" oifname \"%s\" ip saddr { %s } ip daddr != { %s } masquerade\n }\n", c.LANInterface, c.UplinkInterface, strings.Join(v4, ", "), strings.Join(excluded4, ", "))
 	}

@@ -153,6 +153,9 @@ func ValidateSettings(s *Settings) error {
 			if !d.Enabled {
 				continue
 			}
+			if s.DeploymentRole == "gateway" && s.Gateway.AutoIPv6() && p.Addr().Is6() {
+				return fmt.Errorf("自动 IPv6 模式不支持固定 IPv6 设备来源 %s；请停用该策略或保留手动模式", a)
+			}
 			if s.DeploymentRole == "gateway" {
 				inside := false
 				for _, network := range s.Gateway.LANCIDRs {

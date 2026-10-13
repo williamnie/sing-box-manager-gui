@@ -10,6 +10,7 @@ import (
 )
 
 type interfaceAddresses struct {
+	IfName   string `json:"ifname"`
 	AddrInfo []struct {
 		Local             string          `json:"local"`
 		PrefixLen         int             `json:"prefixlen"`
@@ -19,6 +20,7 @@ type interfaceAddresses struct {
 		DADFailed         bool            `json:"dadfailed"`
 		Deprecated        bool            `json:"deprecated"`
 		PreferredLifeTime json.RawMessage `json:"preferred_life_time"`
+		ValidLifeTime     json.RawMessage `json:"valid_life_time"`
 	} `json:"addr_info"`
 }
 

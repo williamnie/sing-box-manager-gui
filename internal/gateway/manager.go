@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,12 +22,15 @@ type snapshot struct {
 	DHCPActive bool              `json:"dhcp_active"`
 }
 type activeState struct {
-	Plan      Plan     `json:"plan"`
-	Baseline  snapshot `json:"baseline"`
-	Current   snapshot `json:"current"`
-	AppliedAt string   `json:"applied_at"`
+	IPv6Generation uint64   `json:"ipv6_generation,omitempty"`
+	IPv6UpdatedAt  string   `json:"ipv6_updated_at,omitempty"`
+	Plan           Plan     `json:"plan"`
+	Baseline       snapshot `json:"baseline"`
+	Current        snapshot `json:"current"`
+	AppliedAt      string   `json:"applied_at"`
 }
 type transaction struct {
+	IPv6Only           bool       `json:"ipv6_only,omitempty"`
 	ObservedDNSRouting dnsRouting `json:"observed_dns_routing"`
 	RollingBack        bool       `json:"rolling_back"`
 	Before             snapshot   `json:"before"`
@@ -47,6 +51,7 @@ type Manager struct {
 	GOOS       string
 	ReadBootID func() (string, error)
 	mu         sync.Mutex
+	ipv6Error  string
 }
 
 func NewManager(r Runner, p Policy, stateDir string) *Manager {
@@ -222,6 +227,18 @@ func (m *Manager) check(ctx context.Context, role string, c Config) (CheckResult
 	if e = m.audit(ctx, p.Config, s.Active != nil, add); e != nil {
 		return r, e
 	}
+	if p.Config.AutoIPv6() {
+		prefixes, err := m.discoverIPv6(ctx, p.Config)
+		if err != nil {
+			add("error", "ipv6_discovery", err.Error())
+		} else {
+			p = withIPv6Prefixes(p, prefixes)
+			r.Plan = p
+			if len(prefixes) == 0 {
+				add("warning", "ipv6_no_prefix", "尚未发现可用的 LAN IPv6 直连前缀；接口保护仍会启用，局域网 IPv6 转发可能暂不可用")
+			}
+		}
+	}
 	script := replaceNFT(current.NFT, p.NFTables)
 	if _, e = m.Runner.Run(ctx, "nft", []string{"--check", "-f", "-"}, script); e != nil {
 		add("error", "nft_syntax", "nftables 候选配置未通过系统校验")
@@ -273,9 +290,15 @@ func (m *Manager) Apply(ctx context.Context, role string, c Config) (Status, err
 	if e != nil {
 		return Status{}, e
 	}
-	if s.Active != nil && s.Active.Plan.ConfigDigest == result.Plan.ConfigDigest {
+	if s.Active != nil && s.Active.Plan.ConfigDigest == result.Plan.ConfigDigest && slices.Equal(s.Active.Plan.IPv6Prefixes, result.Plan.IPv6Prefixes) && (!result.Plan.Config.AutoIPv6() || ipv6Template(s.Active.Plan) == ipv6Template(result.Plan)) {
 		return m.status(ctx, s)
 	}
+	return m.applyPlan(ctx, s, result.Plan)
+}
+
+// 调用者持有 m.mu；动态前缀复用原有写前日志和精确资源恢复流程。
+func (m *Manager) applyPlan(ctx context.Context, s state, plan Plan) (Status, error) {
+	var e error
 	// 空状态没有旧资源需要恢复；新事务必须绑定本次启动，不能沿用历史 boot ID。
 	if s.Active == nil && s.Pending == nil {
 		s.BootID, e = m.currentBootID()
@@ -283,7 +306,7 @@ func (m *Manager) Apply(ctx context.Context, role string, c Config) (Status, err
 			return Status{}, e
 		}
 	}
-	before, e := m.capture(ctx, result.Plan)
+	before, e := m.capture(ctx, plan)
 	if e != nil {
 		return Status{}, e
 	}
@@ -301,12 +324,16 @@ func (m *Manager) Apply(ctx context.Context, role string, c Config) (Status, err
 	}
 	if s.Active != nil {
 		for k := range before.Sysctls {
-			if _, ok := result.Plan.Sysctls[k]; !ok {
-				result.Plan.Sysctls[k] = s.Active.Baseline.Sysctls[k]
+			if _, ok := plan.Sysctls[k]; !ok {
+				plan.Sysctls[k] = s.Active.Baseline.Sysctls[k]
 			}
 		}
 	}
-	s.Pending = &transaction{Before: before, Target: result.Plan, ObservedDNSRouting: before.DNSRouting}
+	if s.Active != nil && !equalSnapshot(before, s.Active.Current) {
+		return Status{Drift: true}, fmt.Errorf("应用前所属资源已改变，拒绝覆盖")
+	}
+	ipv6Only := s.Active != nil && plan.Config.AutoIPv6() && s.Active.Plan.ConfigDigest == plan.ConfigDigest && ipv6Template(s.Active.Plan) == ipv6Template(plan)
+	s.Pending = &transaction{Before: before, Target: plan, ObservedDNSRouting: before.DNSRouting, IPv6Only: ipv6Only}
 	if e = m.save(s); e != nil {
 		return Status{}, e
 	}
@@ -330,7 +357,7 @@ func (m *Manager) Apply(ctx context.Context, role string, c Config) (Status, err
 			}
 		}
 	}
-	current, e := m.capture(ctx, result.Plan)
+	current, e := m.capture(ctx, plan)
 	if e != nil {
 		recoveryCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
@@ -348,15 +375,25 @@ func (m *Manager) Apply(ctx context.Context, role string, c Config) (Status, err
 			current.Sysctls[k] = strings.TrimSpace(v)
 		}
 	}
-	expected := snapshot{DNSRouting: s.Pending.ObservedDNSRouting, NFT: s.Pending.ObservedNFT, Sysctls: result.Plan.Sysctls, DHCP: before.DHCP, DHCPActive: result.Plan.Config.DHCP.Enabled}
-	if result.Plan.Config.DHCP.Enabled {
-		expected.DHCP = result.Plan.DHCPConfig
+	expected := snapshot{DNSRouting: s.Pending.ObservedDNSRouting, NFT: s.Pending.ObservedNFT, Sysctls: plan.Sysctls, DHCP: before.DHCP, DHCPActive: plan.Config.DHCP.Enabled}
+	if plan.Config.DHCP.Enabled {
+		expected.DHCP = plan.DHCPConfig
 	}
 	if !equalSnapshot(current, expected) {
 		return Status{RecoveryRequired: true, Drift: true}, fmt.Errorf("应用后的资源不符合计划，保留事务并拒绝接管外部更改")
 	}
 	previousActive, tx := s.Active, s.Pending
-	s.Active = &activeState{Plan: result.Plan, Baseline: baseline, Current: current, AppliedAt: time.Now().UTC().Format(time.RFC3339)}
+	s.Active = &activeState{Plan: plan, Baseline: baseline, Current: current, AppliedAt: time.Now().UTC().Format(time.RFC3339)}
+	if plan.Config.AutoIPv6() {
+		s.Active.IPv6Generation = 1
+		s.Active.IPv6UpdatedAt = s.Active.AppliedAt
+		if previousActive != nil {
+			s.Active.IPv6Generation += previousActive.IPv6Generation
+			if ipv6Only {
+				s.Active.AppliedAt = previousActive.AppliedAt
+			}
+		}
+	}
 	s.Pending = nil
 	if e = m.save(s); e != nil {
 		s.Active = previousActive
@@ -380,7 +417,11 @@ func (m *Manager) execute(ctx context.Context, s *state) error {
 	if actual != tx.Before.NFT {
 		return fmt.Errorf("nftables changed before apply")
 	}
-	if _, e := m.Runner.Run(ctx, "nft", []string{"-f", "-"}, replaceNFT(tx.Before.NFT, p.NFTables)); e != nil {
+	script := replaceNFT(tx.Before.NFT, p.NFTables)
+	if tx.IPv6Only {
+		script = ipv6SetUpdate(p.IPv6Prefixes)
+	}
+	if _, e := m.Runner.Run(ctx, "nft", []string{"-f", "-"}, script); e != nil {
 		return e
 	}
 	nft, e := m.nft(ctx)
@@ -391,6 +432,9 @@ func (m *Manager) execute(ctx context.Context, s *state) error {
 	tx.NFTRecorded = true
 	if e = m.save(*s); e != nil {
 		return e
+	}
+	if tx.IPv6Only {
+		return nil
 	}
 	if e = m.applyDNSRouting(ctx, s); e != nil {
 		return e
@@ -447,6 +491,9 @@ func (m *Manager) restorePending(ctx context.Context, s *state) error {
 	}
 	if live.DHCP != tx.Before.DHCP && live.DHCP != tx.Target.DHCPConfig {
 		return fmt.Errorf("DHCP 配置被外部修改，拒绝覆盖")
+	}
+	if tx.IPv6Only {
+		return m.restoreIPv6Pending(ctx, s, live)
 	}
 	if e = m.restoreDNSRouting(ctx, tx, live.DNSRouting); e != nil {
 		return e
@@ -596,6 +643,17 @@ func (m *Manager) status(ctx context.Context, s state) (Status, error) {
 		}
 	}
 	out.Drift = !equalSnapshot(current, s.Active.Current)
+	if s.Active.Plan.Config.AutoIPv6() {
+		out.IPv6 = &IPv6Status{Prefixes: append([]string{}, s.Active.Plan.IPv6Prefixes...), Generation: s.Active.IPv6Generation, UpdatedAt: s.Active.IPv6UpdatedAt, Error: m.ipv6Error}
+		if s.Pending != nil && out.IPv6.Error == "" {
+			out.IPv6.Error = "IPv6 更新事务未完成，请先恢复网关；若提示指纹未记录或资源漂移，须由管理员核对，不能强制覆盖"
+		}
+		if out.IPv6.Error != "" {
+			out.Findings = append(out.Findings, Finding{"warning", "ipv6_sync", out.IPv6.Error})
+		} else if len(out.IPv6.Prefixes) == 0 {
+			out.Findings = append(out.Findings, Finding{"warning", "ipv6_no_prefix", "未发现 LAN IPv6 前缀：需要有效接口地址及 /48 至 /64 的 kernel/ra 直连路由；请核对地址就绪状态、路由类型和 root 策略。未知来源的保护仍保留。"})
+		}
+	}
 	return out, nil
 }
 
@@ -617,7 +675,7 @@ func (m *Manager) audit(ctx context.Context, c Config, applied bool, add func(st
 	if !found {
 		add("error", "lan_address", "所选 LAN 地址没有配置在 LAN 接口上")
 	}
-	if c.IPv6Mode == "proxy" && !hasConfiguredIPv6Prefixes(c, interfaces) {
+	if c.IPv6Mode == "proxy" && !c.AutoIPv6() && !hasConfiguredIPv6Prefixes(c, interfaces) {
 		add("error", "lan_ipv6_prefix", "LAN 接口没有与全部配置 IPv6 前缀对应的已就绪单播地址")
 	}
 	if e = m.checkDefaultRoute(ctx, c, add); e != nil {

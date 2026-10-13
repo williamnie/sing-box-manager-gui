@@ -281,10 +281,20 @@ func (s *Server) restoreGateway(ctx context.Context, backup gatewayBackup) error
 			return err
 		}
 	}
-	if _, err := s.gateway.Rollback(ctx); err != nil {
+	status, err := s.gateway.Rollback(ctx)
+	if err != nil {
 		return err
 	}
-	var err error
+	// 第一次可能只补偿未完成的动态更新；界面的“恢复网关”还须撤回活动保护。
+	if status.Applied && !status.Drift && !status.RecoveryRequired {
+		status, err = s.gateway.Rollback(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	if status.Applied || status.Drift || status.RecoveryRequired {
+		return fmt.Errorf("网关恢复尚未完成，保留恢复点，请核对辅助服务状态")
+	}
 	if len(backup.Config) > 0 {
 		err = s.processManager.ApplyConfig(backup.Config)
 	} else {

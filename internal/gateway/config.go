@@ -31,6 +31,7 @@ type Config struct {
 	UpstreamGateway      string     `json:"upstream_gateway"`
 	UplinkInterface      string     `json:"uplink_interface"`
 	IPv6Mode             string     `json:"ipv6_mode"`
+	IPv6LANSource        string     `json:"ipv6_lan_source,omitempty"` // 空值保持旧手动配置摘要
 	NAT                  bool       `json:"nat"`
 	ExcludeCIDRs         []string   `json:"exclude_cidrs"`
 	DNSPort              int        `json:"dns_port"`
@@ -58,6 +59,9 @@ var labelPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$`)
 var leasePattern = regexp.MustCompile(`^[1-9][0-9]{0,5}[mhd]$`)
 
 func Normalize(c Config) Config {
+	if c.IPv6LANSource == "manual" {
+		c.IPv6LANSource = ""
+	}
 	if c.AccessMode == "" {
 		c.AccessMode = "full"
 	}
@@ -84,6 +88,12 @@ func Normalize(c Config) Config {
 
 func Validate(c Config) error {
 	c = Normalize(c)
+	if c.IPv6LANSource != "" && c.IPv6LANSource != "auto" {
+		return fmt.Errorf("IPv6 前缀来源必须为 manual 或 auto")
+	}
+	if c.IPv6LANSource == "auto" && (c.AccessMode != "full" || c.IPv6Mode != "proxy") {
+		return fmt.Errorf("自动 IPv6 前缀仅适用于完整网关的 IPv6 接管")
+	}
 	if c.AccessMode != "full" && c.AccessMode != "dns" {
 		return fmt.Errorf("接入方式必须为 full 或 dns")
 	}
@@ -143,7 +153,10 @@ func Validate(c Config) error {
 	if !containsLAN {
 		return fmt.Errorf("LAN 地址不在 LAN 网段内")
 	}
-	if c.IPv6Mode == "proxy" && !hasIPv6 {
+	if c.AutoIPv6() && hasIPv6 {
+		return fmt.Errorf("自动模式请移除 LAN 网段中手填的 IPv6 前缀；IPv4 网段仍须保留")
+	}
+	if c.IPv6Mode == "proxy" && !c.AutoIPv6() && !hasIPv6 {
 		return fmt.Errorf("IPv6 代理需要显式填写实际 LAN IPv6 前缀")
 	}
 	for _, s := range c.ExcludeCIDRs {
@@ -158,6 +171,9 @@ func Validate(c Config) error {
 		p, e := netip.ParsePrefix(v)
 		if e != nil || p != p.Masked() {
 			return fmt.Errorf("绕过来源必须为规范 CIDR")
+		}
+		if c.AutoIPv6() && p.Addr().Is6() {
+			return fmt.Errorf("自动 IPv6 模式不支持固定 IPv6 绕过来源，请先停用该设备策略")
 		}
 		ok := false
 		for _, lan := range c.LANCIDRs {
@@ -213,6 +229,10 @@ func Validate(c Config) error {
 		}
 	}
 	return nil
+}
+
+func (c Config) AutoIPv6() bool {
+	return c.IPv6LANSource == "auto" && c.IPv6Mode == "proxy" && Normalize(c).AccessMode == "full"
 }
 
 func sameLAN(c Config, a, b netip.Addr) bool {

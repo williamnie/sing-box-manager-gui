@@ -132,6 +132,10 @@ func Serve(ctx context.Context, m *Manager, socket string, gid int) error {
 	if e = os.Chmod(socket, 0660); e != nil {
 		return e
 	}
+	syncCtx, stopSync := context.WithCancel(ctx)
+	syncDone := make(chan struct{})
+	go func() { defer close(syncDone); m.RunIPv6Sync(syncCtx) }()
+	defer func() { stopSync(); <-syncDone }()
 	server := &http.Server{Handler: Handler(m), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 70 * time.Second, IdleTimeout: 15 * time.Second, MaxHeaderBytes: 4096}
 	go func() {
 		<-ctx.Done()

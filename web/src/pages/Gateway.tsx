@@ -19,7 +19,9 @@ const defaultGateway: GatewayConfig = {
   dhcp: { enabled: false, range_start: '', range_end: '', lease_time: '12h', reservations: [] },
 };
 interface GatewayStatus {
-  platform: string; role: string; access_mode?: 'full' | 'dns'; enabled: boolean; helper: unknown; warnings: string[];
+  platform: string; role: string; access_mode?: 'full' | 'dns'; enabled: boolean;
+  helper?: { ipv6?: { prefixes: string[]; generation: number; updated_at: string; error?: string } };
+  warnings: string[];
   devices: { id: string; name: string; addresses: string[]; enabled: boolean; policy: DevicePolicy; outbound: string; dns: string; explanation: string }[];
 }
 
@@ -39,6 +41,27 @@ export default function Gateway() {
     const response = await gatewayApi.status();
     setStatus(response.data.data);
   }, []);
+
+  const autoIPv6Active = Boolean(status?.helper?.ipv6 && status.enabled);
+  useEffect(() => {
+    if (!autoIPv6Active) return;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        if (!document.hidden) {
+          const response = await gatewayApi.status();
+          if (active) setStatus(response.data.data);
+        }
+      } catch (cause) {
+        if (active) setError(errorMessage(cause, '无法更新网关状态'));
+      } finally {
+        if (active) timer = setTimeout(poll, 30000);
+      }
+    };
+    timer = setTimeout(poll, 30000);
+    return () => { active = false; clearTimeout(timer); };
+  }, [autoIPv6Active]);
 
   useEffect(() => {
     let active = true;
@@ -107,11 +130,15 @@ export default function Gateway() {
   const dnsPrerequisites = !dnsBypass || (gateway.static_route_confirmed && !strictGroups && !routerSourceConflict);
   const selectAccessMode = (access_mode: 'full' | 'dns') => {
     editGateway(access_mode === 'dns' ? {
-      access_mode, ipv6_mode: 'disabled', nat: false, dns_port: 53,
+      access_mode, ipv6_mode: 'disabled', ipv6_lan_source: '', nat: false, dns_port: 53,
       dhcp: { ...gateway.dhcp, enabled: false },
     } : { access_mode, capture_routed_traffic: false });
   };
   const addDevice = (address?: string) => {
+    if (gateway.ipv6_lan_source === 'auto' && address?.includes(':')) {
+      toast.error('自动前缀模式暂不支持固定 IPv6 设备策略；可用设备 IPv4 地址配置');
+      return;
+    }
     if (address && devices.some(device => device.addresses.includes(address) || device.addresses.includes(`${address}/32`))) return;
     const group = splitGroupForNewDevice(groups, crypto.randomUUID());
     edit({
@@ -154,7 +181,7 @@ export default function Gateway() {
         </div>
       ) : null}
 
-      {status?.warnings?.map((warning) => (
+      {status?.warnings?.filter((warning) => warning !== status.helper?.ipv6?.error).map((warning) => (
         <div key={warning} className="p-3.5 rounded-[3px] bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 font-mono text-xs">
           [WARNING] {warning}
         </div>
@@ -277,16 +304,32 @@ export default function Gateway() {
                 <Input label="LAN 地址" placeholder="192.168.1.2" value={gateway.lan_address} onValueChange={(value) => editGateway({ lan_address: value })} variant="bordered" classNames={{ inputWrapper: "bg-black/40 border-white/[0.1] rounded-[3px]", label: "font-mono text-xs text-zinc-400", input: "font-mono text-xs text-white" }} />
                 <Input label="上游主路由网关" placeholder="192.168.1.1" value={gateway.upstream_gateway} onValueChange={(value) => editGateway({ upstream_gateway: value })} variant="bordered" classNames={{ inputWrapper: "bg-black/40 border-white/[0.1] rounded-[3px]", label: "font-mono text-xs text-zinc-400", input: "font-mono text-xs text-white" }} />
                 <Input label="上联接口" description="单网卡旁路可与 LAN 接口相同" value={gateway.uplink_interface} onValueChange={(value) => editGateway({ uplink_interface: value })} variant="bordered" classNames={{ inputWrapper: "bg-black/40 border-white/[0.1] rounded-[3px]", label: "font-mono text-xs text-zinc-400", input: "font-mono text-xs text-white" }} />
-                <ListInput label="LAN 网段 (CIDR)" values={gateway.lan_cidrs || []} onChange={(value) => editGateway({ lan_cidrs: value })} placeholder="192.168.1.0/24" description="受管网段，每行一个" />
+                <ListInput label="LAN 网段 (CIDR)" values={gateway.lan_cidrs || []} onChange={(value) => editGateway({ lan_cidrs: value })} placeholder="192.168.1.0/24" description={gateway.ipv6_lan_source === 'auto' ? '自动模式只填写 IPv4 网段；请移除旧的 IPv6 前缀' : '受管网段，每行一个'} />
                 <ListInput label="接管排除网段" values={gateway.exclude_cidrs || []} onChange={(value) => editGateway({ exclude_cidrs: value })} description={dnsBypass ? '不能与 FakeIP 池重叠' : '例如 Docker 内部网络'} />
                 {dnsBypass ? (
                   <Input label="FakeIP IPv4 地址池" value={gateway.fakeip_range || defaultGateway.fakeip_range} placeholder="198.18.0.0/15" description="须与主路由静态路由一致" onValueChange={(fakeip_range) => editGateway({ fakeip_range })} variant="bordered" classNames={{ inputWrapper: "bg-black/40 border-white/[0.1] rounded-[3px]", label: "font-mono text-xs text-zinc-400", input: "font-mono text-xs text-white" }} />
                 ) : (
-                  <AppSelect label="IPv6 策略" selectedKeys={[gateway.ipv6_mode]} onChange={(event) => editGateway({ ipv6_mode: event.target.value as GatewayConfig['ipv6_mode'] })}>
+                  <AppSelect label="IPv6 策略" selectedKeys={[gateway.ipv6_mode]} onChange={(event) => editGateway({ ipv6_mode: event.target.value as GatewayConfig['ipv6_mode'], ...(event.target.value === 'disabled' ? { ipv6_lan_source: '' as const } : {}) })}>
                     <SelectItem key="disabled">禁用网关转发 IPv6</SelectItem>
                     <SelectItem key="proxy">接管 IPv6</SelectItem>
                   </AppSelect>
                 )}
+                {!dnsBypass && gateway.ipv6_mode === 'proxy' ? (
+                  <AppSelect label="IPv6 前缀来源" isDisabled={status?.enabled} selectedKeys={[gateway.ipv6_lan_source || 'manual']} onChange={(event) => editGateway({ ipv6_lan_source: event.target.value as 'manual' | 'auto' })}>
+                    <SelectItem key="manual">手动填写 LAN IPv6 前缀</SelectItem>
+                    <SelectItem key="auto">自动跟随 LAN 前缀</SelectItem>
+                  </AppSelect>
+                ) : null}
+                {!dnsBypass && gateway.ipv6_lan_source === 'auto' ? (
+                  <p className="md:col-span-2 text-xs leading-relaxed text-zinc-400">由已授权的 LAN 接口自动识别前缀，约每 30 秒更新。管理员须先授权该接口；设备 IPv6 默认路由必须经过本网关。首次切换前先恢复网关、移除手填 IPv6 网段并停用固定 IPv6 设备策略。前缀不可用时保留保护，局域网 IPv6 转发可能暂时受限。</p>
+                ) : null}
+                {status?.helper?.ipv6 ? (
+                  <div className="md:col-span-2 rounded border border-white/10 p-3 text-xs space-y-2" aria-label="自动 IPv6 运行状态">
+                    <p>当前 LAN IPv6 前缀：{status.helper.ipv6.prefixes.length ? status.helper.ipv6.prefixes.join('、') : '未发现可用前缀，保护仍保留'}</p>
+                    <p className="text-zinc-500">最近前缀变更：{status.helper.ipv6.updated_at ? new Date(status.helper.ipv6.updated_at).toLocaleString() : '暂无'} · 版本 {status.helper.ipv6.generation}</p>
+                    {status.helper.ipv6.error ? <p role="alert" className="text-amber-500">{status.helper.ipv6.error}</p> : null}
+                  </div>
+                ) : null}
                 {!dnsBypass && (
                   <div className="p-3 rounded-[3px] bg-black/40 border border-white/[0.06] flex items-center justify-between">
                     <div>

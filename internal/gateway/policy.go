@@ -11,6 +11,10 @@ import (
 
 // Policy 来自 root 所有且非组/其他用户可写的文件，不能经管理 API 修改。
 type Policy struct {
+	DynamicIPv6Interfaces   []string `json:"dynamic_ipv6_interfaces,omitempty"`
+	DynamicIPv6Within       []string `json:"dynamic_ipv6_within,omitempty"`
+	DynamicIPv6AllowULA     bool     `json:"dynamic_ipv6_allow_ula,omitempty"`
+	DynamicIPv6Exclusions   []string `json:"dynamic_ipv6_exclusions,omitempty"`
 	ManagedDataDir          string   `json:"managed_data_dir,omitempty"`
 	AllowDNSBypass          bool     `json:"allow_dns_bypass"`
 	AllowRoutedTraffic      bool     `json:"allow_routed_traffic"`
@@ -84,6 +88,28 @@ func (p Policy) authorize(role string, c Config) error {
 	}
 	if !includes(p.AllowedLANInterfaces, c.LANInterface) || !includes(p.AllowedUplinkInterfaces, c.UplinkInterface) {
 		return fmt.Errorf("接口不在 root 策略允许范围")
+	}
+	if c.AutoIPv6() && !includes(p.DynamicIPv6Interfaces, c.LANInterface) {
+		return fmt.Errorf("root 策略尚未在 dynamic_ipv6_interfaces 中授权此 LAN 接口的自动 IPv6 保护")
+	}
+	if c.AutoIPv6() {
+		for _, value := range c.ExcludeCIDRs {
+			cidr, e := netip.ParsePrefix(value)
+			if e != nil {
+				return e
+			}
+			if !cidr.Addr().Is6() {
+				continue
+			}
+			allowed := false
+			for _, scope := range p.DynamicIPv6Exclusions {
+				a, e := netip.ParsePrefix(scope)
+				allowed = allowed || e == nil && a.Addr().Is6() && a.Bits() > 0 && a == a.Masked() && a.Bits() <= cidr.Bits() && a.Contains(cidr.Addr())
+			}
+			if !allowed {
+				return fmt.Errorf("自动 IPv6 的排除网段须由 root 在 dynamic_ipv6_exclusions 中显式授权")
+			}
+		}
 	}
 	for _, s := range c.LANCIDRs {
 		cidr, e := netip.ParsePrefix(s)

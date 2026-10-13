@@ -15,6 +15,7 @@ import (
 type fakeRunner struct {
 	addresses     string
 	defaultRoutes string
+	ipv6Routes    string
 	ipRules       string
 	dnsRoutes     string
 	dnsRules      string
@@ -68,6 +69,22 @@ func (r *fakeRunner) Run(_ context.Context, name string, args []string, in strin
 			return "", nil
 		}
 		if args[0] == "-f" {
+			if strings.HasPrefix(in, "flush set inet "+TableName+" ipv6_lan\n") {
+				start := strings.Index(r.nft, ipv6SetDeclaration)
+				if start < 0 {
+					return "", errors.New("missing IPv6 set")
+				}
+				end := start + len(ipv6SetDeclaration)
+				if strings.HasPrefix(r.nft[end:], "  elements = ") {
+					end += strings.Index(r.nft[end:], "\n") + 1
+				}
+				elements := ""
+				if parts := strings.SplitN(in, " ipv6_lan { ", 2); len(parts) == 2 {
+					elements = "  elements = { " + strings.TrimSuffix(parts[1], "\n") + "\n"
+				}
+				r.nft = r.nft[:start+len(ipv6SetDeclaration)] + elements + r.nft[end:]
+				return "", nil
+			}
 			r.nft = strings.TrimPrefix(in, "delete table inet "+TableName+"\n")
 			return "", nil
 		}
@@ -93,6 +110,12 @@ func (r *fakeRunner) Run(_ context.Context, name string, args []string, in strin
 	case "ss":
 		return r.listeners, nil
 	case "ip":
+		if strings.Join(args, " ") == "-j -6 route show table main dev eth0" {
+			if r.ipv6Routes == "" {
+				return "[]", nil
+			}
+			return r.ipv6Routes, nil
+		}
 		if len(args) > 0 && args[0] == "-N" {
 			args = args[1:]
 		}

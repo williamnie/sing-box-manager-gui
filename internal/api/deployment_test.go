@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/xiaobei/singbox-manager/internal/gateway"
@@ -40,6 +41,9 @@ func (p *fakeProcess) GetPID() int            { return 0 }
 func (p *fakeProcess) SetConfigPath(s string) { p.path = s }
 
 type fakeGateway struct {
+	restoreUpdateFirst        bool
+	statusCalls               atomic.Int32
+	ipv6                      *gateway.IPv6Status
 	digest                    string
 	failAfterApply            bool
 	applied                   bool
@@ -69,13 +73,38 @@ func (g *fakeGateway) Apply(_ context.Context, _ string, c gateway.Config) (gate
 	return gateway.Status{Applied: true}, nil
 }
 func (g *fakeGateway) Status(context.Context) (gateway.Status, error) {
-	return gateway.Status{Applied: g.applied, ConfigDigest: g.digest}, nil
+	g.statusCalls.Add(1)
+	return gateway.Status{Applied: g.applied, ConfigDigest: g.digest, IPv6: g.ipv6}, nil
 }
 func (g *fakeGateway) Rollback(ctx context.Context) (gateway.Status, error) {
 	g.rollbackCount++
 	g.rollbackCanceled = ctx.Err() != nil
+	if g.restoreUpdateFirst {
+		g.restoreUpdateFirst = false
+		return gateway.Status{Applied: true}, nil
+	}
 	g.applied = false
 	return gateway.Status{}, nil
+}
+
+func TestGatewayRestoreFinishesPendingIPv6UpdateAndActiveGateway(t *testing.T) {
+	s, _, g := prepareGateway(t)
+	cookie := setup(t, s)
+	settings := s.store.GetSettings()
+	settings.Gateway.IPv6Mode, settings.Gateway.IPv6LANSource = "proxy", "auto"
+	if e := s.store.UpdateSettings(settings); e != nil {
+		t.Fatal(e)
+	}
+	if w := request(s, "POST", "/api/gateway/apply", nil, cookie, ""); w.Code != 200 {
+		t.Fatal(w.Body.String())
+	}
+	g.restoreUpdateFirst = true
+	if w := request(s, "POST", "/api/gateway/rollback", nil, cookie, ""); w.Code != 200 {
+		t.Fatal(w.Body.String())
+	}
+	if g.applied || g.rollbackCount != 2 || s.store.GetSettings().Gateway.Enabled {
+		t.Fatal("UI claimed rollback complete while helper remained active")
+	}
 }
 func prepareGateway(t *testing.T) (*Server, *fakeProcess, *fakeGateway) {
 	s := testServer(t)

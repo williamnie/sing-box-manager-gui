@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/xiaobei/singbox-manager/internal/gateway"
 	"github.com/xiaobei/singbox-manager/internal/logger"
 	"github.com/xiaobei/singbox-manager/internal/runtimecontrol"
 	"github.com/xiaobei/singbox-manager/internal/storage"
@@ -30,12 +31,16 @@ type observedGatewayClient struct {
 
 // 只保存有界的来源观察，不写入设备策略；未登记的客户端仍然正常分流。
 type gatewayClientTracker struct {
-	mu       sync.Mutex
-	cursor   string
-	lastRead time.Time
-	clients  map[string]observedGatewayClient
-	cancel   context.CancelFunc
-	done     chan struct{}
+	ipv6Mu        sync.Mutex
+	ipv6CheckedAt time.Time
+	ipv6Digest    string
+	ipv6Status    gateway.Status
+	mu            sync.Mutex
+	cursor        string
+	lastRead      time.Time
+	clients       map[string]observedGatewayClient
+	cancel        context.CancelFunc
+	done          chan struct{}
 }
 
 func (s *Server) startGatewayClientObservation() {
@@ -58,6 +63,7 @@ func (s *Server) startGatewayClientObservation() {
 			// 采集错误在查询页展示，不阻断 DNS 或反复写入正在被采集的日志。
 			_ = s.dnsQueries.Scan(filepath.Join(s.store.GetDataDir(), "logs", "singbox.log"), settings.DNSQueryLogEnabled, time.Now())
 			if s.platform == "linux" && settings.DeploymentRole == "gateway" {
+				settings = s.gatewayClientSettings(ctx, settings)
 				t.scan(filepath.Join(s.store.GetDataDir(), "logs", "singbox.log"), settings, time.Now())
 			}
 			select {
@@ -220,6 +226,7 @@ func (s *Server) gatewayClients(c *gin.Context) {
 		c.JSON(200, gin.H{"data": gin.H{"clients": []observedGatewayClient{}, "runtime_available": false, "logs_available": false}})
 		return
 	}
+	settings = s.gatewayClientSettings(c.Request.Context(), settings)
 	now := time.Now()
 	logsAvailable := s.observedClients.scan(filepath.Join(s.store.GetDataDir(), "logs", "singbox.log"), settings, now)
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Second)
@@ -231,4 +238,40 @@ func (s *Server) gatewayClients(c *gin.Context) {
 		return err
 	})
 	c.JSON(200, gin.H{"data": gin.H{"clients": s.observedClients.snapshot(settings, connections, now), "runtime_available": err == nil, "logs_available": logsAvailable}})
+}
+
+// 运行时前缀只用于观察，不写回设置，不转换为设备授权或核心分流规则。
+func (s *Server) gatewayClientSettings(ctx context.Context, settings *storage.Settings) *storage.Settings {
+	if !settings.Gateway.AutoIPv6() || !settings.Gateway.Enabled {
+		return settings
+	}
+	plan, err := gateway.Preview("gateway", settings.Gateway)
+	if err != nil {
+		return settings
+	}
+	status := s.observedIPv6Status(ctx, plan.ConfigDigest)
+	if !status.Applied || status.Drift || status.RecoveryRequired || status.IPv6 == nil || plan.ConfigDigest != status.ConfigDigest {
+		return settings
+	}
+	observed := *settings
+	observed.Gateway.LANCIDRs = append(append([]string{}, settings.Gateway.LANCIDRs...), status.IPv6.Prefixes...)
+	return &observed
+}
+
+// 观察列表容许最多 30 秒延迟；网络授权始终由 helper 实时判断，不能使用这个缓存。
+func (s *Server) observedIPv6Status(ctx context.Context, digest string) gateway.Status {
+	t := &s.observedClients
+	t.ipv6Mu.Lock()
+	defer t.ipv6Mu.Unlock()
+	if t.ipv6Digest == digest && time.Since(t.ipv6CheckedAt) < 30*time.Second {
+		return t.ipv6Status
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	status, err := s.gateway.Status(ctx)
+	if err != nil {
+		status = gateway.Status{}
+	}
+	t.ipv6CheckedAt, t.ipv6Digest, t.ipv6Status = time.Now(), digest, status
+	return status
 }
