@@ -69,7 +69,7 @@ sudo ./scripts/install-gateway.sh /tmp/sbm /tmp/sbm-gateway --install
 sudo systemctl enable --now sbm-gateway.service singbox-manager.service
 ```
 
-管理器默认监听 `127.0.0.1:9090`，先通过 SSH 隧道登录。需要 LAN 管理时使用管理器的认证、TLS 和访问范围设置，不能通过修改安装脚本跳过鉴权。安装器的管理器账户拥有运行 TUN 所需的网络能力；helper 负责 sysctl/nftables 的结构化操作。helper 的 `CAP_SYS_PTRACE` 仅用于跨账户读取受管进程的 `/proc` 身份；协议没有 ptrace/debug 操作。dnsmasq 按官方方式由 root 初始化后降权到专用账户，独立配置不加载系统 dnsmasq 配置。[dnsmasq 手册](https://thekelleys.org.uk/dnsmasq/docs/dnsmasq-man.html)
+管理器默认监听 `127.0.0.1:9090`，先通过 SSH 隧道登录。需要 LAN 管理时配置监听 IP、TLS 和访问范围；可信网络可按[部署说明](deployment-modes.md#首次登录及监听)显式使用 `-allow-insecure-http`，登录鉴权仍然生效，不能通过修改安装脚本跳过鉴权。安装器的管理器账户拥有运行 TUN 所需的网络能力；helper 负责 sysctl/nftables 的结构化操作。helper 的 `CAP_SYS_PTRACE` 仅用于跨账户读取受管进程的 `/proc` 身份；协议没有 ptrace/debug 操作。dnsmasq 按官方方式由 root 初始化后降权到专用账户，独立配置不加载系统 dnsmasq 配置。[dnsmasq 手册](https://thekelleys.org.uk/dnsmasq/docs/dnsmasq-man.html)
 
 ## 日常检查、应用与恢复
 

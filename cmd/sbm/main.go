@@ -26,15 +26,17 @@ var (
 	dataDir                                   string
 	port                                      int
 	listenHost, tlsCert, tlsKey, allowNetwork string
+	allowInsecureHTTP                         bool
 )
 
 func init() {
 	homeDir, _ := os.UserHomeDir()
 	flag.StringVar(&dataDir, "data", filepath.Join(homeDir, ".singbox-manager"), "数据目录")
 	flag.IntVar(&port, "port", 9090, "Web 服务端口")
-	flag.StringVar(&listenHost, "listen", "127.0.0.1", "Web 监听 IP（非回环地址必须配置 TLS）")
+	flag.StringVar(&listenHost, "listen", "127.0.0.1", "Web 监听 IP（非回环地址默认要求 TLS）")
 	flag.StringVar(&tlsCert, "tls-cert", "", "管理服务 TLS 证书路径")
 	flag.StringVar(&tlsKey, "tls-key", "", "管理服务 TLS 私钥路径")
+	flag.BoolVar(&allowInsecureHTTP, "allow-insecure-http", false, "允许非回环地址使用明文 HTTP（仅用于可信网络；配置证书时仍使用 HTTPS）")
 	flag.StringVar(&allowNetwork, "allow-network", "", "允许访问管理服务的来源 CIDR，逗号分隔；空值不附加来源限制")
 }
 
@@ -52,7 +54,7 @@ func main() {
 	}
 }
 
-func validateListen(host string, port int, cert, key, networks string) (string, []*net.IPNet, error) {
+func validateListen(host string, port int, cert, key, networks string, allowHTTP bool) (string, []*net.IPNet, error) {
 	ip := net.ParseIP(host)
 	if ip == nil {
 		return "", nil, fmt.Errorf("-listen 必须是明确的 IPv4 或 IPv6 地址")
@@ -63,8 +65,8 @@ func validateListen(host string, port int, cert, key, networks string) (string, 
 	if (cert == "") != (key == "") {
 		return "", nil, fmt.Errorf("-tls-cert 和 -tls-key 必须同时配置")
 	}
-	if !ip.IsLoopback() && cert == "" {
-		return "", nil, fmt.Errorf("非本机监听必须配置 -tls-cert 和 -tls-key")
+	if !ip.IsLoopback() && cert == "" && !allowHTTP {
+		return "", nil, fmt.Errorf("非本机监听必须配置 -tls-cert 和 -tls-key；可信网络可显式使用 -allow-insecure-http 允许明文 HTTP")
 	}
 	var allowed []*net.IPNet
 	if networks != "" {
@@ -80,7 +82,7 @@ func validateListen(host string, port int, cert, key, networks string) (string, 
 }
 
 func run() error {
-	addr, allowed, err := validateListen(listenHost, port, tlsCert, tlsKey, allowNetwork)
+	addr, allowed, err := validateListen(listenHost, port, tlsCert, tlsKey, allowNetwork, allowInsecureHTTP)
 	if err != nil {
 		return err
 	}
@@ -141,6 +143,8 @@ func run() error {
 	scheme := "http"
 	if tlsCert != "" {
 		scheme = "https"
+	} else if !net.ParseIP(listenHost).IsLoopback() {
+		logger.Printf("警告：已启用 -allow-insecure-http，管理密码、会话和配置通过明文 HTTP 传输，请仅在可信网络使用")
 	}
 	logger.Printf("管理服务地址: %s://%s", scheme, addr)
 	serveErrors := make(chan error, 1)

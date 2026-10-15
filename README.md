@@ -76,7 +76,7 @@ A web-based management panel for [sing-box](https://github.com/SagerNet/sing-box
 
 - **Login and Access Control**
   - First-run setup token, password login, session authentication, and login rate limiting
-  - Listen on `127.0.0.1` by default; non-loopback management access requires HTTPS and supports source CIDR restrictions
+  - Listen on `127.0.0.1` by default; non-loopback management access requires HTTPS unless explicitly allowed with `-allow-insecure-http`, and supports source CIDR restrictions
   - Redact sensitive values in configuration previews and logs
 
 - **Service Control**
@@ -240,12 +240,20 @@ ssh -L 19090:127.0.0.1:9090 user@gateway-host
 |--------|---------|-------------|
 | `-data` | `~/.singbox-manager` | Data directory path |
 | `-port` | `9090` | Web server port |
-| `-listen` | `127.0.0.1` | Management listening IP; non-loopback addresses require TLS |
+| `-listen` | `127.0.0.1` | Management listening IP; non-loopback addresses require TLS by default |
 | `-tls-cert` | Empty | Management HTTPS certificate path; use together with `-tls-key` |
 | `-tls-key` | Empty | Management HTTPS private key path |
+| `-allow-insecure-http` | `false` | Allow plaintext HTTP on non-loopback addresses for trusted networks; configured TLS still takes precedence |
 | `-allow-network` | Empty | Comma-separated source CIDRs; empty adds no source restriction, and loopback remains allowed |
 
-For direct LAN management, explicitly configure a listening IP, TLS certificate / key, and source CIDRs as described in the [deployment guide](docs/deployment-modes.md). Each instance must use a separate data directory and non-conflicting ports.
+For direct LAN management, explicitly configure a listening IP, TLS certificate / key, and source CIDRs as described in the [deployment guide](docs/deployment-modes.md). To use HTTP on a trusted LAN, omit the TLS certificate / key and explicitly enable `-allow-insecure-http`:
+
+```bash
+./sbm -listen 192.168.50.142 -port 9090 -allow-insecure-http -allow-network 192.168.50.0/24
+# Open http://192.168.50.142:9090 (replace the IP and subnet with your own)
+```
+
+HTTP leaves passwords, sessions, and configuration unencrypted in transit; login and source restrictions remain enforced. Keep the existing `-data` argument when changing an installed service. Each instance must use a separate data directory and non-conflicting ports.
 
 ### Configuration
 
@@ -356,7 +364,7 @@ MIT License
 
 - **登录与访问控制**
   - 首次设置令牌、密码登录、会话鉴权与登录失败限速
-  - 默认仅监听 `127.0.0.1`；非回环管理访问必须启用 HTTPS，可限制来源 CIDR
+  - 默认仅监听 `127.0.0.1`；非回环管理访问默认要求 HTTPS，可显式使用 `-allow-insecure-http` 允许 HTTP，并可限制来源 CIDR
   - 配置预览与日志中的敏感信息脱敏
 
 - **服务控制**
@@ -520,12 +528,20 @@ ssh -L 19090:127.0.0.1:9090 user@gateway-host
 |------|--------|------|
 | `-data` | `~/.singbox-manager` | 数据目录路径 |
 | `-port` | `9090` | Web 服务端口 |
-| `-listen` | `127.0.0.1` | 管理监听 IP，非回环地址必须配置 TLS |
+| `-listen` | `127.0.0.1` | 管理监听 IP，非回环地址默认要求 TLS |
 | `-tls-cert` | 空 | 管理服务 HTTPS 证书路径，与 `-tls-key` 同时配置 |
 | `-tls-key` | 空 | 管理服务 HTTPS 私钥路径 |
+| `-allow-insecure-http` | `false` | 允许可信网络的非回环地址使用明文 HTTP；配置证书时仍优先使用 HTTPS |
 | `-allow-network` | 空 | 逗号分隔的来源 CIDR；空值不附加来源限制，回环来源始终允许 |
 
-需要直接从局域网访问时，按[部署说明](docs/deployment-modes.md)显式配置监听 IP、TLS 证书 / 私钥和来源范围。多实例必须使用独立数据目录和互不冲突的端口。
+需要直接从局域网访问时，按[部署说明](docs/deployment-modes.md)显式配置监听 IP、TLS 证书 / 私钥和来源范围。在可信局域网使用 HTTP 时，不配置 TLS 证书 / 私钥，显式启用 `-allow-insecure-http`：
+
+```bash
+./sbm -listen 192.168.50.142 -port 9090 -allow-insecure-http -allow-network 192.168.50.0/24
+# 打开 http://192.168.50.142:9090，IP 和网段替换为自己的配置
+```
+
+HTTP 不加密传输中的密码、会话和配置；登录鉴权和来源限制仍然生效。修改已安装服务时保留原有 `-data` 参数。多实例必须使用独立数据目录和互不冲突的端口。
 
 ### 配置
 

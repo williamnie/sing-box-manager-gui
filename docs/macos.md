@@ -18,7 +18,7 @@ Mac mini 的硬件可以承载两种部署：原生 macOS 运行单机代理，�
 2. 保持部署角色为单机 `desktop`。默认启用 TUN；仅需 HTTP/SOCKS 时，先关闭 TUN，再应用配置或启动内核。开启“允许局域网访问”，设置空闲 mixed 端口（默认 `2080`）。
 3. 安装对应架构的 sing-box 内核，添加订阅或节点，检查并应用配置。客户端将 HTTP、HTTPS 或 SOCKS5 代理指向 Mac mini 的 LAN 地址和 mixed 端口。应用是否遵循 macOS 系统代理取决于应用本身；Telegram 等应用可配置自己的 SOCKS5 代理。
 4. macOS 防火墙须允许受信 LAN 客户端连接 mixed 端口。该入口监听所有 IPv4 接口，当前不提供代理入口认证；不要通过公网端口转发暴露它。
-5. Web 管理接口和内核控制 API 仍独立绑定回环地址；允许 LAN 代理不会同时开放面板。远程管理使用 SSH 转发，或按部署说明显式配置 HTTPS 和来源范围。
+5. Web 管理接口默认绑定回环地址，内核控制 API 固定绑定回环地址；允许 LAN 代理不会同时开放面板。远程管理使用 SSH 转发，或按[部署说明](deployment-modes.md#首次登录及监听)显式配置监听 IP、HTTPS 和来源范围；可信网络也可显式使用 `-allow-insecure-http` 开启管理面板的 HTTP 访问。
 
 关闭 TUN 后，管理器不会替你修改 macOS 系统代理或默认路由。其他设备只修改 DNS 不会自动使用这个 mixed 入口。
 

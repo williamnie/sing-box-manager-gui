@@ -26,7 +26,7 @@ ssh -L 19090:127.0.0.1:9090 user@gateway-host
 # 浏览器打开 http://127.0.0.1:19090
 ```
 
-需要直接监听 LAN 时，显式使用内置 HTTPS 和来源范围：
+需要直接监听 LAN 时，默认使用内置 HTTPS，可配置来源范围：
 
 ```sh
 sbm -data /path/to/instance -listen 192.0.2.2 -port 9090 \
@@ -34,7 +34,27 @@ sbm -data /path/to/instance -listen 192.0.2.2 -port 9090 \
   -allow-network 192.0.2.0/24
 ```
 
-证书应对管理 IP 有效。Host 只接受 IP 或 localhost；不接受任意域名 Host，不信任 `X-Forwarded-*`。因此不要以未配置的反代 TLS 终止替代内置 HTTPS。回环来源始终允许进入认证流程，其他来源按可选 CIDR 列表限制。非回环明文监听在启动时被拒绝。不要把会话、订阅 URL 或节点密钥放入浏览器 URL。
+证书应对管理 IP 有效。在可信局域网需要使用 HTTP 时，不配置 `-tls-cert` / `-tls-key`，并显式开启 `-allow-insecure-http`：
+
+```sh
+sbm -data /path/to/instance -listen 192.168.50.142 -port 9090 \
+  -allow-insecure-http -allow-network 192.168.50.0/24
+# 浏览器打开 http://192.168.50.142:9090
+```
+
+IP、端口、网段和数据目录应替换为实际配置；`-listen 0.0.0.0` 可监听所有 IPv4 网卡，浏览器仍使用主机的 LAN IP。开关默认关闭，仅放行非回环明文监听，不关闭登录鉴权、来源 CIDR 和跨站请求检查。首次设置密码仍需通过本机或 SSH 隧道完成，之后可从 LAN 登录。HTTP 不加密传输中的密码、会话和配置，启用后启动日志会提示。若同时配置证书和私钥，仍使用 HTTPS；证书参数缺失或证书加载失败时仍拒绝启动，不会回退到 HTTP。
+
+使用安装脚本创建的 Debian / systemd 服务时，可通过 `sudo systemctl edit singbox-manager` 覆盖启动参数，保留原有数据目录和其他需要的参数。例如：
+
+```ini
+[Service]
+ExecStart=
+ExecStart=/usr/local/libexec/singbox-manager/sbm -data /var/lib/singbox-manager -listen 192.168.50.142 -port 9090 -allow-insecure-http -allow-network 192.168.50.0/24
+```
+
+保存后执行 `sudo systemctl daemon-reload` 和 `sudo systemctl restart singbox-manager`。已有 HTTPS 部署无需调整。
+
+Host 只接受 IP 或 localhost；不接受任意域名 Host，不信任 `X-Forwarded-*`。因此不要以未配置的反代 TLS 终止替代内置 HTTPS。回环来源始终允许进入认证流程，其他来源按可选 CIDR 列表限制。未开启上述开关时，非回环明文监听仍在启动时被拒绝。不要把会话、订阅 URL 或节点密钥放入浏览器 URL。
 
 ## 策略与 DNS
 
