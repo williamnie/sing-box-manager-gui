@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -30,6 +31,7 @@ func (s *Server) setupDeploymentRoutes(r *gin.RouterGroup) {
 	r.POST("/config/check", s.checkConfig)
 	r.GET("/config/diff", s.configDiff)
 	r.GET("/config/versions", s.configVersions)
+	r.GET("/config/download", s.downloadConfig)
 	r.POST("/config/restore", s.restorePreviousConfig)
 	r.GET("/rules/overview", s.rulesOverview)
 	r.POST("/proxy-plan/preview", s.previewProxyPlan)
@@ -458,12 +460,33 @@ func (s *Server) configDiff(c *gin.Context) {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-	current, _ := os.ReadFile(s.resolvePath(s.store.GetSettings().ConfigPath))
-	c.JSON(http.StatusOK, gin.H{"data": gin.H{"current": redactJSON(string(current)), "candidate": redactJSON(candidate), "changed": string(current) != candidate}})
+	current, readErr := os.ReadFile(s.resolvePath(s.store.GetSettings().ConfigPath))
+	if readErr != nil && !os.IsNotExist(readErr) {
+		c.JSON(500, gin.H{"error": "读取当前配置失败"})
+		return
+	}
+	changed := string(current) != candidate
+	currentText := redactJSON(string(current))
+	candidateText := currentText
+	if changed {
+		candidateText = redactJSON(candidate)
+	}
+	data := gin.H{"current": currentText, "candidate": candidateText, "changed": changed}
+	// 保留默认完整响应供既有客户端使用；审阅页显式选择有界预览。
+	if c.Query("view") == "preview" {
+		data["current"], data["current_info"] = configPreview(currentText, current)
+		data["candidate"], data["candidate_info"] = configPreview(candidateText, []byte(candidate))
+	}
+	c.JSON(http.StatusOK, gin.H{"data": data})
 }
 func redactJSON(value string) string {
 	var data any
-	if json.Unmarshal([]byte(value), &data) != nil {
+	if !json.Valid([]byte(value)) {
+		return ""
+	}
+	decoder := json.NewDecoder(strings.NewReader(value))
+	decoder.UseNumber()
+	if decoder.Decode(&data) != nil {
 		return ""
 	}
 	var walk func(any)

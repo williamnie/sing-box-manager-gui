@@ -5,9 +5,11 @@ import { configApi, errorMessage, gatewayApi } from '../api';
 import { useStore } from '../store';
 import ConfirmModal from '../components/ConfirmModal';
 import { toast } from '../components/Toast';
+import ConfigPreview from '../components/ConfigPreview';
+import type { ConfigPreviewInfo } from '../components/ConfigPreview';
 
-interface ConfigVersion {name: string; hash: string; updated_at: string; bytes: number; preview: string}
-interface ConfigDiff { current: string; candidate: string; changed: boolean }
+interface ConfigVersion {name: string; hash: string; updated_at: string; bytes: number; preview: string; preview_info?: ConfigPreviewInfo}
+interface ConfigDiff { current: string; candidate: string; changed: boolean; current_info?: ConfigPreviewInfo; candidate_info?: ConfigPreviewInfo }
 
 export default function Configuration() {
   const [versions, setVersions] = useState<ConfigVersion[]>([]);
@@ -23,7 +25,7 @@ export default function Configuration() {
   const refreshStatus = useStore((state) => state.fetchServiceStatus);
 
   const refresh = useCallback(async () => {
-    setBusy('preview'); setError(''); setChecked(false);
+    setBusy('preview'); setError(''); setChecked(false); setCheckResult(null);
     try {
       const [response, deployment, history] = await Promise.all([configApi.diff(), gatewayApi.status(), configApi.versions()]);
       setVersions(history.data.data);
@@ -89,7 +91,7 @@ export default function Configuration() {
       </div>
 
       <p className="text-xs font-mono text-zinc-500">
-        比较已加载应用的原生 JSON 配置与根据当前设置实时编译的候选配置。敏感凭据已在服务端脱敏。
+        比较已加载应用的原生 JSON 配置与根据当前设置实时编译的候选配置。敏感凭据已在服务端脱敏；大配置仅展示开头片段，可下载完整脱敏内容供审阅。
       </p>
 
       {error ? (
@@ -143,10 +145,10 @@ export default function Configuration() {
 
           <div className="grid xl:grid-cols-2 gap-4">
             {([
-              { title: 'RUNNING // 当前已生效配置', content: diff.current, badge: 'ACTIVE' },
-              { title: 'CANDIDATE // 编译后的候选草案', content: diff.candidate, badge: 'CANDIDATE' },
+              { title: 'RUNNING // 当前已生效配置', content: diff.current, badge: 'ACTIVE', source: 'current' as const, info: diff.current_info },
+              { title: 'CANDIDATE // 编译后的候选草案', content: diff.candidate, badge: 'CANDIDATE', source: 'candidate' as const, info: diff.candidate_info },
             ]).map((item) => (
-              <div key={item.title} className="rounded-[4px] border border-white/[0.08] bg-[#07080b] overflow-hidden shadow-sm">
+              <div key={item.title} className="min-w-0 rounded-[4px] border border-white/[0.08] bg-[#07080b] overflow-hidden shadow-sm">
                 <div className="h-9 px-4 border-b border-white/[0.08] bg-[#0e1017] flex items-center justify-between text-xs">
                   <span className="text-zinc-200 font-semibold">{item.title}</span>
                   <span className="text-[10px] px-1.5 py-0.5 rounded-[2px] bg-white/[0.05] border border-white/[0.08] text-[#ff5722]">
@@ -154,9 +156,7 @@ export default function Configuration() {
                   </span>
                 </div>
                 <div className="p-4 bg-[#050608]">
-                  <pre className="text-[11px] font-mono leading-relaxed text-zinc-300 whitespace-pre-wrap break-all max-h-[60vh] overflow-auto selection:bg-[#ff5722]">
-                    {item.content || '// 尚无已应用配置'}
-                  </pre>
+                  <ConfigPreview content={item.content} info={item.info} source={item.source} />
                 </div>
               </div>
             ))}
@@ -223,9 +223,7 @@ export default function Configuration() {
       >
         <div className="space-y-3 font-mono text-xs">
           <p>前一版本必须通过内核语法校验；运行中的实例会重启并做健康检查，失败自动恢复。</p>
-          <pre className="max-h-60 overflow-auto text-[11px] p-3 rounded bg-black/60 border border-white/[0.06] text-zinc-400 whitespace-pre-wrap break-all">
-            {versions.find((v) => v.hash === restoreHash)?.preview}
-          </pre>
+          <ConfigPreview content={versions.find((v) => v.name === 'previous')?.preview || ''} info={versions.find((v) => v.name === 'previous')?.preview_info} source="previous" />
         </div>
       </ConfirmModal>
 

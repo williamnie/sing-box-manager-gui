@@ -105,13 +105,13 @@ export const settingsApi = {
 
 // 配置 API
 export const configApi = {
-  versions: () => api.get('/config/versions'),
+  versions: () => api.get('/config/versions', { params: { view: 'preview' } }),
   restore: (hash: string) => api.post('/config/restore', { hash }),
   generate: () => api.post('/config/generate'),
   preview: () => api.get('/config/preview'),
   apply: () => api.post('/config/apply'),
   check: () => api.post('/config/check'),
-  diff: () => api.get('/config/diff'),
+  diff: () => api.get('/config/diff', { params: { view: 'preview' } }),
 };
 
 // 服务 API

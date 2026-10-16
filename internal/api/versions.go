@@ -25,7 +25,14 @@ func (s *Server) configVersions(c *gin.Context) {
 		if e != nil {
 			continue
 		}
-		items = append(items, gin.H{"name": item.name, "hash": configHash(b), "updated_at": st.ModTime(), "bytes": len(b), "preview": redactJSON(string(b))})
+		version := gin.H{"name": item.name, "hash": configHash(b), "updated_at": st.ModTime(), "bytes": len(b)}
+		preview := redactJSON(string(b))
+		if c.Query("view") == "preview" {
+			version["preview"], version["preview_info"] = configPreview(preview, b)
+		} else {
+			version["preview"] = preview
+		}
+		items = append(items, version)
 	}
 	c.JSON(200, gin.H{"data": items})
 }
