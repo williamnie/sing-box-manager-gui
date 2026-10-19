@@ -5,6 +5,7 @@ import { Copy } from 'lucide-react';
 import { agentApi, type AgentChangeset, type AgentConnection as Connection, type AgentScope, type AgentToken, type AuditEntry } from '../api/agent';
 import { errorMessage } from '../api';
 import { toast } from '../components/Toast';
+import useVisibleInterval from '../hooks/useVisibleInterval';
 import ConfirmModal from '../components/ConfirmModal';
 import AgentConnection, { DeviceTag } from '../components/AgentConnection';
 
@@ -116,11 +117,8 @@ export default function Agent() {
     return () => { active = false; };
   }, [connectionAttempt]);
 
-  useEffect(() => {
-    void load();
-    const timer = window.setInterval(load, 10000);
-    return () => window.clearInterval(timer);
-  }, [load]);
+  useEffect(() => { void load(); }, [load]);
+  useVisibleInterval(() => { void load(); }, 10000);
 
   const createToken = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

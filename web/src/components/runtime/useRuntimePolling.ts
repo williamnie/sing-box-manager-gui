@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { errorMessage } from '../../api';
+import useDocumentHidden from '../../hooks/useDocumentHidden';
 
-export default function useRuntimePolling<T>(load: (signal?: AbortSignal) => Promise<T>, interval: number, paused = false) {
+export default function useRuntimePolling<T>(load: (signal?: AbortSignal) => Promise<T>, interval: number, pausedByCaller = false) {
+  // 后台标签页不轮询；回到前台时 effect 重新执行并立即刷新。
+  const hidden = useDocumentHidden();
+  const paused = pausedByCaller || hidden;
   const [state, setState] = useState<{ data: T | null; previous: T | null; error: string; loading: boolean }>({ data: null, previous: null, error: '', loading: true });
   const controller = useRef<AbortController | null>(null);
   const epoch = useRef(0);

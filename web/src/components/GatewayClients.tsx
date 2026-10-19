@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import { Button } from '@nextui-org/react';
 import { gatewayClientsApi } from '../api/gatewayClients';
 import useRuntimePolling from './runtime/useRuntimePolling';
@@ -6,13 +5,7 @@ import useRuntimePolling from './runtime/useRuntimePolling';
 const policies = { split: '按规则分流', direct: '直连', bypass: '绕过', strict: '严格全代理' };
 
 export default function GatewayClients({ onConfigure }: { onConfigure: (address: string) => void }) {
-  const [hidden, setHidden] = useState(() => document.hidden);
-  useEffect(() => {
-    const update = () => setHidden(document.hidden);
-    document.addEventListener('visibilitychange', update);
-    return () => document.removeEventListener('visibilitychange', update);
-  }, []);
-  const snapshot = useRuntimePolling(gatewayClientsApi.list, 5000, hidden);
+  const snapshot = useRuntimePolling(gatewayClientsApi.list, 5000);
 
   return (
     <section className="overflow-hidden rounded-[4px] border border-zinc-200 bg-white dark:border-white/10 dark:bg-[#0b0c10]">

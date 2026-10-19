@@ -5,6 +5,7 @@ import { Bot } from 'lucide-react';
 import { agentApi, type AgentChangeset } from '../api/agent';
 import { errorMessage } from '../api';
 import { toast } from './Toast';
+import useVisibleInterval from '../hooks/useVisibleInterval';
 
 // 确认窗口期间其他配置写入会被拒绝，因此在所有页面顶部提示并提供确认/回滚入口。
 export default function AgentBanner() {
@@ -32,15 +33,10 @@ export default function AgentBanner() {
     }
   }, []);
 
-  useEffect(() => {
-    void refresh();
-    const poll = window.setInterval(refresh, 5000);
-    const tick = window.setInterval(() => setNow(performance.now()), 1000);
-    return () => {
-      window.clearInterval(poll);
-      window.clearInterval(tick);
-    };
-  }, [refresh]);
+  useEffect(() => { void refresh(); }, [refresh]);
+  useVisibleInterval(() => { void refresh(); }, 5000);
+  // 只有存在待确认变更时才需要每秒更新倒计时。
+  useVisibleInterval(() => setNow(performance.now()), 1000, active !== null);
 
   if (journalError) {
     return (

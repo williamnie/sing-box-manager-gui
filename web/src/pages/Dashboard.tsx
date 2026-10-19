@@ -6,6 +6,7 @@ import { useStore } from '../store';
 import { serviceApi } from '../api';
 import { useNavigate } from 'react-router-dom';
 import { toast } from '../components/Toast';
+import useVisibleInterval from '../hooks/useVisibleInterval';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -37,14 +38,13 @@ export default function Dashboard() {
     fetchSubscriptions();
     fetchSystemInfo();
     fetchSettings();
-
-    // 每 5 秒刷新状态和系统信息
-    const interval = setInterval(() => {
-      fetchServiceStatus();
-      fetchSystemInfo();
-    }, 5000);
-    return () => clearInterval(interval);
   }, [fetchServiceStatus, fetchSettings, fetchSubscriptions, fetchSystemInfo]);
+
+  // 每 5 秒刷新状态和系统信息，页面隐藏时暂停
+  useVisibleInterval(() => {
+    fetchServiceStatus();
+    fetchSystemInfo();
+  }, 5000);
 
   const handleStart = async () => {
     try {

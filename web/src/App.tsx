@@ -2,12 +2,13 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
-import Subscriptions from './pages/Subscriptions';
-import Rules from './pages/Rules';
-import Settings from './pages/Settings';
-import Logs from './pages/Logs';
 import { ToastContainer } from './components/Toast';
 import AuthGate from './components/AuthGate';
+// 除首页外均按路由拆分，首屏只下载仪表盘所需代码。
+const Subscriptions = lazy(() => import('./pages/Subscriptions'));
+const Rules = lazy(() => import('./pages/Rules'));
+const Settings = lazy(() => import('./pages/Settings'));
+const Logs = lazy(() => import('./pages/Logs'));
 const Gateway = lazy(() => import('./pages/Gateway'));
 const ConfigurationImport = lazy(() => import('./pages/ConfigurationImport'));
 const Configuration = lazy(() => import('./pages/Configuration'));
