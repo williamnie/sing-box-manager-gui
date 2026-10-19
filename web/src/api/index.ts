@@ -171,4 +171,12 @@ export const kernelApi = {
   getProgress: () => api.get('/kernel/progress'),
 };
 
+// 管理器版本更新 API：检查只提示，安装需用户显式触发
+export const updateApi = {
+  status: () => api.get('/update/status'),
+  check: () => api.post('/update/check', {}, { timeout: 60000 }),
+  setAutoCheck: (autoCheck: boolean) => api.put('/update/settings', { auto_check: autoCheck }),
+  install: (version: string) => api.post('/update/install', { version }, { timeout: 360000 }),
+};
+
 export default api;

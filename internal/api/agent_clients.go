@@ -83,10 +83,19 @@ func (a *agentClientCache) path(name string) (string, error) {
 }
 
 func (a *agentClientCache) get(url string) (*http.Response, error) {
-	if proxy := a.proxy(); proxy != "" {
+	return getRelease(a.client, a.proxy(), url)
+}
+
+func (a *agentClientCache) fetch(name, target string) error {
+	return fetchReleaseAsset(a.get, a.release+"/v"+a.version+"/", name, target, 0700)
+}
+
+// getRelease 通过可选的 GitHub 代理下载发布文件，非 200 视为失败。
+func getRelease(client *http.Client, proxy, url string) (*http.Response, error) {
+	if proxy != "" {
 		url = proxy + url
 	}
-	response, err := a.client.Get(url)
+	response, err := client.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("下载失败")
 	}
@@ -97,9 +106,10 @@ func (a *agentClientCache) get(url string) (*http.Response, error) {
 	return response, nil
 }
 
-func (a *agentClientCache) fetch(name, target string) error {
-	base := a.release + "/v" + a.version + "/"
-	response, err := a.get(base + "SHA256SUMS")
+// fetchReleaseAsset 下载发布目录 base 中的 name，按同目录 SHA256SUMS 校验后原子替换 target。
+// 临时文件与 target 同目录，保证 rename 不跨文件系统。
+func fetchReleaseAsset(get func(string) (*http.Response, error), base, name, target string, dirMode os.FileMode) error {
+	response, err := get(base + "SHA256SUMS")
 	if err != nil {
 		return fmt.Errorf("校验清单%w", err)
 	}
@@ -115,15 +125,16 @@ func (a *agentClientCache) fetch(name, target string) error {
 	if len(want) != sha256.Size*2 {
 		return fmt.Errorf("校验清单中没有该文件")
 	}
-	response, err = a.get(base + name)
+	response, err = get(base + name)
 	if err != nil {
 		return err
 	}
 	defer response.Body.Close()
-	if err := os.MkdirAll(a.dir, 0700); err != nil {
+	dir := filepath.Dir(target)
+	if err := os.MkdirAll(dir, dirMode); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(a.dir, ".download-*")
+	f, err := os.CreateTemp(dir, ".download-*")
 	if err != nil {
 		return err
 	}

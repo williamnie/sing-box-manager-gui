@@ -22,6 +22,8 @@ import { authApi, errorMessage } from '../api';
 import { toast } from './Toast';
 import ThemeToggle from './ThemeToggle';
 import AgentBanner from './AgentBanner';
+import UpdateBanner from './UpdateBanner';
+import { useUpdateStore } from '../store/update';
 
 const menuItems = [
   { path: '/', icon: LayoutDashboard, label: '仪表盘', code: '01' },
@@ -45,6 +47,7 @@ export default function Layout({ children }: LayoutProps) {
   const [navigationOpen, setNavigationOpen] = useState(false);
   const location = useLocation();
   const { settings, fetchSettings, serviceStatus, fetchServiceStatus } = useStore();
+  const update = useUpdateStore((state) => state.status);
 
   useEffect(() => {
     if (!settings) {
@@ -164,9 +167,15 @@ export default function Layout({ children }: LayoutProps) {
               <span>LOGOUT</span>
             </button>
             {serviceStatus?.sbm_version && (
-              <span className="font-mono text-[10px] text-zinc-500 dark:text-zinc-500 bg-zinc-200/60 dark:bg-white/[0.03] px-1.5 py-0.5 rounded-[2px] border border-zinc-200 dark:border-white/[0.05]">
+              <Link
+                to="/settings#section-update"
+                onClick={() => setNavigationOpen(false)}
+                title={update?.available ? `发现新版本 v${update.latest?.version}` : '版本更新'}
+                className="relative font-mono text-[10px] text-zinc-500 dark:text-zinc-500 bg-zinc-200/60 dark:bg-white/[0.03] px-1.5 py-0.5 rounded-[2px] border border-zinc-200 dark:border-white/[0.05] hover:border-[#ff5722]/50"
+              >
                 v{serviceStatus.sbm_version}
-              </span>
+                {update?.available && <span className="absolute -top-1 -right-1 size-2 rounded-full bg-[#ff5722]" />}
+              </Link>
             )}
           </div>
         </div>
@@ -212,6 +221,7 @@ export default function Layout({ children }: LayoutProps) {
         <main className="min-w-0 flex-1 p-3 sm:p-6 md:p-8 bg-[#f6f7fb] dark:bg-[#070709] bg-grid-tech transition-colors duration-150">
           <div className="max-w-7xl mx-auto">
             <AgentBanner />
+            <UpdateBanner />
             {children}
           </div>
         </main>

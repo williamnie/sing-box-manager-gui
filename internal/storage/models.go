@@ -153,6 +153,9 @@ type Settings struct {
 
 	// GitHub 代理设置
 	GithubProxy string `json:"github_proxy"` // GitHub 代理地址，如 https://ghproxy.com/
+
+	// 版本更新：默认定时检查 GitHub 最新发布并提示，仅在用户点击后下载安装
+	UpdateCheckDisabled bool `json:"update_check_disabled"`
 }
 
 // ProxyPlan 保留原始策略，仅在构建运行配置时合并选择组。

@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -75,6 +76,8 @@ type Server struct {
 	managementFingerprint string // 实际加载的管理 HTTPS 证书摘要，不读取客户端证书
 	managementPubkeyPin   string // 同一证书的公钥摘要，供接入脚本的 curl 固定
 	agentClients          *agentClientCache
+	updater               *selfUpdater
+	execSelf              func(string, []string, []string) error // 测试替换，默认 syscall.Exec
 }
 
 // NewServer 创建 API 服务器
@@ -117,6 +120,8 @@ func NewServer(store *storage.JSONStore, processManager *daemon.ProcessManager, 
 	}
 	s.auditLog = newAuditLog(filepath.Join(store.GetDataDir(), "agent"))
 	s.agentClients = newAgentClientCache(store.GetDataDir(), sbmPath, version, func() string { return store.GetSettings().GithubProxy })
+	s.updater = newSelfUpdater(version)
+	s.execSelf = syscall.Exec
 	s.fetchSubscription = subService.Fetch
 	s.bootID = readBootID
 	kernelManager.SetInstallHook(func(candidate string) error {
@@ -137,10 +142,12 @@ func NewServer(store *storage.JSONStore, processManager *daemon.ProcessManager, 
 func (s *Server) StartScheduler() {
 	s.scheduler.Start()
 	s.startGatewayClientObservation()
+	s.updater.run(func() bool { return !s.store.GetSettings().UpdateCheckDisabled }, func() string { return s.store.GetSettings().GithubProxy })
 }
 
 // StopScheduler 停止定时任务调度器
 func (s *Server) StopScheduler() {
+	s.updater.shutdown()
 	s.stopGatewayClientObservation()
 	s.scheduler.Stop()
 }
@@ -174,6 +181,7 @@ func (s *Server) setupRoutes() {
 		s.setupAgentAdminRoutes(api)
 		s.setupRuntimeRoutes(api)
 		s.setupDeploymentRoutes(api)
+		s.setupUpdateRoutes(api)
 		api.GET("/dns/queries", s.getDNSQueries)
 		api.GET("/dns/queries/export", s.exportDNSQueries)
 		api.PUT("/dns/queries/settings", s.updateDNSQuerySettings)
@@ -645,6 +653,8 @@ func (s *Server) updateSettings(c *gin.Context) {
 	previous := s.store.GetSettings()
 	settings.ImportedPolicy = previous.ImportedPolicy
 	settings.ProxyPlan = previous.ProxyPlan
+	// 更新检查开关由独立接口保存，避免旧表单覆盖。
+	settings.UpdateCheckDisabled = previous.UpdateCheckDisabled
 	if settings.DeploymentRole != previous.DeploymentRole || !reflect.DeepEqual(settings.Gateway, previous.Gateway) {
 		c.JSON(400, gin.H{"error": "请从部署与网关页面保存角色并显式应用"})
 		return

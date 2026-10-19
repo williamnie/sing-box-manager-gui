@@ -42,6 +42,7 @@ import { toast } from '../components/Toast';
 import ConfirmModal from '../components/ConfirmModal';
 import PanelPreferences from '../components/PanelPreferences';
 import PasswordSettings from '../components/PasswordSettings';
+import UpdatePanel from '../components/UpdatePanel';
 import { Link } from 'react-router-dom';
 
 function randomSecret() {
@@ -445,6 +446,13 @@ export default function Settings() {
         <span className="text-[11px] text-zinc-500">// 快速跳转:</span>
         <button
           type="button"
+          onClick={() => document.getElementById('section-update')?.scrollIntoView({ behavior: 'smooth' })}
+          className="px-2.5 py-1 rounded-[2px] bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 hover:text-white transition-colors cursor-pointer"
+        >
+          版本更新
+        </button>
+        <button
+          type="button"
           onClick={() => document.getElementById('section-kernel')?.scrollIntoView({ behavior: 'smooth' })}
           className="px-2.5 py-1 rounded-[2px] bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 hover:text-white transition-colors cursor-pointer"
         >
@@ -474,6 +482,8 @@ export default function Settings() {
           </button>
         )}
       </div>
+
+      <UpdatePanel />
 
       {/* 1. sing-box 内核状态与下载 */}
       <div id="section-kernel" className="rounded-[4px] border border-white/[0.08] bg-[#0a0a0e] overflow-hidden scroll-mt-16">
