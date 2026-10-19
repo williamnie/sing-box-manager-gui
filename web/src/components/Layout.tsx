@@ -15,11 +15,13 @@ import {
   X,
   Cpu,
   Search,
+  Bot,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { authApi, errorMessage } from '../api';
 import { toast } from './Toast';
 import ThemeToggle from './ThemeToggle';
+import AgentBanner from './AgentBanner';
 
 const menuItems = [
   { path: '/', icon: LayoutDashboard, label: '仪表盘', code: '01' },
@@ -32,6 +34,7 @@ const menuItems = [
   { path: '/logs', icon: ScrollText, label: '实时日志', code: '08' },
   { path: '/dns-queries', icon: Search, label: 'DNS 查询记录', code: '09' },
   { path: '/settings', icon: Settings, label: '系统设置', code: '10' },
+  { path: '/agent', icon: Bot, label: 'Agent 接入', code: '11' },
 ];
 
 interface LayoutProps {
@@ -208,6 +211,7 @@ export default function Layout({ children }: LayoutProps) {
         {/* 页面主内容 */}
         <main className="min-w-0 flex-1 p-3 sm:p-6 md:p-8 bg-[#f6f7fb] dark:bg-[#070709] bg-grid-tech transition-colors duration-150">
           <div className="max-w-7xl mx-auto">
+            <AgentBanner />
             {children}
           </div>
         </main>

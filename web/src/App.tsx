@@ -14,6 +14,7 @@ const Configuration = lazy(() => import('./pages/Configuration'));
 const Proxies = lazy(() => import('./pages/Proxies'));
 const Connections = lazy(() => import('./pages/Connections'));
 const DNSQueries = lazy(() => import('./pages/DNSQueries'));
+const Agent = lazy(() => import('./pages/Agent'));
 
 function App() {
   return (
@@ -29,6 +30,7 @@ function App() {
           <Route path="/rules" element={<Rules />} />
           <Route path="/logs" element={<Logs />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/agent" element={<Agent />} />
           <Route path="/gateway" element={<Gateway />} />
           <Route path="/migration" element={<Navigate to="/configuration/import" replace />} />
           <Route path="/configuration/import" element={<ConfigurationImport />} />
