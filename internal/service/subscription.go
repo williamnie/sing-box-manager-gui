@@ -85,6 +85,7 @@ func (s *SubscriptionService) Refresh(id string) error {
 func (s *SubscriptionService) RefreshAll() error {
 	subs := s.store.GetSubscriptions()
 	failures := 0
+	refreshed := make([]storage.Subscription, 0, len(subs))
 	for _, sub := range subs {
 		if sub.Enabled {
 			if err := s.refresh(&sub); err != nil {
@@ -92,10 +93,15 @@ func (s *SubscriptionService) RefreshAll() error {
 				failures++
 				continue
 			}
-			if err := s.store.UpdateSubscription(sub); err != nil {
-				failures++
-				continue
-			}
+			refreshed = append(refreshed, sub)
+		}
+	}
+	// 合并为一次落盘，避免每个订阅都序列化并同步整份数据。
+	if len(refreshed) > 0 {
+		missing, err := s.store.UpdateSubscriptions(refreshed)
+		failures += missing
+		if err != nil {
+			failures += len(refreshed) - missing
 		}
 	}
 	if failures > 0 {

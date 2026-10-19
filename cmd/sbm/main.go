@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"syscall"
@@ -51,6 +52,10 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	}
+	// 路由器内存有限：未显式设置 GOMEMLIMIT 时给运行时软上限，订阅解析等峰值后更积极回收。
+	if os.Getenv("GOMEMLIMIT") == "" {
+		debug.SetMemoryLimit(96 << 20)
 	}
 	flag.Parse()
 	if err := run(); err != nil {

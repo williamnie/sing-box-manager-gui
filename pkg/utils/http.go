@@ -18,6 +18,9 @@ type SubscriptionInfo struct {
 	ContentType string     // 内容类型
 }
 
+// MaxSubscriptionBytes 单个订阅响应的最大字节数
+const MaxSubscriptionBytes = 16 << 20
+
 // FetchSubscription 拉取订阅内容
 func FetchSubscription(url string) (string, *SubscriptionInfo, error) {
 	client := &http.Client{
@@ -42,10 +45,13 @@ func FetchSubscription(url string) (string, *SubscriptionInfo, error) {
 		return "", nil, fmt.Errorf("HTTP 状态码: %d", resp.StatusCode)
 	}
 
-	// 读取响应体
-	body, err := io.ReadAll(resp.Body)
+	// 读取响应体；限制大小，防止异常订阅源耗尽路由器内存
+	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxSubscriptionBytes+1))
 	if err != nil {
 		return "", nil, fmt.Errorf("读取响应失败: %w", err)
+	}
+	if len(body) > MaxSubscriptionBytes {
+		return "", nil, fmt.Errorf("订阅内容超过 %d MiB 上限", MaxSubscriptionBytes>>20)
 	}
 
 	// 解析订阅信息

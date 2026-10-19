@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -84,26 +85,52 @@ func (s *Server) stopGatewayClientObservation() {
 	if cancel != nil {
 		cancel()
 		<-done
+		// 停止前提交延迟的 DNS 归档检查点，重启后无需重读这段日志。
+		_ = s.dnsQueries.Flush()
 	}
 }
 
 var inboundClientLog = regexp.MustCompile(`^([+-]\d{4} \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \S+ \[[^\]]+\] inbound/[^\[]+\[([^\]]+)\]: inbound (?:packet )?connection from (\S+)$`)
 
-func gatewayClientAddress(value string, settings *storage.Settings) (netip.Addr, bool) {
-	address, err := netip.ParseAddr(value)
-	if err != nil {
-		return netip.Addr{}, false
-	}
-	address = address.Unmap()
-	if address.IsLoopback() || address.IsUnspecified() || address.IsMulticast() || address.String() == settings.Gateway.LANAddress {
-		return netip.Addr{}, false
-	}
+// lanMatcher 预先解析 LAN 网段，日志扫描时每行无需重复解析配置。
+type lanMatcher struct {
+	gateway  string
+	prefixes []netip.Prefix
+}
+
+func newLANMatcher(settings *storage.Settings) lanMatcher {
+	m := lanMatcher{gateway: settings.Gateway.LANAddress}
 	for _, cidr := range settings.Gateway.LANCIDRs {
-		if prefix, err := netip.ParsePrefix(cidr); err == nil && prefix.Contains(address) {
+		if prefix, err := netip.ParsePrefix(cidr); err == nil {
+			m.prefixes = append(m.prefixes, prefix)
+		}
+	}
+	return m
+}
+
+func (m lanMatcher) match(address netip.Addr) (netip.Addr, bool) {
+	address = address.Unmap()
+	if address.IsLoopback() || address.IsUnspecified() || address.IsMulticast() || address.String() == m.gateway {
+		return netip.Addr{}, false
+	}
+	for _, prefix := range m.prefixes {
+		if prefix.Contains(address) {
 			return address, true
 		}
 	}
 	return netip.Addr{}, false
+}
+
+func (m lanMatcher) matchString(value string) (netip.Addr, bool) {
+	address, err := netip.ParseAddr(value)
+	if err != nil {
+		return netip.Addr{}, false
+	}
+	return m.match(address)
+}
+
+func gatewayClientAddress(value string, settings *storage.Settings) (netip.Addr, bool) {
+	return newLANMatcher(settings).matchString(value)
 }
 
 func (t *gatewayClientTracker) observe(address string, at time.Time, dns, proxy bool) {
@@ -136,6 +163,7 @@ func (t *gatewayClientTracker) scan(path string, settings *storage.Settings, now
 		return true
 	}
 	t.lastRead = now
+	lan := newLANMatcher(settings)
 	// 首次只读取日志尾部；后续按游标增量读取，单次最多 1 MiB。
 	for batchIndex := 0; batchIndex < 4; batchIndex++ {
 		batch, err := logger.ReadLogBatch(path, t.cursor, logger.MaxLogBatchLines)
@@ -144,6 +172,9 @@ func (t *gatewayClientTracker) scan(path string, settings *storage.Settings, now
 		}
 		t.cursor = batch.Cursor
 		for _, line := range batch.Lines {
+			if !strings.Contains(line, "connection from ") {
+				continue
+			}
 			parts := inboundClientLog.FindStringSubmatch(line)
 			if len(parts) != 4 {
 				continue
@@ -156,7 +187,7 @@ func (t *gatewayClientTracker) scan(path string, settings *storage.Settings, now
 			if err != nil {
 				continue
 			}
-			address, ok := gatewayClientAddress(endpoint.Addr().String(), settings)
+			address, ok := lan.match(endpoint.Addr())
 			if ok {
 				t.observe(address.String(), at, parts[2] == "lan-dns", parts[2] != "lan-dns")
 			}
@@ -171,9 +202,10 @@ func (t *gatewayClientTracker) scan(path string, settings *storage.Settings, now
 func (t *gatewayClientTracker) snapshot(settings *storage.Settings, connections []runtimecontrol.Connection, now time.Time) []observedGatewayClient {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	lan := newLANMatcher(settings)
 	active := make(map[string]int)
 	for _, connection := range connections {
-		if address, ok := gatewayClientAddress(connection.Source, settings); ok {
+		if address, ok := lan.matchString(connection.Source); ok {
 			active[address.String()]++
 			t.observe(address.String(), now, false, true)
 		}
@@ -181,7 +213,7 @@ func (t *gatewayClientTracker) snapshot(settings *storage.Settings, connections 
 	result := make([]observedGatewayClient, 0, len(t.clients))
 	devices := storage.EffectiveDevices(settings)
 	for key, client := range t.clients {
-		if _, ok := gatewayClientAddress(key, settings); !ok || now.UnixMilli()-client.LastSeenAt > int64(24*time.Hour/time.Millisecond) {
+		if _, ok := lan.matchString(key); !ok || now.UnixMilli()-client.LastSeenAt > int64(24*time.Hour/time.Millisecond) {
 			delete(t.clients, key)
 			continue
 		}

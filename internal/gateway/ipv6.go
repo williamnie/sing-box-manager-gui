@@ -193,16 +193,22 @@ func (m *Manager) syncIPv6(ctx context.Context) error {
 	if _, _, finding := m.bootBoundary(s); finding != nil || s.Pending != nil {
 		return fmt.Errorf("自动 IPv6 同步暂停：存在旧启动状态或未完成事务，请先恢复")
 	}
+	// 先做只读的前缀发现（两次 ip 查询）；前缀未变且近期完整校验通过时不再采集整套 nft/sysctl。
+	prefixes, discoverErr := m.discoverIPv6(ctx, s.Active.Plan.Config)
+	if discoverErr != nil {
+		prefixes = []string{}
+	}
+	key := fmt.Sprintf("%s|%s|%d", s.Active.Plan.ConfigDigest, s.Active.AppliedAt, s.Active.IPv6Generation)
+	if slices.Equal(prefixes, s.Active.Plan.IPv6Prefixes) && m.ipv6VerifiedKey == key && time.Since(m.ipv6VerifiedAt) < ipv6VerifyInterval {
+		return discoverErr
+	}
+	m.ipv6VerifiedKey = ""
 	current, e := m.capture(ctx, s.Active.Plan)
 	if e != nil {
 		return e
 	}
 	if !equalSnapshot(current, s.Active.Current) {
 		return fmt.Errorf("自动 IPv6 同步暂停：所属资源被外部修改，拒绝覆盖")
-	}
-	prefixes, discoverErr := m.discoverIPv6(ctx, s.Active.Plan.Config)
-	if discoverErr != nil {
-		prefixes = []string{}
 	}
 	plan, e := Preview("gateway", s.Active.Plan.Config)
 	if e != nil {
@@ -220,9 +226,15 @@ func (m *Manager) syncIPv6(ctx context.Context) error {
 		if _, e = m.applyPlan(ctx, s, plan); e != nil {
 			return e
 		}
+		// 写入后状态标识已变化，下一轮重新完整校验。
+		return discoverErr
 	}
+	m.ipv6VerifiedKey, m.ipv6VerifiedAt = key, time.Now()
 	return discoverErr
 }
+
+// 前缀不变时完整漂移校验的最长间隔；外部修改仍会由 Status 实时检测并阻止写入。
+const ipv6VerifyInterval = 5 * time.Minute
 
 // 生命周期由 helper 的监听服务管理；重启主机后的旧状态绝不自动重放。
 func (m *Manager) RunIPv6Sync(ctx context.Context) {

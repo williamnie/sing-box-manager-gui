@@ -223,3 +223,62 @@ func TestRecordLimitReclaimsDiskAndSurvivesRestart(t *testing.T) {
 		t.Fatal("restart resurrected discarded records")
 	}
 }
+
+func TestIdleCheckpointsAreDeferredWithoutLosingSources(t *testing.T) {
+	now := time.Now().Truncate(time.Second)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "singbox.log")
+	j := New(filepath.Join(dir, "dns"))
+	writeLog(t, path, source(now, "1", "192.0.2.10"))
+	if err := j.Scan(path, true, now); err != nil {
+		t.Fatal(err)
+	}
+	size := func() int64 {
+		var total int64
+		files, _ := filepath.Glob(filepath.Join(j.dir, "*.jsonl"))
+		for _, f := range files {
+			if st, err := os.Stat(f); err == nil {
+				total += st.Size()
+			}
+		}
+		return total
+	}
+	before := size()
+	// 普通代理入站与无查询的来源变化只在内存生效，不应每轮写入归档。
+	for i := 0; i < 5; i++ {
+		writeLog(t, path, strings.ReplaceAll(source(now, fmt.Sprint(100+i), "192.0.2.99"), "[lan-dns]", "[mixed-in]"))
+		if err := j.Scan(path, true, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeLog(t, path, source(now, "2", "192.0.2.20"))
+	if err := j.Scan(path, true, now); err != nil {
+		t.Fatal(err)
+	}
+	if size() != before {
+		t.Fatal("idle checkpoint written immediately")
+	}
+	writeLog(t, path, query(now, "2", "live.example.", "A"))
+	if err := j.Scan(path, true, now); err != nil {
+		t.Fatal(err)
+	}
+	if r := j.Search(Filter{Source: "192.0.2.20", Limit: 50}, now); r.Total != 1 {
+		t.Fatalf("deferred source not used: %+v", r)
+	}
+	// 查询帧携带延迟的来源，重启后同一会话的后续查询仍能归属。
+	reopened := New(j.dir)
+	writeLog(t, path, query(now, "2", "after.example.", "A"))
+	if err := reopened.Scan(path, true, now); err != nil {
+		t.Fatal(err)
+	}
+	if r := reopened.Search(Filter{Source: "192.0.2.20", Limit: 50}, now); r.Total != 2 {
+		t.Fatalf("restart lost deferred source: %+v", r)
+	}
+	files, _ := filepath.Glob(filepath.Join(j.dir, "*.jsonl"))
+	for _, f := range files {
+		raw, _ := os.ReadFile(f)
+		if strings.Contains(string(raw), `"100"`) {
+			t.Fatal("unrelated inbound removal persisted")
+		}
+	}
+}

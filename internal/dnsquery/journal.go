@@ -3,9 +3,11 @@ package dnsquery
 
 import (
 	"bufio"
+	"container/heap"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -74,7 +76,7 @@ type storedRecord struct {
 	file string
 }
 type Journal struct {
-	mu               sync.Mutex
+	mu               sync.RWMutex
 	dir, cursor      string
 	loaded           bool
 	clients          map[string]client
@@ -84,7 +86,33 @@ type Journal struct {
 	stats            Stats
 	segmentBytes     int64
 	maxSegments      int
+	// pending 是已在内存生效、尚未落盘的无查询检查点；合并写入以减少闪存 fsync。
+	pending   *frame
+	flushedAt time.Time
+	prunedAt  time.Time
+	enabled   bool
+	// generation 在可见记录变化时递增；查询页每 5 秒轮询，数据未变时直接复用结果。
+	generation uint64
+	cacheMu    sync.Mutex
+	cache      map[Filter]cachedSearch
+	cacheGen   uint64
 }
+
+type cachedSearch struct {
+	result Result
+	cutoff int64
+	// 缓存有效期到最早的可见记录过期为止。
+	validUntil int64
+}
+
+const maxCachedSearches = 8
+
+const (
+	// 只含游标和来源变化的帧最多延迟这么久落盘；崩溃后重读这段日志只会恢复来源，不会重复导入查询。
+	checkpointInterval = time.Minute
+	pruneInterval      = time.Minute
+	maxPendingRemoved  = 4096
+)
 
 func New(dir string) *Journal {
 	return &Journal{dir: dir, clients: make(map[string]client), segmentBytes: 4 * 1024 * 1024, maxSegments: 16}
@@ -102,6 +130,10 @@ func (j *Journal) parse(lines []string, enabled bool, now time.Time) frame {
 			f.Sources = make(map[string]client)
 			f.Reset = true
 		}
+		// 先用子串排除绝大多数无关日志，避免对每行执行正则。
+		if !strings.Contains(line, "] inbound/") && !strings.Contains(line, "] dns: ") {
+			continue
+		}
 		p := logLine.FindStringSubmatch(line)
 		if len(p) != 4 {
 			continue
@@ -111,9 +143,12 @@ func (j *Journal) parse(lines []string, enabled bool, now time.Time) frame {
 			continue
 		}
 		if m := inbound.FindStringSubmatch(p[3]); len(m) == 3 {
+			// 只记录确实存在的来源删除；其他入站连接与重放状态无关，不写入归档。
+			if _, known := j.clients[p[2]]; known {
+				f.Removed = append(f.Removed, p[2])
+			}
 			delete(j.clients, p[2])
 			delete(f.Sources, p[2])
-			f.Removed = append(f.Removed, p[2])
 			if m[1] != "lan-dns" {
 				continue
 			}
@@ -165,6 +200,9 @@ func (j *Journal) parse(lines []string, enabled bool, now time.Time) frame {
 }
 
 func (j *Journal) apply(f frame, path string, now time.Time) {
+	if len(f.Records) > 0 {
+		j.generation++
+	}
 	j.segmentRecords[path] += len(f.Records)
 	if f.Reset {
 		j.clients = make(map[string]client)
@@ -220,6 +258,7 @@ func (j *Journal) load(now time.Time) error {
 	}
 	j.clients = make(map[string]client)
 	j.records = nil
+	j.generation++
 	j.segmentRecords = make(map[string]int)
 	j.segmentLastQuery = make(map[string]int64)
 	j.cursor = ""
@@ -389,6 +428,9 @@ func (j *Journal) prune(now time.Time) error {
 			kept = append(kept, r)
 		}
 	}
+	if len(kept) != len(j.records) {
+		j.generation++
+	}
 	j.records = kept
 	return nil
 }
@@ -415,6 +457,14 @@ func (j *Journal) Scan(path string, enabled bool, now time.Time) (result error) 
 	if err := j.load(now); err != nil {
 		return err
 	}
+	// 重新开启查询记录前先提交关闭期间的游标，崩溃重放不会导入关闭期间的查询。
+	if enabled && !j.enabled {
+		if err := j.flush(now); err != nil {
+			return err
+		}
+	}
+	j.enabled = enabled
+	wrote := false
 	for index := 0; index < 32; index++ {
 		batch, err := logger.ReadLogBatch(path, j.cursor, logger.MaxLogBatchLines)
 		if err != nil {
@@ -433,22 +483,75 @@ func (j *Journal) Scan(path string, enabled bool, now time.Time) (result error) 
 			f.Reset = true
 			f.Gaps++
 		}
-		file, err := j.append(f, now)
 		j.clients = before
-		if err != nil {
-			return err
+		merged := mergeFrame(j.pending, f)
+		if len(merged.Records) == 0 && !merged.Reset && len(merged.Removed) < maxPendingRemoved && now.Sub(j.flushedAt) < checkpointInterval && !now.Before(j.flushedAt) {
+			j.apply(f, "", now)
+			delete(j.segmentRecords, "")
+			delete(j.segmentLastQuery, "")
+			j.pending = &merged
+		} else {
+			file, err := j.append(merged, now)
+			if err != nil {
+				return err
+			}
+			j.apply(merged, file, now)
+			j.pending, j.flushedAt, wrote = nil, now, true
 		}
-		j.apply(f, file, now)
 		if !batch.More {
 			break
 		}
 	}
+	if !wrote && now.Sub(j.prunedAt) < pruneInterval && !now.Before(j.prunedAt) {
+		return nil
+	}
+	j.prunedAt = now
 	return j.prune(now)
 }
 
-func (j *Journal) Status() Stats {
+// mergeFrame 把新帧叠加到待提交帧；按 apply 的“先删除后写入”顺序保持结果一致。
+func mergeFrame(pending *frame, f frame) frame {
+	if pending == nil || f.Reset {
+		return f
+	}
+	merged := *pending
+	merged.Sources = cloneClients(pending.Sources)
+	merged.Removed = append([]string{}, pending.Removed...)
+	merged.Records = append(append([]Record{}, pending.Records...), f.Records...)
+	for _, id := range f.Removed {
+		delete(merged.Sources, id)
+		merged.Removed = append(merged.Removed, id)
+	}
+	for id, v := range f.Sources {
+		merged.Sources[id] = v
+	}
+	merged.Cursor, merged.Gaps = f.Cursor, f.Gaps
+	return merged
+}
+
+func (j *Journal) flush(now time.Time) error {
+	if j.pending == nil {
+		return nil
+	}
+	file, err := j.append(*j.pending, now)
+	if err != nil {
+		return err
+	}
+	j.apply(*j.pending, file, now)
+	j.pending, j.flushedAt = nil, now
+	return nil
+}
+
+// Flush 提交延迟的检查点，供服务停止时调用。
+func (j *Journal) Flush() error {
 	j.mu.Lock()
 	defer j.mu.Unlock()
+	return j.flush(time.Now())
+}
+
+func (j *Journal) Status() Stats {
+	j.mu.RLock()
+	defer j.mu.RUnlock()
 	s := j.stats
 	s.Count = len(j.records)
 	for _, r := range j.records {
@@ -460,17 +563,24 @@ func (j *Journal) Status() Stats {
 }
 
 func (j *Journal) Search(f Filter, now time.Time) Result {
-	j.mu.Lock()
-	defer j.mu.Unlock()
+	j.mu.RLock()
+	defer j.mu.RUnlock()
+	cutoff := now.Add(-RetentionDays * 24 * time.Hour).UnixMilli()
+	if r, ok := j.cachedSearch(f, cutoff); ok {
+		return r
+	}
 	r := Result{Records: []Record{}, Domains: []Domain{}, Sources: []string{}}
 	domains := make(map[string]Domain)
 	sources := make(map[string]bool)
 	search := strings.ToLower(f.Search)
-	cutoff := now.Add(-RetentionDays * 24 * time.Hour).UnixMilli()
+	validUntil := int64(math.MaxInt64)
 	for i := len(j.records) - 1; i >= 0; i-- {
 		x := j.records[i].Record
 		if x.At < cutoff {
 			continue
+		}
+		if x.At < validUntil {
+			validUntil = x.At
 		}
 		sources[x.Source] = true
 		if f.Source != "" && x.Source != f.Source || f.Type != "" && x.Type != f.Type || f.Since > 0 && x.At < f.Since || f.Until > 0 && x.At > f.Until || !strings.Contains(x.Domain, search) {
@@ -488,34 +598,93 @@ func (j *Journal) Search(f Filter, now time.Time) Result {
 		}
 		r.Total++
 	}
-	for _, d := range domains {
-		r.Domains = append(r.Domains, d)
-	}
-	sort.Slice(r.Domains, func(i, k int) bool {
-		a, b := r.Domains[i], r.Domains[k]
-		if f.Sort == "recent" && a.LastSeen != b.LastSeen {
-			return a.LastSeen > b.LastSeen
-		}
-		if a.Count != b.Count {
-			return a.Count > b.Count
-		}
-		return a.Domain < b.Domain
-	})
-	r.DomainTotal = len(r.Domains)
-	end := f.Offset + f.Limit
-	if end > len(r.Domains) {
-		end = len(r.Domains)
-	}
-	if f.Offset >= len(r.Domains) {
-		r.Domains = []Domain{}
-	} else {
-		r.Domains = r.Domains[f.Offset:end]
-	}
+	r.DomainTotal = len(domains)
+	r.Domains = topDomains(domains, f)
 	for s := range sources {
 		r.Sources = append(r.Sources, s)
 	}
 	sort.Strings(r.Sources)
+	j.storeSearch(f, cachedSearch{result: r, cutoff: cutoff, validUntil: validUntil})
+	return copyResult(r)
+}
+
+func domainBefore(a, b Domain, sortBy string) bool {
+	if sortBy == "recent" && a.LastSeen != b.LastSeen {
+		return a.LastSeen > b.LastSeen
+	}
+	if a.Count != b.Count {
+		return a.Count > b.Count
+	}
+	return a.Domain < b.Domain
+}
+
+// domainHeap 以排名最靠后的域名为堆顶，只保留分页所需的前 k 个。
+type domainHeap struct {
+	items  []Domain
+	sortBy string
+}
+
+func (h *domainHeap) Len() int           { return len(h.items) }
+func (h *domainHeap) Less(i, k int) bool { return domainBefore(h.items[k], h.items[i], h.sortBy) }
+func (h *domainHeap) Swap(i, k int)      { h.items[i], h.items[k] = h.items[k], h.items[i] }
+func (h *domainHeap) Push(x any)         { h.items = append(h.items, x.(Domain)) }
+func (h *domainHeap) Pop() any {
+	last := h.items[len(h.items)-1]
+	h.items = h.items[:len(h.items)-1]
+	return last
+}
+
+// topDomains 返回排序后的当前页；域名很多时用有界堆代替全量排序。
+func topDomains(domains map[string]Domain, f Filter) []Domain {
+	k := f.Offset + f.Limit
+	if f.Offset >= len(domains) || f.Limit <= 0 {
+		return []Domain{}
+	}
+	if k > len(domains) {
+		k = len(domains)
+	}
+	h := &domainHeap{items: make([]Domain, 0, k), sortBy: f.Sort}
+	for _, d := range domains {
+		if h.Len() < k {
+			heap.Push(h, d)
+		} else if domainBefore(d, h.items[0], f.Sort) {
+			h.items[0] = d
+			heap.Fix(h, 0)
+		}
+	}
+	sort.Slice(h.items, func(i, k int) bool { return domainBefore(h.items[i], h.items[k], f.Sort) })
+	return h.items[f.Offset:]
+}
+
+func copyResult(r Result) Result {
+	r.Records = append([]Record{}, r.Records...)
+	r.Domains = append([]Domain{}, r.Domains...)
+	r.Sources = append([]string{}, r.Sources...)
 	return r
+}
+
+// cachedSearch 只在数据未变化且没有可见记录越过保留期时命中；时钟回拨也视为失效。
+func (j *Journal) cachedSearch(f Filter, cutoff int64) (Result, bool) {
+	j.cacheMu.Lock()
+	defer j.cacheMu.Unlock()
+	if j.cacheGen != j.generation {
+		return Result{}, false
+	}
+	entry, ok := j.cache[f]
+	if !ok || cutoff < entry.cutoff || cutoff > entry.validUntil {
+		return Result{}, false
+	}
+	return copyResult(entry.result), true
+}
+
+func (j *Journal) storeSearch(f Filter, entry cachedSearch) {
+	j.cacheMu.Lock()
+	defer j.cacheMu.Unlock()
+	if j.cacheGen != j.generation || j.cache == nil || len(j.cache) >= maxCachedSearches {
+		j.cache = make(map[Filter]cachedSearch)
+		j.cacheGen = j.generation
+	}
+	j.cache[f] = entry
 }
 
 // CSV 内容按文本导出，防止域名被表格软件解释为公式。

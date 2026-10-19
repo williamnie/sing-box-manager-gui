@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func autoIPv6Fixture(t *testing.T) (*Manager, *fakeRunner, Config) {
@@ -357,5 +358,40 @@ func TestAutoIPv6TemplateUpgradeRequiresExplicitApply(t *testing.T) {
 	}
 	if strings.Contains(r.nft, "priority -9") {
 		t.Fatal("explicit apply incorrectly updated only elements")
+	}
+}
+
+func TestAutoIPv6UnchangedPrefixesSkipFullCapture(t *testing.T) {
+	m, r, c := autoIPv6Fixture(t)
+	ctx := context.Background()
+	if _, e := m.Apply(ctx, "gateway", c); e != nil {
+		t.Fatal(e)
+	}
+	if e := m.SyncIPv6(ctx); e != nil {
+		t.Fatal(e)
+	}
+	captures := 0
+	r.fail = func(name string, args []string, _ string) bool {
+		if name == "sysctl" && args[0] == "-n" {
+			captures++
+		}
+		return false
+	}
+	// 前缀未变且刚完成完整校验：只做前缀发现，不重复采集整套资源。
+	if e := m.SyncIPv6(ctx); e != nil || captures != 0 {
+		t.Fatalf("unchanged prefixes captured system state: %d %v", captures, e)
+	}
+	// 校验过期后恢复完整采集，持续检测外部修改。
+	m.ipv6VerifiedAt = time.Now().Add(-ipv6VerifyInterval)
+	if e := m.SyncIPv6(ctx); e != nil || captures == 0 {
+		t.Fatalf("expired verification skipped capture: %d %v", captures, e)
+	}
+	// 前缀变化时必须先完整校验再写入。
+	captures = 0
+	r.nft += "# external change"
+	setIPv6Network(r, "2001:db8:2::")
+	n := r.mutations
+	if e := m.SyncIPv6(ctx); e == nil || captures == 0 || r.mutations != n {
+		t.Fatal("changed prefixes bypassed drift check", e)
 	}
 }

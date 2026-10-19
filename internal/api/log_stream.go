@@ -46,6 +46,11 @@ func (s *Server) streamLogs(c *gin.Context) {
 	if !ok {
 		return
 	}
+	// 先确认会话再读取文件，未登录的重连不产生磁盘读取。
+	if s.auth == nil || !s.auth.authenticated(c) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "请先登录"})
+		return
+	}
 	cursor := c.Query("cursor")
 	// EventSource 自动重连会使用 Last-Event-ID；优先于连接创建时的 query。
 	if last := c.GetHeader("Last-Event-ID"); last != "" {
@@ -60,10 +65,6 @@ func (s *Server) streamLogs(c *gin.Context) {
 			message = err.Error()
 		}
 		c.JSON(status, gin.H{"error": message})
-		return
-	}
-	if s.auth == nil || !s.auth.authenticated(c) {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "请先登录"})
 		return
 	}
 	c.Header("Content-Type", "text/event-stream; charset=utf-8")

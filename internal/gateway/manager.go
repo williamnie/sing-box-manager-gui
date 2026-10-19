@@ -52,6 +52,9 @@ type Manager struct {
 	ReadBootID func() (string, error)
 	mu         sync.Mutex
 	ipv6Error  string
+	// 最近一次完整漂移校验通过的状态；前缀未变时可跳过昂贵的 nft/sysctl 采集。
+	ipv6VerifiedKey string
+	ipv6VerifiedAt  time.Time
 }
 
 func NewManager(r Runner, p Policy, stateDir string) *Manager {

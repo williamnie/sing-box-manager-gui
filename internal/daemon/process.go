@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -45,6 +46,16 @@ type ProcessManager struct {
 	maxLogs                                   int
 	inspect                                   func(int) (processIdentity, error)
 	healthWindow, healthTimeout               time.Duration
+	versionMu                                 sync.Mutex
+	versionKey                                versionKey
+	versionOut                                string
+}
+
+// versionKey 标识内核二进制；替换或更新文件后自动失效，避免状态轮询反复启动子进程。
+type versionKey struct {
+	path    string
+	size    int64
+	modTime int64
 }
 
 func NewProcessManager(singboxPath, configPath, dataDir string) *ProcessManager {
@@ -398,19 +409,9 @@ func (pm *ProcessManager) GetPID() int {
 	return pm.currentIdentity().PID
 }
 func (pm *ProcessManager) GetLogs() []string {
-	f, err := os.Open(filepath.Join(pm.dataDir, "logs", "singbox.log"))
+	lines, err := logger.ReadTail(filepath.Join(pm.dataDir, "logs", "singbox.log"), pm.maxLogs)
 	if err != nil {
 		return []string{}
-	}
-	defer f.Close()
-	var lines []string
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 64<<10), 1<<20)
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
-		if len(lines) > pm.maxLogs {
-			lines = lines[len(lines)-pm.maxLogs:]
-		}
 	}
 	return lines
 }
@@ -673,22 +674,54 @@ func configRedactor(raw []byte) func(string) string {
 		}
 	}
 	visit(config)
-	return func(line string) string {
-		for _, secret := range secrets {
-			line = strings.ReplaceAll(line, secret, "[REDACTED]")
-			quoted, _ := json.Marshal(secret)
-			line = strings.ReplaceAll(line, string(quoted), `"[REDACTED]"`)
+	// 节点多时密钥可达数千个；预先构建单次扫描的替换器，避免每行逐个替换和序列化。
+	seen := make(map[string]bool, len(secrets))
+	var pairs []string
+	add := func(old, replacement string) {
+		if !seen[old] {
+			seen[old] = true
+			pairs = append(pairs, old, replacement)
 		}
-		return line
 	}
+	// 较长的密钥优先，包含关系的密钥不会只被替换一部分。
+	sort.Slice(secrets, func(i, j int) bool { return len(secrets[i]) > len(secrets[j]) })
+	for _, secret := range secrets {
+		quoted, _ := json.Marshal(secret)
+		if string(quoted) != `"`+secret+`"` {
+			add(string(quoted), `"[REDACTED]"`)
+		}
+	}
+	for _, secret := range secrets {
+		add(secret, "[REDACTED]")
+	}
+	if len(pairs) == 0 {
+		return func(line string) string { return line }
+	}
+	return strings.NewReplacer(pairs...).Replace
 }
 
 func (pm *ProcessManager) Version() (string, error) {
 	pm.opMu.RLock()
 	defer pm.opMu.RUnlock()
+	var key versionKey
+	if info, err := os.Stat(pm.singboxPath); err == nil {
+		key = versionKey{path: pm.singboxPath, size: info.Size(), modTime: info.ModTime().UnixNano()}
+		pm.versionMu.Lock()
+		cached, out := pm.versionKey, pm.versionOut
+		pm.versionMu.Unlock()
+		if cached == key {
+			return out, nil
+		}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, pm.singboxPath, "version").Output()
+	// 只缓存成功结果，超时等临时失败下次仍会重试。
+	if err == nil && key.path != "" {
+		pm.versionMu.Lock()
+		pm.versionKey, pm.versionOut = key, string(out)
+		pm.versionMu.Unlock()
+	}
 	return string(out), err
 }
 
@@ -805,7 +838,8 @@ func RunLogRelay(dataDir, configPath string) error {
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 64<<10), 1<<20)
 	for scanner.Scan() {
-		logFile.WriteRaw(logger.Redact(redact(scanner.Text())))
+		// WriteRaw 内部已执行通用脱敏，这里只追加配置密钥替换。
+		logFile.WriteRaw(redact(scanner.Text()))
 	}
 	// 超长日志行不应堵塞内核 stdout：丢弃剩余输入直到内核退出。
 	if err := scanner.Err(); err != nil {

@@ -10,10 +10,11 @@ import (
 
 // JSONStore JSON 文件存储实现
 type JSONStore struct {
-	dataDir   string
-	mu        sync.RWMutex
-	data      *AppData
-	persisted *AppData
+	dataDir string
+	mu      sync.RWMutex
+	data    *AppData
+	// persisted 保存最近一次成功落盘的字节，写入失败时据此回滚，避免常驻第二份对象副本。
+	persisted []byte
 }
 
 // NewJSONStore 创建新的 JSON 存储
@@ -107,7 +108,11 @@ func (s *JSONStore) load() error {
 		return s.saveInternal()
 	}
 
-	s.persisted = clone(s.data)
+	persisted, err := json.Marshal(s.data)
+	if err != nil {
+		return fmt.Errorf("序列化数据失败: %w", err)
+	}
+	s.persisted = persisted
 	if err := os.Chmod(dataFile, 0600); err != nil {
 		return err
 	}
@@ -118,12 +123,16 @@ func (s *JSONStore) load() error {
 func (s *JSONStore) saveInternal() (result error) {
 	defer func() {
 		if result != nil && s.persisted != nil {
-			s.data = clone(s.persisted)
+			restored := &AppData{}
+			if json.Unmarshal(s.persisted, restored) == nil {
+				s.data = restored
+			}
 		}
 	}()
 	dataFile := filepath.Join(s.dataDir, "data.json")
 
-	data, err := json.MarshalIndent(s.data, "", "  ")
+	// 紧凑格式减少路由器上的 CPU、内存和闪存写入量。
+	data, err := json.Marshal(s.data)
 	if err != nil {
 		return fmt.Errorf("序列化数据失败: %w", err)
 	}
@@ -131,8 +140,8 @@ func (s *JSONStore) saveInternal() (result error) {
 	if err := atomicWrite(dataFile, data); err != nil {
 		return fmt.Errorf("写入数据文件失败: %w", err)
 	}
-	s.data = clone(s.data)
-	s.persisted = clone(s.data)
+	// 写入入口已复制调用方数据，内存数据不与外部共享，无需再整体克隆。
+	s.persisted = data
 	return nil
 }
 
@@ -149,7 +158,7 @@ func (s *JSONStore) Save() error {
 func (s *JSONStore) GetSubscriptions() []Subscription {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return clone(s.data.Subscriptions)
+	return cloneSubscriptions(s.data.Subscriptions)
 }
 
 // GetSubscription 获取单个订阅
@@ -159,7 +168,7 @@ func (s *JSONStore) GetSubscription(id string) *Subscription {
 
 	for i := range s.data.Subscriptions {
 		if s.data.Subscriptions[i].ID == id {
-			v := clone(s.data.Subscriptions[i])
+			v := cloneSubscription(s.data.Subscriptions[i])
 			return &v
 		}
 	}
@@ -171,7 +180,7 @@ func (s *JSONStore) AddSubscription(sub Subscription) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.data.Subscriptions = append(s.data.Subscriptions, sub)
+	s.data.Subscriptions = append(s.data.Subscriptions, clone(sub))
 	return s.saveInternal()
 }
 
@@ -182,11 +191,35 @@ func (s *JSONStore) UpdateSubscription(sub Subscription) error {
 
 	for i := range s.data.Subscriptions {
 		if s.data.Subscriptions[i].ID == sub.ID {
-			s.data.Subscriptions[i] = sub
+			s.data.Subscriptions[i] = clone(sub)
 			return s.saveInternal()
 		}
 	}
 	return fmt.Errorf("订阅不存在: %s", sub.ID)
+}
+
+// UpdateSubscriptions 批量更新订阅并只落盘一次，返回已不存在而被跳过的数量。
+func (s *JSONStore) UpdateSubscriptions(subs []Subscription) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	index := make(map[string]int, len(s.data.Subscriptions))
+	for i := range s.data.Subscriptions {
+		index[s.data.Subscriptions[i].ID] = i
+	}
+	missing := 0
+	for _, sub := range subs {
+		i, ok := index[sub.ID]
+		if !ok {
+			missing++
+			continue
+		}
+		s.data.Subscriptions[i] = clone(sub)
+	}
+	if missing == len(subs) {
+		return missing, nil
+	}
+	return missing, s.saveInternal()
 }
 
 // DeleteSubscription 删除订阅
@@ -231,7 +264,7 @@ func (s *JSONStore) AddFilter(filter Filter) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.data.Filters = append(s.data.Filters, filter)
+	s.data.Filters = append(s.data.Filters, clone(filter))
 	return s.saveInternal()
 }
 
@@ -242,7 +275,7 @@ func (s *JSONStore) UpdateFilter(filter Filter) error {
 
 	for i := range s.data.Filters {
 		if s.data.Filters[i].ID == filter.ID {
-			s.data.Filters[i] = filter
+			s.data.Filters[i] = clone(filter)
 			return s.saveInternal()
 		}
 	}
@@ -277,7 +310,7 @@ func (s *JSONStore) AddRule(rule Rule) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.data.Rules = append(s.data.Rules, rule)
+	s.data.Rules = append(s.data.Rules, clone(rule))
 	return s.saveInternal()
 }
 
@@ -288,7 +321,7 @@ func (s *JSONStore) UpdateRule(rule Rule) error {
 
 	for i := range s.data.Rules {
 		if s.data.Rules[i].ID == rule.ID {
-			s.data.Rules[i] = rule
+			s.data.Rules[i] = clone(rule)
 			return s.saveInternal()
 		}
 	}
@@ -325,7 +358,7 @@ func (s *JSONStore) UpdateRuleGroup(ruleGroup RuleGroup) error {
 
 	for i := range s.data.RuleGroups {
 		if s.data.RuleGroups[i].ID == ruleGroup.ID {
-			s.data.RuleGroups[i] = ruleGroup
+			s.data.RuleGroups[i] = clone(ruleGroup)
 			return s.saveInternal()
 		}
 	}
@@ -356,7 +389,7 @@ func (s *JSONStore) UpdateSettings(settings *Settings) error {
 func (s *JSONStore) GetManualNodes() []ManualNode {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return clone(s.data.ManualNodes)
+	return cloneManualNodes(s.data.ManualNodes)
 }
 
 // AddManualNode 添加手动节点
@@ -364,7 +397,7 @@ func (s *JSONStore) AddManualNode(node ManualNode) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.data.ManualNodes = append(s.data.ManualNodes, node)
+	s.data.ManualNodes = append(s.data.ManualNodes, clone(node))
 	return s.saveInternal()
 }
 
@@ -375,7 +408,7 @@ func (s *JSONStore) UpdateManualNode(node ManualNode) error {
 
 	for i := range s.data.ManualNodes {
 		if s.data.ManualNodes[i].ID == node.ID {
-			s.data.ManualNodes[i] = node
+			s.data.ManualNodes[i] = clone(node)
 			return s.saveInternal()
 		}
 	}
@@ -487,7 +520,7 @@ func (s *JSONStore) GetDataDir() string {
 }
 
 // Snapshot 返回独立快照，供一致的预览和迁移事务使用。
-func (s *JSONStore) Snapshot() *AppData { s.mu.RLock(); defer s.mu.RUnlock(); return clone(s.data) }
+func (s *JSONStore) Snapshot() *AppData { s.mu.RLock(); defer s.mu.RUnlock(); return cloneData(s.data) }
 func (s *JSONStore) Replace(data *AppData) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

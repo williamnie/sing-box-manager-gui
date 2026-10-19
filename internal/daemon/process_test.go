@@ -240,6 +240,17 @@ func TestConfigSecretsAreRedacted(t *testing.T) {
 	}
 }
 
+func TestConfigSecretsRedactOverlappingAndEscaped(t *testing.T) {
+	redact := configRedactor([]byte(`{"outbounds":[{"password":"abc"},{"password":"abc-long"},{"token":"a\"b<c"}]}`))
+	got := redact(`x abc-long y abc z "a\"b\u003cc" w a"b<c`)
+	if strings.Contains(got, "abc") || strings.Contains(got, "-long") || strings.Contains(got, "b<c") || strings.Contains(got, `\u003c`) {
+		t.Fatalf("secret remains: %s", got)
+	}
+	if same := configRedactor([]byte(`{}`))("plain"); same != "plain" {
+		t.Fatal(same)
+	}
+}
+
 func TestKernelHealthFailureRestoresOldBinaryAndProcess(t *testing.T) {
 	pm := newHelperManager(t)
 	source, err := os.ReadFile(pm.singboxPath)

@@ -78,6 +78,7 @@ type Server struct {
 	agentClients          *agentClientCache
 	updater               *selfUpdater
 	execSelf              func(string, []string, []string) error // 测试替换，默认 syscall.Exec
+	cpuSamples            cpuSampler
 }
 
 // NewServer 创建 API 服务器
@@ -287,16 +288,18 @@ func (s *Server) setupRoutes() {
 	} else {
 		// 获取 assets 子目录
 		assetsFS, _ := fs.Sub(distFS, "assets")
-		s.router.StaticFS("/assets", http.FS(assetsFS))
+		assets := newStaticAssets(assetsFS)
+		s.router.GET("/assets/*filepath", assets.serve)
+		s.router.HEAD("/assets/*filepath", assets.serve)
 
-		// 处理根路径和所有未匹配的路由（SPA 支持）
+		// 处理根路径和所有未匹配的路由（SPA 支持）；入口页不缓存，升级后立即加载新资源。
 		indexHTML, _ := fs.ReadFile(distFS, "index.html")
-		s.router.GET("/", func(c *gin.Context) {
+		serveIndex := func(c *gin.Context) {
+			c.Header("Cache-Control", "no-cache")
 			c.Data(http.StatusOK, "text/html; charset=utf-8", indexHTML)
-		})
-		s.router.NoRoute(func(c *gin.Context) {
-			c.Data(http.StatusOK, "text/html; charset=utf-8", indexHTML)
-		})
+		}
+		s.router.GET("/", serveIndex)
+		s.router.NoRoute(serveIndex)
 	}
 }
 
@@ -1236,40 +1239,70 @@ type ProcessStats struct {
 	MemoryMB   float64 `json:"memory_mb"`
 }
 
+// cpuSampler 记录上次采样的累计 CPU 时间；gopsutil 的 CPUPercent 是进程生命周期平均值，
+// 长时间运行后几乎不变化，无法反映当前负载。
+type cpuSampler struct {
+	mu   sync.Mutex
+	last map[int32]cpuSample
+}
+
+type cpuSample struct {
+	created int64
+	total   float64
+	at      time.Time
+}
+
+func (c *cpuSampler) percent(proc *process.Process) float64 {
+	times, err := proc.Times()
+	if err != nil {
+		return 0
+	}
+	created, _ := proc.CreateTime()
+	now := time.Now()
+	total := times.User + times.System
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.last == nil {
+		c.last = make(map[int32]cpuSample)
+	}
+	prev, ok := c.last[proc.Pid]
+	// 只跟踪 sbm 与 sing-box；重启累积的旧 PID 超过上限时整体清理。
+	if len(c.last) >= 8 {
+		c.last = make(map[int32]cpuSample)
+	}
+	c.last[proc.Pid] = cpuSample{created: created, total: total, at: now}
+	elapsed := now.Sub(prev.at).Seconds()
+	if !ok || prev.created != created || elapsed < 0.2 || total < prev.total {
+		value, _ := proc.CPUPercent()
+		return value
+	}
+	return (total - prev.total) / elapsed * 100
+}
+
+func processStats(pid int32, cpu *cpuSampler) (ProcessStats, bool) {
+	proc, err := process.NewProcess(pid)
+	if err != nil {
+		return ProcessStats{}, false
+	}
+	var memoryMB float64
+	if memInfo, err := proc.MemoryInfo(); err == nil && memInfo != nil {
+		memoryMB = float64(memInfo.RSS) / 1024 / 1024
+	}
+	return ProcessStats{PID: int(pid), CPUPercent: cpu.percent(proc), MemoryMB: memoryMB}, true
+}
+
 func (s *Server) getSystemInfo(c *gin.Context) {
 	result := gin.H{}
 
 	// 获取 sbm 进程信息
-	sbmPid := int32(os.Getpid())
-	if sbmProc, err := process.NewProcess(sbmPid); err == nil {
-		cpuPercent, _ := sbmProc.CPUPercent()
-		var memoryMB float64
-		if memInfo, err := sbmProc.MemoryInfo(); err == nil && memInfo != nil {
-			memoryMB = float64(memInfo.RSS) / 1024 / 1024
-		}
-
-		result["sbm"] = ProcessStats{
-			PID:        int(sbmPid),
-			CPUPercent: cpuPercent,
-			MemoryMB:   memoryMB,
-		}
+	if stats, ok := processStats(int32(os.Getpid()), &s.cpuSamples); ok {
+		result["sbm"] = stats
 	}
 
 	// 获取 sing-box 进程信息
-	if s.processManager.IsRunning() {
-		singboxPid := int32(s.processManager.GetPID())
-		if singboxProc, err := process.NewProcess(singboxPid); err == nil {
-			cpuPercent, _ := singboxProc.CPUPercent()
-			var memoryMB float64
-			if memInfo, err := singboxProc.MemoryInfo(); err == nil && memInfo != nil {
-				memoryMB = float64(memInfo.RSS) / 1024 / 1024
-			}
-
-			result["singbox"] = ProcessStats{
-				PID:        int(singboxPid),
-				CPUPercent: cpuPercent,
-				MemoryMB:   memoryMB,
-			}
+	if pid := s.processManager.GetPID(); pid > 0 {
+		if stats, ok := processStats(int32(pid), &s.cpuSamples); ok {
+			result["singbox"] = stats
 		}
 	}
 

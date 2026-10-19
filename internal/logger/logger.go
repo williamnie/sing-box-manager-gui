@@ -1,7 +1,7 @@
 package logger
 
 import (
-	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -16,6 +16,10 @@ const (
 	DefaultMaxSize = 10 * 1024 * 1024
 	// 默认保留的日志文件数量
 	DefaultMaxBackups = 3
+	// MaxReadLines 限制单次读取行数，防止请求参数导致超大内存分配
+	MaxReadLines = 2000
+	// 尾部读取窗口上限，异常长行时也不会整文件载入内存
+	maxTailBytes = 4 * 1024 * 1024
 )
 
 // Logger 日志管理器
@@ -184,16 +188,19 @@ func (l *Logger) Close() error {
 
 // ReadLastLines 读取最后 n 行日志
 func (l *Logger) ReadLastLines(n int) ([]string, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	// 读取不持有写锁，也无需 fsync：未缓冲的写入对页缓存立即可见。
+	return ReadTail(l.filePath, n)
+}
 
-	// 同步文件
-	if l.file != nil {
-		l.file.Sync()
+// ReadTail 从文件末尾按需扩大读取窗口，只读取包含最后 n 行的部分。
+func ReadTail(path string, n int) ([]string, error) {
+	if n > MaxReadLines {
+		n = MaxReadLines
 	}
-
-	// 读取文件
-	file, err := os.Open(l.filePath)
+	if n < 1 {
+		return []string{}, nil
+	}
+	file, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []string{}, nil
@@ -201,26 +208,49 @@ func (l *Logger) ReadLastLines(n int) ([]string, error) {
 		return nil, fmt.Errorf("打开日志文件失败: %w", err)
 	}
 	defer file.Close()
-
-	// 使用 ring buffer 来存储最后 n 行
-	lines := make([]string, 0, n)
-	scanner := bufio.NewScanner(file)
-
-	// 增加 scanner 缓冲区大小以处理长行
-	buf := make([]byte, 64*1024)
-	scanner.Buffer(buf, 1024*1024)
-
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
-		if len(lines) > n {
-			lines = lines[1:]
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
+	info, err := file.Stat()
+	if err != nil {
 		return nil, fmt.Errorf("读取日志失败: %w", err)
 	}
-
+	size := info.Size()
+	window := int64(64 * 1024)
+	var buf []byte
+	for {
+		if window > size {
+			window = size
+		}
+		if window > maxTailBytes {
+			window = maxTailBytes
+		}
+		buf = make([]byte, window)
+		if _, err := file.ReadAt(buf, size-window); err != nil && err != io.EOF {
+			return nil, fmt.Errorf("读取日志失败: %w", err)
+		}
+		if window == size || window == maxTailBytes || bytes.Count(buf, []byte{'\n'}) > n {
+			break
+		}
+		window *= 2
+	}
+	// 窗口未覆盖文件开头时，第一行可能只读到一半。
+	if int64(len(buf)) < size {
+		if i := bytes.IndexByte(buf, '\n'); i >= 0 {
+			buf = buf[i+1:]
+		} else {
+			buf = nil
+		}
+	}
+	buf = bytes.TrimSuffix(buf, []byte{'\n'})
+	if len(buf) == 0 {
+		return []string{}, nil
+	}
+	parts := bytes.Split(buf, []byte{'\n'})
+	if len(parts) > n {
+		parts = parts[len(parts)-n:]
+	}
+	lines := make([]string, len(parts))
+	for i, part := range parts {
+		lines[i] = string(bytes.TrimSuffix(part, []byte{'\r'}))
+	}
 	return lines, nil
 }
 
