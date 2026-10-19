@@ -73,6 +73,8 @@ type Server struct {
 	version           string // sbm 版本号
 
 	managementFingerprint string // 实际加载的管理 HTTPS 证书摘要，不读取客户端证书
+	managementPubkeyPin   string // 同一证书的公钥摘要，供接入脚本的 curl 固定
+	agentClients          *agentClientCache
 }
 
 // NewServer 创建 API 服务器
@@ -114,6 +116,7 @@ func NewServer(store *storage.JSONStore, processManager *daemon.ProcessManager, 
 		logger.Printf("Agent 变更日志不可用，已暂停配置写入: %v", s.agent.err)
 	}
 	s.auditLog = newAuditLog(filepath.Join(store.GetDataDir(), "agent"))
+	s.agentClients = newAgentClientCache(store.GetDataDir(), sbmPath, version, func() string { return store.GetSettings().GithubProxy })
 	s.fetchSubscription = subService.Fetch
 	s.bootID = readBootID
 	kernelManager.SetInstallHook(func(candidate string) error {

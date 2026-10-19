@@ -1,5 +1,7 @@
 #!/bin/sh
-# 安装 sing-box-manager Agent Skill。默认装到 Claude Code 用户级目录；
+# 从源码仓库安装 sing-box-manager Agent Skill。Agent 电脑上一般无需克隆仓库：
+# 执行管理页面「Agent 接入」的一键命令，或直接运行 sbm ctl skill install（Skill 已编入 sbm）。
+# 本脚本默认装到 Claude Code 用户级目录；
 # 传入目录参数可安装到项目级 .claude/skills 或 Codex 的 skills 目录。
 # 已有版本先完整备份到 skills 目录之外（避免被当成重复的 Skill 加载），再原子替换。
 set -eu

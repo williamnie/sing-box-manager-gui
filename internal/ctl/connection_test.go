@@ -97,3 +97,24 @@ func TestConnectionDoesNotSaveIncompatibleServer(t *testing.T) {
 		t.Fatal("incompatible server saved")
 	}
 }
+
+func TestSavedHTTPConnectionWarnsOnlyWhenConnecting(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "sbm"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	saved := `{"version":1,"server":"http://192.0.2.10:9","allow_insecure_http":true,"token":"sbm_12345678_` + strings.Repeat("a", 64) + `"}`
+	if err := os.WriteFile(filepath.Join(dir, "sbm", "connection.json"), []byte(saved), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--timeout", "200ms", "status"}, &stdout, &stderr, strings.NewReader(""), func(k string) string {
+		if k == "XDG_CONFIG_HOME" {
+			return dir
+		}
+		return ""
+	})
+	if code != ExitServer || strings.Contains(stderr.String(), "明文") {
+		t.Fatal(code, stderr.String())
+	}
+}

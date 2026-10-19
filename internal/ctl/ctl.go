@@ -40,6 +40,7 @@ type options struct {
 	token                                  string // 已保存连接或首次交互输入，不接受命令行明文令牌
 	timeout                                time.Duration
 	allowHTTP                              bool
+	savedHTTP                              bool // 明文 HTTP 来自 connect 时已确认的连接，不再逐条警告
 	stderr                                 io.Writer
 }
 
@@ -65,8 +66,9 @@ const usage = `用法: sbm ctl [全局参数] <命令> [参数]
   --timeout DURATION    请求超时，默认 60s
   --allow-insecure-http 允许以明文 HTTP 连接非回环地址（对应管理器的 -allow-insecure-http，仅限可信网络；SBM_ALLOW_INSECURE_HTTP=1）
 
-首次接入:
+首次接入（在运行 Agent 的电脑上执行；一般直接运行管理页面「Agent 接入」提供的一键命令即可）:
   connect --server URL [--fingerprint HEX]  粘贴令牌后验证并保存连接，以后直接运行 sbm ctl status
+  skill install [--dir 目录]...             安装内置的 Agent Skill（默认 ~/.claude/skills、~/.codex/skills 中已存在者）
 
 只读:
   capabilities | status | diff | versions | audit [--limit N]
@@ -139,6 +141,10 @@ func run(args []string, e env) int {
 	for flag, variable := range map[string]string{"server": "SBM_SERVER", "token-file": "SBM_TOKEN_FILE", "ca-file": "SBM_CA_FILE", "fingerprint": "SBM_FINGERPRINT", "allow-insecure-http": "SBM_ALLOW_INSECURE_HTTP"} {
 		explicit[flag] = explicit[flag] || e.getenv(variable) != ""
 	}
+	// 安装 Skill 只写本机文件，不需要连接和令牌。
+	if rest[0] == "skill" {
+		return skillCommand(rest[1:], e)
+	}
 	if rest[0] == "connect" {
 		if len(rest) != 1 || !explicit["server"] {
 			return usageErr(e, "请复制管理页面生成的 connect 命令（需要 --server 地址）")
@@ -182,7 +188,9 @@ func newClient(o options) (*client, error) {
 		if !o.allowHTTP {
 			return nil, fmt.Errorf("非回环地址默认要求 https；远程主机可用 ssh -L 隧道后访问 http://127.0.0.1，可信局域网可显式加 --allow-insecure-http")
 		}
-		fmt.Fprintln(o.stderr, "sbm ctl: 警告：以明文 HTTP 连接非回环地址，Agent 令牌与配置未加密，请仅在可信网络使用")
+		if !o.savedHTTP {
+			fmt.Fprintln(o.stderr, "sbm ctl: 警告：以明文 HTTP 连接非回环地址，Agent 令牌与配置未加密，请仅在可信网络使用")
+		}
 	}
 	token := o.token
 	if token == "" {

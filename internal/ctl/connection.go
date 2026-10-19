@@ -85,7 +85,7 @@ func applySavedConnection(o *options, explicit map[string]bool, path string) err
 		o.caFile = saved.CAFile
 	}
 	if !explicit["allow-insecure-http"] {
-		o.allowHTTP = saved.AllowHTTP
+		o.allowHTTP, o.savedHTTP = saved.AllowHTTP, saved.AllowHTTP
 	}
 	if !explicit["token-file"] {
 		o.token = saved.Token

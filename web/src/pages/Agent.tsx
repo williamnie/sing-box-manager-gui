@@ -2,11 +2,11 @@ import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Button, Checkbox, Input } from '@nextui-org/react';
 import { Copy } from 'lucide-react';
-import { agentApi, type AgentChangeset, type AgentScope, type AgentToken, type AuditEntry } from '../api/agent';
+import { agentApi, type AgentChangeset, type AgentConnection as Connection, type AgentScope, type AgentToken, type AuditEntry } from '../api/agent';
 import { errorMessage } from '../api';
 import { toast } from '../components/Toast';
 import ConfirmModal from '../components/ConfirmModal';
-import AgentConnection from '../components/AgentConnection';
+import AgentConnection, { DeviceTag } from '../components/AgentConnection';
 
 const scopeLabels: Record<AgentScope, string> = {
   read: '只读：状态、差异、日志、DNS、解释、审计',
@@ -76,6 +76,9 @@ export default function Agent() {
   const [busy, setBusy] = useState(false);
   const [revoking, setRevoking] = useState<AgentToken | null>(null);
   const [resolveNote, setResolveNote] = useState('');
+  const [connection, setConnection] = useState<Connection | null>(null);
+  const [connectionError, setConnectionError] = useState('');
+  const [connectionAttempt, setConnectionAttempt] = useState(0);
   const [revertPreview, setRevertPreview] = useState<(AgentChangeset & { apply_ready?: boolean; blocked_reason?: string }) | null>(null);
 
   const startRevert = async (id: string) => {
@@ -101,6 +104,17 @@ export default function Agent() {
       toast.error(errorMessage(error, '读取 Agent 信息失败'));
     }
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    void agentApi.connection().then(
+      (response) => {
+        if (active) { setConnection(response.data.data); setConnectionError(''); }
+      },
+      (reason) => { if (active) setConnectionError(errorMessage(reason, '读取接入信息失败')); },
+    );
+    return () => { active = false; };
+  }, [connectionAttempt]);
 
   useEffect(() => {
     void load();
@@ -157,12 +171,15 @@ export default function Agent() {
       </div>
 
       <section className={sectionClass}>
-        <h2 className="font-semibold text-zinc-900 dark:text-zinc-100">创建令牌</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="font-semibold text-zinc-900 dark:text-zinc-100">第 1 步 · 创建令牌</h2>
+          <DeviceTag>本页（浏览器）</DeviceTag>
+        </div>
         <form onSubmit={createToken} className="mt-4 space-y-4">
           <div className="grid gap-4 sm:grid-cols-3">
             <Input name="name" label="名称" placeholder="例如 claude-on-laptop" isRequired maxLength={64} isDisabled={busy} />
             <Input name="days" label="有效期（天）" type="number" min={1} max={90} defaultValue="30" isRequired isDisabled={busy} />
-            <Input name="cidrs" label="来源网段（可选）" placeholder="127.0.0.1/32, 192.0.2.0/24" isDisabled={busy} />
+            <Input key={connection?.suggested_cidrs.join(',')} name="cidrs" label="来源网段（可选）" placeholder="127.0.0.1/32, 192.0.2.0/24" defaultValue={connection?.suggested_cidrs.join(', ')} isDisabled={busy} />
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
             {(Object.keys(scopeLabels) as AgentScope[]).map((scope) => (
@@ -171,12 +188,12 @@ export default function Agent() {
               </Checkbox>
             ))}
           </div>
-          <p className="text-xs text-zinc-500">只授予需要的权限；通过 SSH 隧道访问时来源地址为 127.0.0.1。</p>
+          <p className="text-xs text-zinc-500">只授予需要的权限。来源网段已按管理器允许的局域网预填，限制只有这些地址的电脑能使用令牌；通过 SSH 隧道访问时来源地址为 127.0.0.1。</p>
           <Button type="submit" size="sm" color="primary" isLoading={busy} isDisabled={scopes.length === 0}>创建令牌</Button>
         </form>
         {created && (
           <div className="mt-4 rounded border border-success/40 bg-success/5 p-3">
-            <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">令牌「{created.name}」只显示这一次，请立即保存</p>
+            <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">令牌「{created.name}」只显示这一次，复制后在第 2 步中粘贴</p>
             <div className="mt-2 flex items-center gap-2">
               <code className="min-w-0 flex-1 break-all rounded bg-zinc-100 px-2 py-1 font-mono text-xs dark:bg-black/40">{created.token}</code>
               <Button size="sm" variant="flat" isIconOnly aria-label="复制令牌" onPress={() => copy(created.token)}><Copy className="size-4" /></Button>
@@ -186,7 +203,7 @@ export default function Agent() {
         )}
       </section>
 
-      <AgentConnection onCopy={copy} />
+      <AgentConnection connection={connection} error={connectionError} onRetry={() => setConnectionAttempt((value) => value + 1)} onCopy={copy} />
 
       <section className={sectionClass}>
         <h2 className="font-semibold text-zinc-900 dark:text-zinc-100">令牌</h2>

@@ -420,11 +420,11 @@ func (s *Server) logout(c *gin.Context) {
 func (s *Server) AuthReady() bool                          { return s.auth != nil }
 func (s *Server) SetAllowedNetworks(networks []*net.IPNet) { s.allowedNetworks = networks }
 func (s *Server) RunTLS(addr, cert, key string) error {
-	config, fingerprint, err := managementTLS(cert, key)
+	config, fingerprint, pin, err := managementTLS(cert, key)
 	if err != nil {
 		return err
 	}
-	s.managementFingerprint = fingerprint
+	s.managementFingerprint, s.managementPubkeyPin = fingerprint, pin
 	server := s.httpServer(addr)
 	server.TLSConfig = config
 	return server.ListenAndServeTLS("", "")

@@ -21,6 +21,9 @@ const agentAPIVersion = "v1"
 const confirmGuarantee = "确认窗口由管理器进程计时：管理器运行期间到期未确认会自动回滚；管理器重启时在开放 API 与订阅调度前优先恢复所有未确认变更。管理器崩溃或停机期间没有独立 watchdog，不保证准时回滚；主机重启后的恢复只还原数据与停止态的配置文件，不会自动启动内核。"
 
 func (s *Server) setupAgentRoutes() {
+	// Agent 电脑上的一键接入：脚本与客户端都是公开内容，不要求登录，仍受来源网段限制。
+	s.router.GET("/agent/setup.sh", s.agentSetupScript)
+	s.router.GET("/agent/download/:name", s.agentDownload)
 	v1 := s.router.Group("/api/agent/v1", s.requireAgentToken)
 	read, runtime, write, deploy := requireScope(scopeRead), requireScope(scopeRuntime), requireScope(scopeWrite), requireScope(scopeDeploy)
 	v1.GET("/capabilities", s.agentCapabilities)

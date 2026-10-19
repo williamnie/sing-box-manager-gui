@@ -30,7 +30,7 @@ func TestAgentConnectionUsesLoadedServerCertificate(t *testing.T) {
 	if err := os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: key}), 0600); err != nil {
 		t.Fatal(err)
 	}
-	config, fingerprint, err := managementTLS(certPath, keyPath)
+	config, fingerprint, pin, err := managementTLS(certPath, keyPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestAgentConnectionUsesLoadedServerCertificate(t *testing.T) {
 		t.Fatal(err)
 	}
 	f := newAgentFixture(t)
-	f.s.managementFingerprint = fingerprint
+	f.s.managementFingerprint, f.s.managementPubkeyPin = fingerprint, pin
 	req := httptest.NewRequest("GET", "https://192.168.50.142:19090/api/agent/connection", nil)
 	req.AddCookie(f.cookie)
 	req.Header.Set("X-Forwarded-Host", "attacker.example")

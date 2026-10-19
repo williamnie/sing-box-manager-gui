@@ -5,7 +5,10 @@ export type AgentScope = 'read' | 'runtime' | 'write' | 'deploy';
 export interface AgentConnection {
   server: string;
   fingerprint: string;
+  pinned_pubkey: string;
   allow_insecure_http: boolean;
+  local_only: boolean;
+  suggested_cidrs: string[];
 }
 
 export interface AgentToken {
