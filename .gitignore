@@ -9,3 +9,4 @@ web/dist/*
 .claude/config.json
 data/
 data/*
+/cache.db
