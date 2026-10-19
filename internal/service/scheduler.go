@@ -13,6 +13,7 @@ type Scheduler struct {
 	store      *storage.JSONStore
 	subService *SubscriptionService
 	writeGuard sync.Locker
+	skip       func() bool  // 返回 true 时本轮不写入（Agent 确认窗口或待人工恢复）
 	onUpdate   func() error // 订阅更新后的回调
 
 	stopCh   chan struct{}
@@ -106,6 +107,11 @@ func (s *Scheduler) updateSubscriptions() {
 		s.writeGuard.Lock()
 		defer s.writeGuard.Unlock()
 	}
+	// 在写入前跳过，避免覆盖 Agent 变更的恢复点。
+	if s.skip != nil && s.skip() {
+		logger.Println("[Scheduler] Agent 变更等待确认或恢复，跳过本轮订阅更新")
+		return
+	}
 	logger.Println("[Scheduler] 开始自动更新订阅...")
 
 	if err := s.subService.RefreshAll(); err != nil {
@@ -147,3 +153,6 @@ func (s *Scheduler) GetInterval() time.Duration {
 
 // SetWriteGuard 必须在 Start 前设置，与 HTTP 写入和迁移互斥。
 func (s *Scheduler) SetWriteGuard(guard sync.Locker) { s.writeGuard = guard }
+
+// SetSkip 设置写入前的跳过条件。
+func (s *Scheduler) SetSkip(skip func() bool) { s.skip = skip }

@@ -104,6 +104,11 @@ func (s *SubscriptionService) RefreshAll() error {
 	return nil
 }
 
+// Fetch 拉取并解析订阅到传入对象，不写入存储。
+func (s *SubscriptionService) Fetch(sub *storage.Subscription) error {
+	return s.refresh(sub)
+}
+
 // refresh 内部刷新方法
 func (s *SubscriptionService) refresh(sub *storage.Subscription) error {
 	// 拉取订阅内容

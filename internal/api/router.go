@@ -62,6 +62,11 @@ type Server struct {
 	systemdManager    *daemon.SystemdManager
 	kernelManager     *kernel.Manager
 	scheduler         *service.Scheduler
+	agentTokens       *agentTokenStore
+	agent             *agentManager
+	auditLog          *auditLog
+	fetchSubscription func(*storage.Subscription) error
+	bootID            func() string
 	router            *gin.Engine
 	sbmPath           string // sbm 可执行文件路径
 	port              int    // Web 服务端口
@@ -97,6 +102,18 @@ func NewServer(store *storage.JSONStore, processManager *daemon.ProcessManager, 
 	}
 
 	s.auth, _ = newAuth(store.GetDataDir())
+	if tokens, err := newAgentTokenStore(store.GetDataDir()); err == nil {
+		s.agentTokens = tokens
+	} else {
+		logger.Printf("Agent 令牌不可用: %v", err)
+	}
+	s.agent = newAgentManager(store.GetDataDir())
+	if s.agent.err != nil {
+		logger.Printf("Agent 变更日志不可用，已暂停配置写入: %v", s.agent.err)
+	}
+	s.auditLog = newAuditLog(filepath.Join(store.GetDataDir(), "agent"))
+	s.fetchSubscription = subService.Fetch
+	s.bootID = readBootID
 	kernelManager.SetInstallHook(func(candidate string) error {
 		s.operationMu.Lock()
 		defer s.operationMu.Unlock()
@@ -105,6 +122,7 @@ func NewServer(store *storage.JSONStore, processManager *daemon.ProcessManager, 
 	// 设置调度器的更新回调
 	s.scheduler.SetWriteGuard(&s.writeMu)
 	s.scheduler.SetUpdateCallback(s.autoApplyConfig)
+	s.scheduler.SetSkip(s.agentWriteBlocked)
 
 	s.setupRoutes()
 	return s
@@ -130,17 +148,25 @@ func (s *Server) setupRoutes() {
 	s.router.POST("/api/auth/setup", s.login)
 	s.router.POST("/api/auth/login", s.login)
 	s.router.POST("/api/auth/logout", s.logout)
+	s.setupAgentRoutes()
 
 	// API 路由组
 	api := s.router.Group("/api", s.requireAuth, func(c *gin.Context) {
-		if c.Request.Method != "GET" && !strings.HasPrefix(c.Request.URL.Path, "/api/runtime/") {
-			s.writeMu.Lock()
-			defer s.writeMu.Unlock()
+		if c.Request.Method != "GET" {
+			if !strings.HasPrefix(c.Request.URL.Path, "/api/runtime/") {
+				s.writeMu.Lock()
+				defer s.writeMu.Unlock()
+			}
+			// 取得 writeMu 后再检查，Agent 确认窗口内只放行认证、令牌与确认/恢复操作。
+			if !strings.HasPrefix(c.Request.URL.Path, "/api/auth/") && !strings.HasPrefix(c.Request.URL.Path, "/api/agent/") && s.agentGateResponse(c) {
+				return
+			}
 		}
 		c.Next()
 	})
 	{
 		api.POST("/auth/password", s.changePassword)
+		s.setupAgentAdminRoutes(api)
 		s.setupRuntimeRoutes(api)
 		s.setupDeploymentRoutes(api)
 		api.GET("/dns/queries", s.getDNSQueries)

@@ -210,51 +210,10 @@ func (s *Server) updateImportedRule(c *gin.Context) {
 		return
 	}
 	current := policy.Rules[index]
-	rule := make(map[string]any, len(current))
-	for key, value := range current {
-		rule[key] = value
-	}
-	for key, value := range req.Updates {
-		if err := validateImportedField(key, value); err != nil {
-			c.JSON(400, gin.H{"error": err.Error()})
-			return
-		}
-		if value == nil {
-			delete(rule, key)
-		} else {
-			rule[key] = value
-		}
-	}
-	if hasImportedMatch(current) && !hasImportedMatch(rule) {
-		c.JSON(400, gin.H{"error": "请至少保留一个匹配条件，不能将这条规则清空为全部流量"})
+	rule, err := mergeImportedRule(current, req.Updates)
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
 		return
-	}
-	if !reflect.DeepEqual(rule["action"], current["action"]) {
-		if old, _ := current["action"].(string); old != "" && old != "route" && old != "reject" {
-			c.JSON(400, gin.H{"error": "此规则使用高级动作，只能修改匹配条件，不能直接切换处理方式"})
-			return
-		}
-		for _, key := range []string{"override_address", "override_port", "network_strategy", "fallback_delay", "udp_disable_domain_unmapping", "udp_connect", "udp_timeout", "tls_fragment", "tls_fragment_fallback_delay", "tls_record_fragment"} {
-			if current[key] != nil {
-				c.JSON(400, gin.H{"error": "此规则带有连接处理参数，请保留当前动作，仅编辑匹配条件"})
-				return
-			}
-		}
-		if current["action"] == "reject" {
-			delete(rule, "method")
-			delete(rule, "no_drop")
-		}
-	}
-	if rule["action"] == "reject" {
-		if rule["outbound"] != nil {
-			c.JSON(400, gin.H{"error": "拒绝动作不应指定出站"})
-			return
-		}
-	} else if rule["action"] == nil || rule["action"] == "route" {
-		if out, _ := rule["outbound"].(string); out == "" {
-			c.JSON(400, gin.H{"error": "请选择目标出站"})
-			return
-		}
 	}
 	if reflect.DeepEqual(current, rule) {
 		c.JSON(200, gin.H{"message": "规则内容未变化", "application": "unchanged"})
@@ -307,4 +266,49 @@ func (s *Server) updateImportedRule(c *gin.Context) {
 	}
 	c.Header("Cache-Control", "no-store")
 	c.JSON(200, gin.H{"application": application, "warning": warning, "checked": checked})
+}
+
+// mergeImportedRule 把表单/Agent 的字段更新合并到导入规则副本，保留未编辑的扩展字段。
+func mergeImportedRule(current, updates map[string]any) (map[string]any, error) {
+	rule := make(map[string]any, len(current))
+	for key, value := range current {
+		rule[key] = value
+	}
+	for key, value := range updates {
+		if err := validateImportedField(key, value); err != nil {
+			return nil, err
+		}
+		if value == nil {
+			delete(rule, key)
+		} else {
+			rule[key] = value
+		}
+	}
+	if hasImportedMatch(current) && !hasImportedMatch(rule) {
+		return nil, fmt.Errorf("请至少保留一个匹配条件，不能将这条规则清空为全部流量")
+	}
+	if !reflect.DeepEqual(rule["action"], current["action"]) {
+		if old, _ := current["action"].(string); old != "" && old != "route" && old != "reject" {
+			return nil, fmt.Errorf("此规则使用高级动作，只能修改匹配条件，不能直接切换处理方式")
+		}
+		for _, key := range []string{"override_address", "override_port", "network_strategy", "fallback_delay", "udp_disable_domain_unmapping", "udp_connect", "udp_timeout", "tls_fragment", "tls_fragment_fallback_delay", "tls_record_fragment"} {
+			if current[key] != nil {
+				return nil, fmt.Errorf("此规则带有连接处理参数，请保留当前动作，仅编辑匹配条件")
+			}
+		}
+		if current["action"] == "reject" {
+			delete(rule, "method")
+			delete(rule, "no_drop")
+		}
+	}
+	if rule["action"] == "reject" {
+		if rule["outbound"] != nil {
+			return nil, fmt.Errorf("拒绝动作不应指定出站")
+		}
+	} else if rule["action"] == nil || rule["action"] == "route" {
+		if out, _ := rule["outbound"].(string); out == "" {
+			return nil, fmt.Errorf("请选择目标出站")
+		}
+	}
+	return rule, nil
 }

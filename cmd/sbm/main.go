@@ -133,6 +133,8 @@ func run() error {
 		return fmt.Errorf("认证初始化失败，管理服务未启动；请检查数据目录中的认证文件权限和格式")
 	}
 	server.SetAllowedNetworks(allowed)
+	// 先恢复上次未确认的 Agent 变更，再启动调度和监听。
+	server.RecoverAgentOperations()
 	if _, err := os.Stat(filepath.Join(dataDir, "setup-token")); err == nil {
 		logger.Printf("首次登录初始化令牌文件: %s", filepath.Join(dataDir, "setup-token"))
 	}
