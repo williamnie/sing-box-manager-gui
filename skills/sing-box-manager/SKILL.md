@@ -5,26 +5,32 @@ description: 通过 `sbm ctl` 操作内网部署的 sing-box manager（sbm）：
 
 # sing-box manager（sbm）Agent 操作
 
-所有操作都通过 `sbm ctl` 完成。它是 Agent API 客户端：HTTPS（或本机回环 HTTP）加只读文件中的 Bearer 令牌。**不需要 SSH，也不需要 sudo。**
+所有操作都通过 `sbm ctl` 完成。它是 Agent API 客户端，用 `sbm ctl connect` 保存的连接（局域网 HTTP、HTTPS 或本机回环）和 Bearer 令牌访问管理器。**不需要 SSH，也不需要 sudo。**
 
 ## 1. 连接
 
-优先复用 `sbm ctl connect` 保存的连接，直接执行 `sbm ctl capabilities`。首次接入时，用户在管理页面创建令牌，复制页面自动填好地址和证书指纹的接入命令，在运行 Agent 的电脑上执行，按提示粘贴令牌即可。无需自行查找证书指纹，也不需要每次重复填写连接参数。
+优先复用已保存的连接：直接执行 `sbm ctl capabilities`。它返回当前令牌的权限（scopes）、可修改的资源及字段、确认窗口的范围与保证说明。以它的返回为准，不要凭记忆假设。
 
-已验证的连接保存在 `~/.config/sbm/connection.json`（支持 `XDG_CONFIG_HOME`），文件权限 0600，包含令牌；不要读取或回显其内容。更新地址、证书或令牌时重新运行 `connect`。切换其他服务地址时不能复用已保存令牌，需要重新连接或使用明确的令牌文件。
+如果提示找不到 `sbm`、没有已保存连接或令牌失效（退出码 4），让用户按下面的步骤接入，并**明确告诉用户每一步在哪台设备上做**：
 
-先运行 `sbm ctl capabilities`。它返回当前令牌的权限（scopes）、可修改的资源及字段、确认窗口的范围与保证说明。以它的返回为准，不要凭记忆假设。
+1. **浏览器**：打开管理界面（通常是 `http://网关局域网IP:9090`）→「Agent 接入」→ 创建令牌，勾选需要的权限。
+2. **Agent 电脑**（就是你正在运行的这台电脑）：复制同一页面的「一键接入命令」到终端执行，形如 `curl -fsSL 'http://网关IP:9090/agent/setup.sh' | sh`。它会从管理器下载 sbm、安装本 Skill 并提示粘贴令牌。令牌由用户在终端里粘贴，**不要让用户把令牌发给你**，也不要替用户执行这条交互命令。
+3. 用户完成后，新开 shell 执行 `sbm ctl capabilities` 确认。若仍找不到 `sbm`，试 `~/.local/bin/sbm`。
 
-手动接入仍可用环境变量或全局参数提供连接参数，普通命令的参数写在子命令之前；`connect` 也支持将连接参数写在子命令之后：
+如果管理页面只能通过 `127.0.0.1` 打开（管理器只监听本机），用户需要先在**网关服务器**上开启局域网访问（例如重新运行安装脚本并加 `--lan-http <服务器局域网IP>`），这属于管理员操作，你只做说明。
+
+已验证的连接保存在 `~/.config/sbm/connection.json`，包含令牌；不要读取或回显其内容。切换其他服务地址时不能复用已保存令牌，需要重新连接。
+
+手动指定连接参数时，普通命令的全局参数写在子命令之前：
 
 | 场景 | 用法 |
 |---|---|
 | 在服务器本机 | `sbm ctl status`（默认 `http://127.0.0.1:9090`） |
 | 有 SSH 但管理器只监听回环 | 用户先建隧道 `ssh -N -L 19090:127.0.0.1:9090 user@host`，然后 `sbm ctl --server http://127.0.0.1:19090 status` |
-| 局域网直连 | `sbm ctl --server https://<管理IP>:9090 --fingerprint <证书SHA-256> status`；非回环地址默认拒绝明文 http |
-| 可信局域网明文 HTTP | 仅当用户已用 `-allow-insecure-http` 启动管理器并明确要求时：`sbm ctl --allow-insecure-http --server http://<管理IP>:9090 status`，不要自行添加该参数 |
+| 局域网 HTTP（内网默认） | `sbm ctl connect --server http://<管理IP>:9090 --allow-insecure-http`，只在用户已开启局域网 HTTP 时使用 |
+| 局域网 HTTPS | `sbm ctl connect --server https://<管理IP>:9090 --fingerprint <证书SHA-256>`；指纹由管理页面给出 |
 
-令牌文件默认是 `~/.config/sbm/token`（也可用 `--token-file` 或 `SBM_TOKEN_FILE` 指定），权限必须为 600。令牌只能由用户在管理界面「Agent 接入」页创建。**不要索要管理密码**，也不要把令牌写进命令行参数、环境变量或日志。
+**不要索要管理密码**，也不要把令牌写进命令行参数、环境变量或日志。
 
 ## 2. 硬性规则
 

@@ -173,13 +173,13 @@ Captured from the current source on September 30, 2026, using the dark theme at 
 
 #### Pre-built Binaries
 
-Download from [Releases](https://github.com/williamnie/singbox-manager/releases) page.
+Download from [Releases](https://github.com/williamnie/sing-box-manager-gui/releases) page.
 
 #### Build from Source
 
 ```bash
 # Clone the repository
-git clone https://github.com/williamnie/singbox-manager.git
+git clone https://github.com/williamnie/sing-box-manager-gui.git
 cd singbox-manager
 
 # Build for all platforms
@@ -255,6 +255,25 @@ For direct LAN management, explicitly configure a listening IP, TLS certificate 
 ```
 
 HTTP leaves passwords, sessions, and configuration unencrypted in transit; login and source restrictions remain enforced. Keep the existing `-data` argument when changing an installed service. Each instance must use a separate data directory and non-conflicting ports.
+
+#### Agent Access (Claude Code / Codex)
+
+Let an AI agent manage rules, DNS, and nodes through scoped tokens and confirm-or-rollback change sets. Each step names the device it runs on. The **agent computer** is the one running Claude Code or Codex (for example a Mac mini); it may also be the gateway server itself.
+
+| Step | Where | What to do |
+|---|---|---|
+| 0 | Gateway server, once | Expose the UI on the LAN over HTTP: `sudo scripts/install-gateway.sh /abs/sbm /abs/sbm-gateway --install --lan-http 192.168.50.142` (or add `-listen <IP> -allow-insecure-http -allow-network <CIDR>`). Skip this if the agent runs on the server |
+| 1 | Browser | Open `http://192.168.50.142:9090` → "Agent 接入" → create a token with the minimum scopes. Source CIDRs are prefilled |
+| 2 | Agent computer | Paste the one-line command from the same page into a terminal, then paste the token when prompted |
+| 3 | Agent computer | Reopen Claude Code or Codex and ask it to "check the gateway status with sbm" |
+
+The step 2 command looks like:
+
+```bash
+curl -fsSL 'http://192.168.50.142:9090/agent/setup.sh' | sh
+```
+
+It downloads `sbm` of the same version as the manager into `~/.local/bin` (adding it to PATH if needed). The agent computer never needs GitHub: the manager serves its own binary for the same platform, and fetches, verifies (`SHA256SUMS`), and caches the binary for other platforms once. The script installs the Skill into the existing `~/.claude/skills` and `~/.codex/skills`, then verifies and saves the connection. No repository clone and no certificate fingerprint lookup is needed; on self-signed HTTPS the command pins the certificate key automatically. To update later, rerun the command, or use `sbm ctl skill install` / `sbm ctl connect` individually. See [Agent access](docs/agent.md) for details.
 
 ### Configuration
 
@@ -462,13 +481,13 @@ MIT License
 
 #### 预编译二进制文件
 
-从 [Releases](https://github.com/williamnie/singbox-manager/releases) 页面下载。
+从 [Releases](https://github.com/williamnie/sing-box-manager-gui/releases) 页面下载。
 
 #### 从源码构建
 
 ```bash
 # 克隆仓库
-git clone https://github.com/williamnie/singbox-manager.git
+git clone https://github.com/williamnie/sing-box-manager-gui.git
 cd singbox-manager
 
 # 构建所有平台
@@ -544,6 +563,25 @@ ssh -L 19090:127.0.0.1:9090 user@gateway-host
 ```
 
 HTTP 不加密传输中的密码、会话和配置；登录鉴权和来源限制仍然生效。修改已安装服务时保留原有 `-data` 参数。多实例必须使用独立数据目录和互不冲突的端口。
+
+#### Agent 接入（Claude Code / Codex）
+
+让 AI Agent 通过受限令牌和「应用 → 验证 → 确认，否则自动回滚」的变更集管理规则、DNS 和节点。每一步都注明在哪台设备上执行。**Agent 电脑**指运行 Claude Code 或 Codex 的电脑（例如 Mac mini），也可以就是网关服务器本身。
+
+| 步骤 | 在哪台设备 | 做什么 |
+|---|---|---|
+| 0 | 网关服务器（只需一次） | 开启局域网 HTTP 访问：`sudo scripts/install-gateway.sh /绝对路径/sbm /绝对路径/sbm-gateway --install --lan-http 192.168.50.142`（或给 sbm 加 `-listen <IP> -allow-insecure-http -allow-network <网段>`）。Agent 就在服务器上时可跳过 |
+| 1 | 浏览器 | 打开 `http://192.168.50.142:9090` →「Agent 接入」→ 创建令牌，只勾选需要的权限，来源网段已预填 |
+| 2 | Agent 电脑 | 复制同一页面的一键接入命令到终端执行，按提示粘贴令牌 |
+| 3 | Agent 电脑 | 重新打开 Claude Code 或 Codex，说「用 sbm 看看网关状态」 |
+
+第 2 步的命令形如：
+
+```bash
+curl -fsSL 'http://192.168.50.142:9090/agent/setup.sh' | sh
+```
+
+脚本把与管理器同版本的 `sbm` 下载到 `~/.local/bin`（需要时写入 PATH）。Agent 电脑不需要访问 GitHub：同平台由管理器直接提供自身二进制，其他平台由管理器下载一次、按 `SHA256SUMS` 校验后缓存。接着把 Skill 装进已存在的 `~/.claude/skills` 和 `~/.codex/skills`，再验证并保存连接。整个过程不需要克隆仓库，也不需要查找证书指纹；自签 HTTPS 时命令会自动固定证书公钥。以后要更新，重新执行这条命令即可，也可以单独运行 `sbm ctl skill install` 或 `sbm ctl connect`。详见 [Agent 接入](docs/agent.md)。
 
 ### 配置
 

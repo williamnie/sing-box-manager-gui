@@ -11,7 +11,7 @@ AI Agent 或脚本通过受限的 Agent API 操作管理器。客户端是 `sbm 
 | 权限 | `read` 查看；`runtime` 切换节点、测延迟；`write` 创建并校验变更集；`deploy` 应用、确认、回滚本令牌创建的变更集 |
 | 变更集 | 预览 → 应用 → 确认窗口 → 确认或回滚。记录保存在 `agent/changesets/`，恢复点在应用前落盘 |
 | 审计 | `agent/audit.jsonl`，记录令牌创建与吊销、变更集的各个阶段，内容已脱敏 |
-| Skill | `skills/sing-box-manager/`，教 Agent 安全使用 `sbm ctl` |
+| Skill | `skills/sing-box-manager/`，编入 sbm 二进制，教 Agent 安全使用 `sbm ctl` |
 
 Agent 可以修改：自定义规则、导入规则（编辑匹配条件与出站、删除，按导入策略版本校验）、预设规则组开关与出站、自定义拦截集合、过滤器、订阅（新增、改名、启停、刷新、删除）、手动节点、hosts、Split DNS、普通设备与设备组、proxy/direct DNS、默认出站和日志级别，并可撤销最近 20 个已确认的变更。
 
@@ -19,49 +19,74 @@ Agent 写入的节点（手动添加或订阅拉取）按协议与字段白名�
 
 Agent API 不提供：网关启用与恢复、拓扑变更（包括会改变 bypass 网段的设备变更）、内核下载与替换、root 策略、端口/路径/监听/自动应用等系统设置、令牌管理与改密、配置导入与代理整理方案。这些操作由管理员在界面上完成，Agent 可以查看状态和预览；如果用户为某次维护另行明确授权，Agent 按用户的具体指示执行，而不是自行绕过。
 
-## 管理员：签发令牌
+## 接入步骤
 
-### 推荐接入方式
+接入涉及三台“设备”，每一步都注明在哪里执行：
 
-1. 在管理界面「Agent 接入」中创建令牌。
-2. 点击「复制接入命令」，在运行 Agent 的电脑（例如 Mac mini）上执行。页面已经填入实际的服务地址、端口和当前 HTTPS 证书指纹，无需自己查找证书。
-3. 按提示粘贴令牌并按回车。终端输入不显示；CLI 会先验证证书、令牌和 API 版本，成功后才保存连接。
-4. 以后直接执行 `sbm ctl status` 或其他命令，不用重复指定地址和指纹。
+| 名称 | 指的是 |
+|---|---|
+| **网关服务器** | 运行 sbm 管理器的机器（例如家里的 Linux 旁路网关） |
+| **浏览器** | 任意能打开管理界面的电脑或手机 |
+| **Agent 电脑** | 运行 Claude Code、Codex 等 Agent 的电脑（例如 Mac mini）。可以就是网关服务器本身 |
 
-连接保存在 Agent 电脑的 `~/.config/sbm/connection.json`（支持 `XDG_CONFIG_HOME`），包含令牌，文件权限为 0600。重新运行页面提供的 `sbm ctl connect ...` 可更新连接；验证失败不会覆盖原连接。已保存的令牌绑定服务地址，切换目标应重新 connect，或显式传入 `--server` 与 `--token-file`。
+### 0. 让管理界面可从局域网访问（网关服务器，只需一次）
 
-`connect` 也可通过 `--token-file` 读取已有令牌文件，适合脚本使用。首次连接会保留权限范围，连接过程不会修改服务端规则或创建新令牌。
-
-### 手动接入与旧版兼容
-
-1. 打开管理界面「Agent 接入」，填写名称，勾选所需的最小权限，设置有效期（必填），需要时填写来源网段。
-2. 复制只显示一次的令牌，在 Agent 所在机器上保存：
-
-   ```sh
-   mkdir -p ~/.config/sbm && umask 077
-   cat > ~/.config/sbm/token   # 粘贴后按 Ctrl-D
-   ```
-
-   CLI 发现令牌文件权限宽于 600 时会拒绝使用。不要把令牌放进命令行参数或共享的环境变量。
-
-3. 选择连接方式：
-
-   - **Agent 在服务器上运行**：直接执行 `sbm ctl status`（默认 `http://127.0.0.1:9090`）。
-   - **SSH 隧道**：`ssh -N -L 19090:127.0.0.1:9090 user@host`，然后执行 `sbm ctl --server http://127.0.0.1:19090 status`。如果令牌限制了来源网段，需要包含 `127.0.0.1/32`。
-   - **局域网直连**：管理器以 `-listen <IP> -tls-cert … -tls-key … -allow-network …` 启动，Agent 执行 `sbm ctl --server https://<IP>:9090 --fingerprint <证书 SHA-256> status`。对 IP 自签的证书用指纹固定；有私有 CA 时用 `--ca-file`。CLI 默认拒绝对非回环地址使用明文 http，也不跟随重定向。
-   - **可信局域网明文 HTTP**：管理器以 `-allow-insecure-http` 启动时，CLI 也需显式加 `--allow-insecure-http`（或 `SBM_ALLOW_INSECURE_HTTP=1`），例如 `sbm ctl --allow-insecure-http --server http://<IP>:9090 status`。令牌会以明文传输，只在可信网络使用，并建议给令牌加上来源网段限制。
-
-## 安装 Skill
+内网部署推荐使用明文 HTTP，不需要证书：
 
 ```sh
-./scripts/install-agent-skill.sh                     # ~/.claude/skills/sing-box-manager
-./scripts/install-agent-skill.sh ./.claude/skills    # 项目级
-./scripts/install-agent-skill.sh ~/.codex/skills     # Codex
+# 网关服务器上执行；IP 换成服务器的局域网地址
+sudo scripts/install-gateway.sh /绝对路径/sbm /绝对路径/sbm-gateway --install --lan-http 192.168.50.142
 ```
 
-重复安装时，旧版本（包括你自己添加的文件）会先完整备份到 `~/.local/state/sbm-skill-backups/`（可用 `SBM_SKILL_BACKUP_DIR` 指定）。备份放在 skills 目录之外，避免被当成重复的 Skill 加载。新版本在同一目录的临时位置准备好后再替换，脚本会输出恢复旧版本的命令。
+脚本会让管理器监听 `http://192.168.50.142:9090`，来源网段默认取该网卡所在网段（可用 `--allow-network` 指定）。不用安装脚本部署时，给 sbm 加上 `-listen <IP> -allow-insecure-http -allow-network <网段>` 即可，详见[首次登录及监听](deployment-modes.md#首次登录及监听)。首次设置管理密码仍需在服务器本机或 SSH 隧道完成。
 
-Agent 所在机器需要能执行 `sbm`（例如下载同版本的发布二进制并放进 PATH）。
+如果 Agent 就运行在网关服务器上，可以跳过这一步。
+
+### 1. 创建令牌（浏览器）
+
+用 `http://服务器局域网IP:9090` 打开管理界面，进入「Agent 接入」，填写名称，勾选所需的最小权限，设置有效期（必填，最长 90 天）。来源网段已按管理器允许的局域网预填。令牌明文只显示一次，先复制下来。
+
+### 2. 执行一键接入命令（Agent 电脑）
+
+在同一页面复制「一键接入命令」，到 **Agent 电脑**的终端执行，例如：
+
+```sh
+curl -fsSL 'http://192.168.50.142:9090/agent/setup.sh' | sh
+```
+
+脚本依次完成：
+
+1. 从这台管理器下载与管理器同版本的 `sbm` 到 `~/.local/bin`（可用 `SBM_BIN_DIR` 指定），并在需要时把该目录写入 shell 的 PATH；
+2. 把 Skill 安装到已存在的 `~/.claude/skills` 和 `~/.codex/skills`（都不存在时装到 Claude Code）；
+3. 运行 `sbm ctl connect`，提示粘贴第 1 步的令牌。输入不显示；CLI 验证令牌和 API 版本成功后才保存连接。
+
+下载不经过 Agent 电脑访问 GitHub：Agent 电脑与服务器平台相同时，管理器直接提供自身的二进制；平台不同时（例如 Linux 服务器、Mac Agent），管理器按自身版本从 GitHub Releases 下载一次（使用设置中的 GitHub 加速地址），按 `SHA256SUMS` 校验后缓存在数据目录的 `agent/clients/v<版本>/`，之后局域网内直接提供。服务器无法访问 GitHub 时，可把对应的 `sbm-<系统>-<架构>` 文件手动放进该目录。`/agent/setup.sh` 与 `/agent/download/` 不需要登录（内容都是公开文件），仍受来源网段限制。
+
+管理器使用自签 HTTPS 时，页面生成的命令带 `--pinnedpubkey`，curl 只接受这台管理器的证书公钥，后续连接也自动固定证书指纹，不需要自己查找指纹。
+
+### 3. 验证（Agent 电脑）
+
+重新打开 Claude Code 或 Codex，对它说「用 sbm 看看网关状态」；也可以在新终端运行 `sbm ctl status`。
+
+连接保存在 `~/.config/sbm/connection.json`（支持 `XDG_CONFIG_HOME`），包含令牌，权限 0600。再次执行一键命令或 `sbm ctl connect ...` 可更新 sbm、Skill 或令牌；验证失败不会覆盖原连接。已保存的令牌绑定服务地址，切换目标需重新连接。明文 HTTP 的提示只在连接时显示一次。
+
+### 手动接入
+
+已经装好 sbm 时，可以分别执行（都在 Agent 电脑上）：
+
+```sh
+sbm ctl skill install                       # 安装或更新内置 Skill；--dir 可指定目录，可重复
+sbm ctl connect --server http://192.168.50.142:9090 --allow-insecure-http
+```
+
+`sbm ctl skill install` 重复安装时，旧版本（包括你自己添加的文件）会先移动到 `~/.local/state/sbm-skill-backups/`（可用 `SBM_SKILL_BACKUP_DIR` 指定），放在 skills 目录之外，避免被当成重复的 Skill 加载。从源码仓库安装也可以用 `scripts/install-agent-skill.sh [目录]`。
+
+其他连接方式：
+
+- **Agent 在服务器上运行**：直接执行 `sbm ctl status`（默认 `http://127.0.0.1:9090`）。
+- **SSH 隧道**：`ssh -N -L 19090:127.0.0.1:9090 user@host`，然后执行 `sbm ctl --server http://127.0.0.1:19090 status`。如果令牌限制了来源网段，需要包含 `127.0.0.1/32`。
+- **HTTPS 局域网直连**：管理器以 `-listen <IP> -tls-cert … -tls-key … -allow-network …` 启动，`sbm ctl --server https://<IP>:9090 --fingerprint <证书 SHA-256> status`；有私有 CA 时用 `--ca-file`。CLI 默认拒绝对非回环地址使用明文 http（需显式 `--allow-insecure-http` 或 `SBM_ALLOW_INSECURE_HTTP=1`），也不跟随重定向。
+- **令牌文件**：`connect` 和普通命令都可用 `--token-file` 读取权限为 600 的令牌文件，适合脚本。不要把令牌放进命令行参数或共享的环境变量。
 
 ## 关于 sudo 与系统账户
 

@@ -44,7 +44,9 @@ sbm -data /path/to/instance -listen 192.168.50.142 -port 9090 \
 
 IP、端口、网段和数据目录应替换为实际配置；`-listen 0.0.0.0` 可监听所有 IPv4 网卡，浏览器仍使用主机的 LAN IP。开关默认关闭，仅放行非回环明文监听，不关闭登录鉴权、来源 CIDR 和跨站请求检查。首次设置密码仍需通过本机或 SSH 隧道完成，之后可从 LAN 登录。HTTP 不加密传输中的密码、会话和配置，启用后启动日志会提示。若同时配置证书和私钥，仍使用 HTTPS；证书参数缺失或证书加载失败时仍拒绝启动，不会回退到 HTTP。
 
-使用安装脚本创建的 Debian / systemd 服务时，可通过 `sudo systemctl edit singbox-manager` 覆盖启动参数，保留原有数据目录和其他需要的参数。例如：
+使用安装脚本初始化时，可直接加 `--lan-http <局域网IP>`（可选 `--allow-network <网段>`，默认取该网卡网段）生成上述 HTTP 监听参数，例如 `sudo scripts/install-gateway.sh /绝对路径/sbm /绝对路径/sbm-gateway --install --lan-http 192.168.50.142`。重新执行安装脚本会重写服务文件，未加该参数时恢复为仅本机监听。局域网 HTTP 也是 [Agent 一键接入](agent.md#接入步骤) 推荐的方式。
+
+已安装的服务也可通过 `sudo systemctl edit singbox-manager` 覆盖启动参数，保留原有数据目录和其他需要的参数。例如：
 
 ```ini
 [Service]
