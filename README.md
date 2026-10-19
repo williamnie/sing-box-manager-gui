@@ -123,6 +123,7 @@ Connection statistics and STUN rules only cover traffic that actually passes thr
 | [DNS bypass](docs/dns-bypass.md) | Router DNS / static routes, FakeIP, source identity, and verification |
 | [Linux gateway](docs/linux-gateway.md) | Helper installation, system permissions, conflict checks, DHCP / NAT, and recovery |
 | [Built-in runtime panel](docs/builtin-panel.md) | Proxy switching, connections, traffic, incremental logs, and migration from external dashboards |
+| [Agent access](docs/agent.md) | `sbm ctl`, scoped API tokens, change sets with confirm-or-rollback, audit, and the agent Skill |
 
 ### Screenshots
 
@@ -411,6 +412,7 @@ MIT License
 | [DNS 分流旁路](docs/dns-bypass.md) | 主路由 DNS / 静态路由、FakeIP、来源识别与验收步骤 |
 | [Linux 网关部署与恢复](docs/linux-gateway.md) | helper 安装、系统权限、冲突检查、DHCP / NAT 与恢复 |
 | [内置运行面板](docs/builtin-panel.md) | 代理热切换、连接、流量、增量日志与外部面板迁移 |
+| [Agent 接入](docs/agent.md) | `sbm ctl`、受限 API 令牌、确认式变更集与自动回滚、审计和 Agent Skill |
 
 ### 截图
 
