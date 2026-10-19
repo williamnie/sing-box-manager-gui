@@ -122,7 +122,7 @@ set -eu
 
 SERVER=@SERVER@
 VERSION=@VERSION@
-BIN_DIR="${SBM_BIN_DIR:-$HOME/.local/bin}"
+BIN_DIR="${SBM_BIN_DIR:-${HOME}/.local/bin}"
 
 fail() { echo "错误：$*" >&2; exit 1; }
 command -v curl >/dev/null 2>&1 || fail "需要 curl"
@@ -138,40 +138,40 @@ case "$(uname -m)" in
 	*) fail "暂不支持 $(uname -m) 架构" ;;
 esac
 
-echo "[1/3] 从管理器 $SERVER 下载 sbm v$VERSION（$os/$arch）"
-mkdir -p "$BIN_DIR"
-tmp="$(mktemp "$BIN_DIR/.sbm.XXXXXX")"
-trap 'rm -f "$tmp"' EXIT INT TERM
-code="$(@CURL@ -o "$tmp" -w '%{http_code}' "$SERVER/agent/download/sbm-$os-$arch")" || fail "无法连接管理器 $SERVER"
-[ "$code" = 200 ] || fail "下载 sbm 失败（HTTP $code）：$(head -c 600 "$tmp")"
-chmod 755 "$tmp"
-"$tmp" ctl help >/dev/null 2>&1 || fail "下载的 sbm 无法在本机运行"
-mv -f "$tmp" "$BIN_DIR/sbm"
-echo "      已安装到 $BIN_DIR/sbm"
+echo "[1/3] 从管理器 ${SERVER} 下载 sbm v${VERSION}（${os}/${arch}）"
+mkdir -p "${BIN_DIR}"
+tmp="$(mktemp "${BIN_DIR}/.sbm.XXXXXX")"
+trap 'rm -f "${tmp}"' EXIT INT TERM
+code="$(@CURL@ -o "${tmp}" -w '%{http_code}' "${SERVER}/agent/download/sbm-${os}-${arch}")" || fail "无法连接管理器 ${SERVER}"
+[ "${code}" = 200 ] || fail "下载 sbm 失败（HTTP ${code}）：$(head -c 600 "${tmp}")"
+chmod 755 "${tmp}"
+"${tmp}" ctl help >/dev/null 2>&1 || fail "下载的 sbm 无法在本机运行"
+mv -f "${tmp}" "${BIN_DIR}/sbm"
+echo "      已安装到 ${BIN_DIR}/sbm"
 
-case ":$PATH:" in
-	*":$BIN_DIR:"*) ;;
+case ":${PATH}:" in
+	*":${BIN_DIR}:"*) ;;
 	*)
 		case "${SHELL:-}" in
-			*/zsh) rc="$HOME/.zshrc" ;;
-			*/bash) if [ "$os" = darwin ]; then rc="$HOME/.bash_profile"; else rc="$HOME/.bashrc"; fi ;;
-			*) rc="$HOME/.profile" ;;
+			*/zsh) rc="${HOME}/.zshrc" ;;
+			*/bash) if [ "${os}" = darwin ]; then rc="${HOME}/.bash_profile"; else rc="${HOME}/.bashrc"; fi ;;
+			*) rc="${HOME}/.profile" ;;
 		esac
-		if ! grep -qs '# sbm-agent-path' "$rc"; then
-			printf '\nexport PATH="%s:$PATH" # sbm-agent-path\n' "$BIN_DIR" >> "$rc"
-			echo "      已把 $BIN_DIR 加入 PATH（写入 $rc），新开的终端和 Agent 会话生效"
+		if ! grep -qs '# sbm-agent-path' "${rc}"; then
+			printf '\nexport PATH="%s:${PATH}" # sbm-agent-path\n' "${BIN_DIR}" >> "${rc}"
+			echo "      已把 ${BIN_DIR} 加入 PATH（写入 ${rc}），新开的终端和 Agent 会话生效"
 		fi
 		;;
 esac
 
 echo "[2/3] 安装 Agent Skill"
-"$BIN_DIR/sbm" ctl skill install >/dev/null
+"${BIN_DIR}/sbm" ctl skill install >/dev/null
 
 echo "[3/3] 连接管理器"
 if [ -r /dev/tty ]; then
-	"$BIN_DIR/sbm" ctl connect @CONNECT@ </dev/tty
+	"${BIN_DIR}/sbm" ctl connect @CONNECT@ </dev/tty
 else
-	echo "当前没有可交互终端。请在终端执行：$BIN_DIR/sbm ctl connect @CONNECT@"
+	echo "当前没有可交互终端。请在终端执行：${BIN_DIR}/sbm ctl connect @CONNECT@"
 	exit 1
 fi
 echo

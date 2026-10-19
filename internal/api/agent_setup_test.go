@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync/atomic"
@@ -36,6 +37,10 @@ func TestAgentSetupScriptFollowsServerTransport(t *testing.T) {
 	}
 	if out, err := exec.Command("sh", "-n", "-c", script).CombinedOutput(); err != nil {
 		t.Fatal("script syntax", err, string(out))
+	}
+	// macOS sh 在 UTF-8 locale 下会把 $VAR 后紧跟的中文字节当作变量名的一部分，变量必须写成 ${VAR}。
+	if bare := regexp.MustCompile(`\$[A-Za-z_]`).FindAllString(script, -1); len(bare) > 0 {
+		t.Fatal("unbraced shell variables", bare)
 	}
 	if local := publicGet(s, "http://127.0.0.1:9090/agent/setup.sh").Body.String(); strings.Contains(local, "--allow-insecure-http") {
 		t.Fatal("loopback setup must not enable insecure HTTP")
