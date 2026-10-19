@@ -17,7 +17,8 @@ description: 通过 `sbm ctl` 操作内网部署的 sing-box manager（sbm）：
 |---|---|
 | 在服务器本机 | `sbm ctl status`（默认 `http://127.0.0.1:9090`） |
 | 有 SSH 但管理器只监听回环 | 用户先建隧道 `ssh -N -L 19090:127.0.0.1:9090 user@host`，然后 `sbm ctl --server http://127.0.0.1:19090 status` |
-| 局域网直连 | `sbm ctl --server https://<管理IP>:9090 --fingerprint <证书SHA-256> status`；非回环地址 CLI 拒绝明文 http |
+| 局域网直连 | `sbm ctl --server https://<管理IP>:9090 --fingerprint <证书SHA-256> status`；非回环地址默认拒绝明文 http |
+| 可信局域网明文 HTTP | 仅当用户已用 `-allow-insecure-http` 启动管理器并明确要求时：`sbm ctl --allow-insecure-http --server http://<管理IP>:9090 status`，不要自行添加该参数 |
 
 令牌文件默认是 `~/.config/sbm/token`（也可用 `--token-file` 或 `SBM_TOKEN_FILE` 指定），权限必须为 600。令牌只能由用户在管理界面「Agent 接入」页创建。**不要索要管理密码**，也不要把令牌写进命令行参数、环境变量或日志。
 

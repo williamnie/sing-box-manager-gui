@@ -35,6 +35,10 @@ func TestRejectsUnsafeTransportAndTokenFile(t *testing.T) {
 	if code, _, _ := runCtl("--server", "http://192.0.2.10:9090", "--token-file", good, "status"); code != ExitUsage {
 		t.Fatal("plaintext remote server accepted", code)
 	}
+	// 显式开启后放行（服务端不可达，因此是网络错误而非用法错误），并输出明文警告。
+	if code, _, stderr := runCtl("--server", "http://192.0.2.10:9", "--timeout", "200ms", "--allow-insecure-http", "--token-file", good, "status"); code != ExitServer || !strings.Contains(stderr, "明文") {
+		t.Fatal("explicit insecure http not honored", code, stderr)
+	}
 	if code, _, stderr := runCtl("--token-file", tokenFile(t, 0644), "status"); code != ExitUsage || !strings.Contains(stderr, "chmod 600") {
 		t.Fatal("world-readable token accepted", code, stderr)
 	}

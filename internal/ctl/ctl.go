@@ -38,6 +38,8 @@ var decisionCodes = map[string]bool{"operation_pending": true, "pending_changes"
 type options struct {
 	server, tokenFile, caFile, fingerprint string
 	timeout                                time.Duration
+	allowHTTP                              bool
+	stderr                                 io.Writer
 }
 
 type client struct {
@@ -60,6 +62,7 @@ const usage = `用法: sbm ctl [全局参数] <命令> [参数]
   --ca-file PATH        自签证书的 CA（SBM_CA_FILE）
   --fingerprint HEX     固定服务端证书 SHA-256 指纹（SBM_FINGERPRINT）
   --timeout DURATION    请求超时，默认 60s
+  --allow-insecure-http 允许以明文 HTTP 连接非回环地址（对应管理器的 -allow-insecure-http，仅限可信网络；SBM_ALLOW_INSECURE_HTTP=1）
 
 只读:
   capabilities | status | diff | versions | audit [--limit N]
@@ -113,6 +116,8 @@ func run(args []string, e env) int {
 	global.StringVar(&opts.caFile, "ca-file", e.getenv("SBM_CA_FILE"), "")
 	global.StringVar(&opts.fingerprint, "fingerprint", e.getenv("SBM_FINGERPRINT"), "")
 	global.DurationVar(&opts.timeout, "timeout", 60*time.Second, "")
+	global.BoolVar(&opts.allowHTTP, "allow-insecure-http", e.getenv("SBM_ALLOW_INSECURE_HTTP") == "1", "")
+	opts.stderr = e.stderr
 	if err := global.Parse(args); err != nil {
 		return ExitUsage
 	}
@@ -152,7 +157,10 @@ func newClient(o options) (*client, error) {
 	host := base.Hostname()
 	ip := net.ParseIP(host)
 	if base.Scheme == "http" && host != "localhost" && (ip == nil || !ip.IsLoopback()) {
-		return nil, fmt.Errorf("非回环地址必须使用 https；远程主机可用 ssh -L 隧道后访问 http://127.0.0.1")
+		if !o.allowHTTP {
+			return nil, fmt.Errorf("非回环地址默认要求 https；远程主机可用 ssh -L 隧道后访问 http://127.0.0.1，可信局域网可显式加 --allow-insecure-http")
+		}
+		fmt.Fprintln(o.stderr, "sbm ctl: 警告：以明文 HTTP 连接非回环地址，Agent 令牌与配置未加密，请仅在可信网络使用")
 	}
 	token, err := readTokenFile(o.tokenFile)
 	if err != nil {

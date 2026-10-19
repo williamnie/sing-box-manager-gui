@@ -35,7 +35,8 @@ Agent API 不提供：网关启用与恢复、拓扑变更（包括会改变 byp
 
    - **Agent 在服务器上运行**：直接执行 `sbm ctl status`（默认 `http://127.0.0.1:9090`）。
    - **SSH 隧道**：`ssh -N -L 19090:127.0.0.1:9090 user@host`，然后执行 `sbm ctl --server http://127.0.0.1:19090 status`。如果令牌限制了来源网段，需要包含 `127.0.0.1/32`。
-   - **局域网直连**：管理器以 `-listen <IP> -tls-cert … -tls-key … -allow-network …` 启动，Agent 执行 `sbm ctl --server https://<IP>:9090 --fingerprint <证书 SHA-256> status`。对 IP 自签的证书用指纹固定；有私有 CA 时用 `--ca-file`。CLI 拒绝对非回环地址使用明文 http，也不跟随重定向。
+   - **局域网直连**：管理器以 `-listen <IP> -tls-cert … -tls-key … -allow-network …` 启动，Agent 执行 `sbm ctl --server https://<IP>:9090 --fingerprint <证书 SHA-256> status`。对 IP 自签的证书用指纹固定；有私有 CA 时用 `--ca-file`。CLI 默认拒绝对非回环地址使用明文 http，也不跟随重定向。
+   - **可信局域网明文 HTTP**：管理器以 `-allow-insecure-http` 启动时，CLI 也需显式加 `--allow-insecure-http`（或 `SBM_ALLOW_INSECURE_HTTP=1`），例如 `sbm ctl --allow-insecure-http --server http://<IP>:9090 status`。令牌会以明文传输，只在可信网络使用，并建议给令牌加上来源网段限制。
 
 ## 安装 Skill
 
