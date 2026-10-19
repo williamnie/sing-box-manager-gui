@@ -14,6 +14,7 @@ import (
 	"syscall"
 
 	"github.com/xiaobei/singbox-manager/internal/api"
+	"github.com/xiaobei/singbox-manager/internal/ctl"
 	"github.com/xiaobei/singbox-manager/internal/daemon"
 	"github.com/xiaobei/singbox-manager/internal/logger"
 	"github.com/xiaobei/singbox-manager/internal/storage"
@@ -41,6 +42,10 @@ func init() {
 }
 
 func main() {
+	// sbm ctl 是 Agent API 客户端，不启动管理服务也不读取数据目录。
+	if len(os.Args) > 1 && os.Args[1] == "ctl" {
+		os.Exit(ctl.Main(os.Args[2:]))
+	}
 	if len(os.Args) == 4 && os.Args[1] == "--internal-log-relay" {
 		if err := daemon.RunLogRelay(os.Args[2], os.Args[3]); err != nil {
 			os.Exit(1)
