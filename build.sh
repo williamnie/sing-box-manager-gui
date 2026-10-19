@@ -6,7 +6,9 @@
 
 set -e
 
-VERSION=${VERSION:-"0.2.13"}
+# 默认取最近的 git tag，与发布版本一致；管理器按此版本从 Releases 获取其他平台的 sbm 供 Agent 电脑下载
+VERSION=${VERSION:-$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')}
+VERSION=${VERSION:-$(sed -n 's/^[[:space:]]*Version[[:space:]]*= "\([^"]*\)".*/\1/p' cmd/sbm/main.go)}
 BUILD_TIME=$(date -u '+%Y-%m-%d %H:%M:%S')
 GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
@@ -127,7 +129,7 @@ show_help() {
     echo "  help         显示帮助"
     echo ""
     echo "环境变量:"
-    echo "  VERSION      版本号 (默认: ${VERSION})"
+    echo "  VERSION      版本号 (默认取最近的 git tag，当前: ${VERSION})"
     echo "  SKIP_FRONTEND=1  跳过前端构建"
     echo ""
     echo "示例:"

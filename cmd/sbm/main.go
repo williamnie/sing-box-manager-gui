@@ -21,7 +21,7 @@ import (
 )
 
 var (
-	Version                                   = "0.2.13"
+	Version                                   = "0.3.6" // build.sh 与发布流程通过 -ldflags 覆盖
 	BuildTime                                 = "unknown"
 	GitCommit                                 = "unknown"
 	dataDir                                   string
