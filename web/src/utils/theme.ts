@@ -63,8 +63,9 @@ export const useTheme = create<ThemeState>((set, get) => {
       };
       if (media.addEventListener) {
         media.addEventListener('change', listener);
-      } else if ((media as any).addListener) {
-        (media as any).addListener(listener);
+      } else if (typeof media.addListener === 'function') {
+        // Safari 14 以前只支持已废弃的 addListener。
+        media.addListener(listener);
       }
     }
   }

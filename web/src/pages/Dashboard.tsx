@@ -3,7 +3,7 @@ import RuntimeOverview from '../components/RuntimeOverview';
 import { Button, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Tooltip } from '@nextui-org/react';
 import { Play, Square, RefreshCw, HardDrive, Wifi, Info, Activity, Terminal, ArrowUpRight, Zap, Cpu } from 'lucide-react';
 import { useStore } from '../store';
-import { serviceApi } from '../api';
+import { errorMessage, serviceApi } from '../api';
 import { useNavigate } from 'react-router-dom';
 import { toast } from '../components/Toast';
 import useVisibleInterval from '../hooks/useVisibleInterval';
@@ -24,8 +24,8 @@ export default function Dashboard() {
   });
 
   // 显示错误的辅助函数
-  const showError = (title: string, error: any) => {
-    const message = error.response?.data?.error || error.message || '操作失败';
+  const showError = (title: string, error: unknown) => {
+    const message = errorMessage(error, error instanceof Error ? error.message : '操作失败');
     setErrorModal({
       isOpen: true,
       title,

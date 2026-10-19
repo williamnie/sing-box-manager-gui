@@ -103,7 +103,7 @@ export default function Settings() {
     fetchDaemonStatus();
     fetchKernelInfo();
     fetchSystemHosts();
-  }, []);
+  }, [fetchSettings]);
 
   useEffect(() => {
     if (settings) {
@@ -289,8 +289,8 @@ export default function Settings() {
       try {
         await updateSettings(formData);
         toast.success('设置已持久化保存');
-      } catch (error: any) {
-        toast.error(error.response?.data?.error || '保存设置失败');
+      } catch (error) {
+        toast.error(errorMessage(error, '保存设置失败'));
       } finally {
         setSaving(false);
       }
@@ -309,8 +309,8 @@ export default function Settings() {
         toast.success(data.message || '系统守护进程已成功安装');
       }
       await fetchDaemonStatus();
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || '安装服务失败');
+    } catch (error) {
+      toast.error(errorMessage(error, '安装服务失败'));
     }
   };
 
@@ -320,8 +320,8 @@ export default function Settings() {
       toast.success('系统守护进程已卸载');
       await fetchDaemonStatus();
       setUninstallConfirm(false);
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || '卸载服务失败');
+    } catch (error) {
+      toast.error(errorMessage(error, '卸载服务失败'));
     }
   };
 
@@ -330,8 +330,8 @@ export default function Settings() {
       await daemonApi.restart();
       toast.success('后台服务正在重启...');
       await fetchDaemonStatus();
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || '重启服务失败');
+    } catch (error) {
+      toast.error(errorMessage(error, '重启服务失败'));
     }
   };
 
@@ -370,12 +370,12 @@ export default function Settings() {
           toast.error(errorMessage(error, '进度请求中断，请检查服务'));
         }
       }, 500);
-    } catch (error: any) {
+    } catch (error) {
       setDownloading(false);
       setDownloadProgress({
         status: 'error',
         progress: 0,
-        message: error.response?.data?.error || '下载初始化失败',
+        message: errorMessage(error, '下载初始化失败'),
       });
     }
   };

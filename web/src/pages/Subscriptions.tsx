@@ -144,7 +144,7 @@ export default function Subscriptions() {
     fetchManualNodes();
     fetchCountryGroups();
     fetchFilters();
-  }, []);
+  }, [fetchSubscriptions, fetchManualNodes, fetchCountryGroups, fetchFilters]);
 
   const handleOpenAddSubscription = () => {
     setEditingSubscription(null);
@@ -223,8 +223,8 @@ export default function Subscriptions() {
       const response = await nodeApi.parse(nodeUrl.trim());
       const parsedNode = response.data.data as Node;
       setNodeForm(parsedNode);
-    } catch (error: any) {
-      const message = error.response?.data?.error || '解析失败，请检查链接格式';
+    } catch (error) {
+      const message = errorMessage(error, '解析失败，请检查链接格式');
       setParseError(message);
     } finally {
       setIsParsing(false);

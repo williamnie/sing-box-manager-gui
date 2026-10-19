@@ -2,7 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
-import { ToastContainer } from './components/Toast';
+import { ToastContainer } from './components/ToastContainer';
 import AuthGate from './components/AuthGate';
 // 除首页外均按路由拆分，首屏只下载仪表盘所需代码。
 const Subscriptions = lazy(() => import('./pages/Subscriptions'));

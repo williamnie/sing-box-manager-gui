@@ -21,21 +21,21 @@ func (p *VmessParser) Protocol() string {
 
 // vmessConfig VMess 配置结构
 type vmessConfig struct {
-	V    interface{} `json:"v"`              // 版本
-	Ps   string      `json:"ps"`             // 节点名称
-	Add  string      `json:"add"`            // 服务器地址
-	Port interface{} `json:"port"`           // 端口
-	ID   string      `json:"id"`             // UUID
-	Aid  interface{} `json:"aid"`            // Alter ID
-	Scy  string      `json:"scy"`            // 加密方式
-	Net  string      `json:"net"`            // 传输协议
-	Type string      `json:"type"`           // 伪装类型
-	Host string      `json:"host"`           // 伪装域名
-	Path string      `json:"path"`           // 路径
-	TLS  string      `json:"tls"`            // TLS
-	SNI  string      `json:"sni"`            // SNI
-	ALPN string      `json:"alpn"`           // ALPN
-	Fp   string      `json:"fp"`             // Fingerprint
+	V    interface{} `json:"v"`                // 版本
+	Ps   string      `json:"ps"`               // 节点名称
+	Add  string      `json:"add"`              // 服务器地址
+	Port interface{} `json:"port"`             // 端口
+	ID   string      `json:"id"`               // UUID
+	Aid  interface{} `json:"aid"`              // Alter ID
+	Scy  string      `json:"scy"`              // 加密方式
+	Net  string      `json:"net"`              // 传输协议
+	Type string      `json:"type"`             // 伪装类型
+	Host string      `json:"host"`             // 伪装域名
+	Path string      `json:"path"`             // 路径
+	TLS  string      `json:"tls"`              // TLS
+	SNI  string      `json:"sni"`              // SNI
+	ALPN string      `json:"alpn"`             // ALPN
+	Fp   string      `json:"fp"`               // Fingerprint
 	Skip bool        `json:"skip-cert-verify"` // 跳过证书验证
 }
 

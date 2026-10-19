@@ -65,9 +65,9 @@ export function AppSelect<T extends object = object>({
       popoverProps={mergedPopoverProps}
       listboxProps={mergedListboxProps}
       classNames={mergedClassNames}
-      {...(props as any)}
+      {...props}
     >
-      {children as any}
+      {children as NextUISelectProps<T>['children']}
     </NextUISelect>
   );
 }

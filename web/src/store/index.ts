@@ -27,7 +27,7 @@ export interface Node {
   server_port: number;
   country?: string;
   country_emoji?: string;
-  extra?: Record<string, any>;
+  extra?: Record<string, unknown>;
 }
 
 export interface ManualNode {
@@ -323,8 +323,8 @@ export const useStore = create<AppState>((set, get) => ({
       await subscriptionApi.add(name, url);
       await get().fetchSubscriptions();
       toast.success('订阅添加成功');
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || '添加订阅失败');
+    } catch (error) {
+      toast.error(errorMessage(error, '添加订阅失败'));
       throw error;
     } finally {
       set({ loading: false });
@@ -337,8 +337,8 @@ export const useStore = create<AppState>((set, get) => ({
       await subscriptionApi.update(id, { name, url });
       await get().fetchSubscriptions();
       toast.success('订阅更新成功');
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || '更新订阅失败');
+    } catch (error) {
+      toast.error(errorMessage(error, '更新订阅失败'));
       throw error;
     } finally {
       set({ loading: false });
@@ -350,9 +350,9 @@ export const useStore = create<AppState>((set, get) => ({
       await subscriptionApi.delete(id);
       await get().fetchSubscriptions();
       toast.success('订阅已删除');
-    } catch (error: any) {
+    } catch (error) {
 
-      toast.error(error.response?.data?.error || '删除订阅失败');
+      toast.error(errorMessage(error, '删除订阅失败'));
     }
   },
 
@@ -364,9 +364,9 @@ export const useStore = create<AppState>((set, get) => ({
       await get().fetchCountryGroups();
       // 自动应用失败的提示由 API 拦截器统一显示。
       if (!res.data.warning) toast.success('订阅刷新成功');
-    } catch (error: any) {
+    } catch (error) {
 
-      toast.error(error.response?.data?.error || '刷新订阅失败');
+      toast.error(errorMessage(error, '刷新订阅失败'));
     } finally {
       set({ loading: false });
     }
@@ -384,9 +384,9 @@ export const useStore = create<AppState>((set, get) => ({
         } else {
           toast.success(`订阅已${enabled ? '启用' : '禁用'}`);
         }
-      } catch (error: any) {
+      } catch (error) {
 
-        toast.error(error.response?.data?.error || '切换订阅状态失败');
+        toast.error(errorMessage(error, '切换订阅状态失败'));
       }
     }
   },
@@ -401,9 +401,9 @@ export const useStore = create<AppState>((set, get) => ({
       } else {
         toast.success('节点添加成功');
       }
-    } catch (error: any) {
+    } catch (error) {
 
-      toast.error(error.response?.data?.error || '添加节点失败');
+      toast.error(errorMessage(error, '添加节点失败'));
       throw error;
     }
   },
@@ -418,9 +418,9 @@ export const useStore = create<AppState>((set, get) => ({
       } else {
         toast.success('节点更新成功');
       }
-    } catch (error: any) {
+    } catch (error) {
 
-      toast.error(error.response?.data?.error || '更新节点失败');
+      toast.error(errorMessage(error, '更新节点失败'));
       throw error;
     }
   },
@@ -435,9 +435,9 @@ export const useStore = create<AppState>((set, get) => ({
       } else {
         toast.success('节点已删除');
       }
-    } catch (error: any) {
+    } catch (error) {
 
-      toast.error(error.response?.data?.error || '删除节点失败');
+      toast.error(errorMessage(error, '删除节点失败'));
     }
   },
 
@@ -458,9 +458,9 @@ export const useStore = create<AppState>((set, get) => ({
         } else {
           toast.success(`规则组已${enabled ? '启用' : '禁用'}`);
         }
-      } catch (error: any) {
+      } catch (error) {
 
-        toast.error(error.response?.data?.error || '更新规则组失败');
+        toast.error(errorMessage(error, '更新规则组失败'));
       }
     }
   },
@@ -476,9 +476,9 @@ export const useStore = create<AppState>((set, get) => ({
         } else {
           toast.success('规则组出站已更新');
         }
-      } catch (error: any) {
+      } catch (error) {
 
-        toast.error(error.response?.data?.error || '更新规则组出站失败');
+        toast.error(errorMessage(error, '更新规则组出站失败'));
       }
     }
   },
@@ -492,9 +492,9 @@ export const useStore = create<AppState>((set, get) => ({
       } else {
         toast.success('规则添加成功');
       }
-    } catch (error: any) {
+    } catch (error) {
 
-      toast.error(error.response?.data?.error || '添加规则失败');
+      toast.error(errorMessage(error, '添加规则失败'));
       throw error;
     }
   },
@@ -508,9 +508,9 @@ export const useStore = create<AppState>((set, get) => ({
       } else {
         toast.success('规则更新成功');
       }
-    } catch (error: any) {
+    } catch (error) {
 
-      toast.error(error.response?.data?.error || '更新规则失败');
+      toast.error(errorMessage(error, '更新规则失败'));
       throw error;
     }
   },
@@ -535,9 +535,9 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await filterApi.add(filter);
       await get().fetchFilters();
       if (!res.data.warning) toast.success(res.data.application === 'applied' ? '过滤器已添加并应用' : '过滤器已保存，需应用配置后生效');
-    } catch (error: any) {
+    } catch (error) {
 
-      toast.error(error.response?.data?.error || '添加过滤器失败');
+      toast.error(errorMessage(error, '添加过滤器失败'));
       throw error;
     }
   },
@@ -547,9 +547,9 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await filterApi.update(id, filter);
       await get().fetchFilters();
       if (!res.data.warning) toast.success(res.data.application === 'applied' ? '过滤器已更新并应用' : '过滤器已保存，需应用配置后生效');
-    } catch (error: any) {
+    } catch (error) {
 
-      toast.error(error.response?.data?.error || '更新过滤器失败');
+      toast.error(errorMessage(error, '更新过滤器失败'));
       throw error;
     }
   },
@@ -559,9 +559,9 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await filterApi.delete(id);
       await get().fetchFilters();
       if (!res.data.warning) toast.success(res.data.application === 'applied' ? '过滤器已删除并应用' : '过滤器删除已保存，需应用配置后生效');
-    } catch (error: any) {
+    } catch (error) {
 
-      toast.error(error.response?.data?.error || '删除过滤器失败');
+      toast.error(errorMessage(error, '删除过滤器失败'));
       throw error;
     }
   },
@@ -573,9 +573,9 @@ export const useStore = create<AppState>((set, get) => ({
         const res = await filterApi.update(id, { ...filter, enabled });
         await get().fetchFilters();
         if (!res.data.warning) toast.success(res.data.application === 'applied' ? `过滤器已${enabled ? '启用' : '关闭'}并应用` : '过滤器状态已保存，需应用配置后生效');
-      } catch (error: any) {
+      } catch (error) {
 
-        toast.error(error.response?.data?.error || '切换过滤器状态失败');
+        toast.error(errorMessage(error, '切换过滤器状态失败'));
         await get().fetchFilters();
       }
     }
