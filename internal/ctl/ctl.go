@@ -37,6 +37,7 @@ var decisionCodes = map[string]bool{"operation_pending": true, "pending_changes"
 
 type options struct {
 	server, tokenFile, caFile, fingerprint string
+	token                                  string // 已保存连接或首次交互输入，不接受命令行明文令牌
 	timeout                                time.Duration
 	allowHTTP                              bool
 	stderr                                 io.Writer
@@ -57,12 +58,15 @@ type env struct {
 const usage = `用法: sbm ctl [全局参数] <命令> [参数]
 
 全局参数（也可用环境变量）:
-  --server URL          管理器地址，默认 http://127.0.0.1:9090（SBM_SERVER）；非回环地址必须 https
+  --server URL          管理器地址，默认使用已保存连接（SBM_SERVER）；非回环地址默认要求 https
   --token-file PATH     Agent 令牌文件，权限须为 600（SBM_TOKEN_FILE，默认 ~/.config/sbm/token）
   --ca-file PATH        自签证书的 CA（SBM_CA_FILE）
   --fingerprint HEX     固定服务端证书 SHA-256 指纹（SBM_FINGERPRINT）
   --timeout DURATION    请求超时，默认 60s
   --allow-insecure-http 允许以明文 HTTP 连接非回环地址（对应管理器的 -allow-insecure-http，仅限可信网络；SBM_ALLOW_INSECURE_HTTP=1）
+
+首次接入:
+  connect --server URL [--fingerprint HEX]  粘贴令牌后验证并保存连接，以后直接运行 sbm ctl status
 
 只读:
   capabilities | status | diff | versions | audit [--limit N]
@@ -102,6 +106,10 @@ func Run(args []string, stdout, stderr io.Writer, stdin io.Reader, getenv func(s
 }
 
 func run(args []string, e env) int {
+	// connect 也支持把连接参数写在子命令后，便于直接粘贴页面生成的命令。
+	if len(args) > 0 && args[0] == "connect" {
+		args = append(append([]string{}, args[1:]...), "connect")
+	}
 	opts := options{}
 	global := flag.NewFlagSet("sbm ctl", flag.ContinueOnError)
 	global.SetOutput(e.stderr)
@@ -125,6 +133,20 @@ func run(args []string, e env) int {
 	if len(rest) == 0 || rest[0] == "help" || rest[0] == "-h" {
 		fmt.Fprint(e.stdout, usage)
 		return ExitOK
+	}
+	explicit := map[string]bool{}
+	global.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
+	for flag, variable := range map[string]string{"server": "SBM_SERVER", "token-file": "SBM_TOKEN_FILE", "ca-file": "SBM_CA_FILE", "fingerprint": "SBM_FINGERPRINT", "allow-insecure-http": "SBM_ALLOW_INSECURE_HTTP"} {
+		explicit[flag] = explicit[flag] || e.getenv(variable) != ""
+	}
+	if rest[0] == "connect" {
+		if len(rest) != 1 || !explicit["server"] {
+			return usageErr(e, "请复制管理页面生成的 connect 命令（需要 --server 地址）")
+		}
+		return connect(opts, explicit, e)
+	}
+	if err := applySavedConnection(&opts, explicit, connectionPath(e)); err != nil {
+		return fail(e, ExitUsage, err)
 	}
 	c, err := newClient(opts)
 	if err != nil {
@@ -151,7 +173,7 @@ func fail(e env, code int, err error) int {
 
 func newClient(o options) (*client, error) {
 	base, err := url.Parse(strings.TrimRight(o.server, "/"))
-	if err != nil || base.Host == "" || (base.Scheme != "http" && base.Scheme != "https") {
+	if err != nil || base.Host == "" || base.User != nil || base.RawQuery != "" || base.Fragment != "" || (base.Path != "" && base.Path != "/") || (base.Scheme != "http" && base.Scheme != "https") {
 		return nil, fmt.Errorf("--server 需要 http(s)://主机:端口")
 	}
 	host := base.Hostname()
@@ -162,9 +184,12 @@ func newClient(o options) (*client, error) {
 		}
 		fmt.Fprintln(o.stderr, "sbm ctl: 警告：以明文 HTTP 连接非回环地址，Agent 令牌与配置未加密，请仅在可信网络使用")
 	}
-	token, err := readTokenFile(o.tokenFile)
-	if err != nil {
-		return nil, err
+	token := o.token
+	if token == "" {
+		token, err = readTokenFile(o.tokenFile)
+		if err != nil {
+			return nil, err
+		}
 	}
 	transport := &http.Transport{Proxy: nil, TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12}}
 	if o.caFile != "" {

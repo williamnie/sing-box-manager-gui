@@ -71,6 +71,8 @@ type Server struct {
 	sbmPath           string // sbm 可执行文件路径
 	port              int    // Web 服务端口
 	version           string // sbm 版本号
+
+	managementFingerprint string // 实际加载的管理 HTTPS 证书摘要，不读取客户端证书
 }
 
 // NewServer 创建 API 服务器

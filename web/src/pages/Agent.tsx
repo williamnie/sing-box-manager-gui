@@ -6,6 +6,7 @@ import { agentApi, type AgentChangeset, type AgentScope, type AgentToken, type A
 import { errorMessage } from '../api';
 import { toast } from '../components/Toast';
 import ConfirmModal from '../components/ConfirmModal';
+import AgentConnection from '../components/AgentConnection';
 
 const scopeLabels: Record<AgentScope, string> = {
   read: '只读：状态、差异、日志、DNS、解释、审计',
@@ -46,8 +47,24 @@ function formatTime(value?: string) {
   return value ? new Date(value).toLocaleString() : '—';
 }
 
-function copy(text: string) {
-  navigator.clipboard?.writeText(text).then(() => toast.success('已复制'), () => toast.error('复制失败，请手动选择'));
+async function copy(text: string) {
+  try {
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      // LAN HTTP 页面没有 Clipboard API，保留用户点击触发的兼容复制。
+      const input = document.createElement('textarea');
+      input.value = text;
+      input.style.position = 'fixed';
+      input.style.opacity = '0';
+      document.body.appendChild(input);
+      try {
+        input.select();
+        if (!document.execCommand('copy')) throw new Error('clipboard unavailable');
+      } finally { input.remove(); }
+    }
+    toast.success('已复制');
+  } catch { toast.error('复制失败，请手动选择并复制'); }
 }
 
 export default function Agent() {
@@ -127,14 +144,6 @@ export default function Agent() {
   const toggleScope = (scope: AgentScope, on: boolean) =>
     setScopes((current) => (on ? [...new Set([...current, scope])] : current.filter((s) => s !== scope)));
 
-  const quickStart = `mkdir -p ~/.config/sbm && umask 077
-# 把下方创建的令牌粘贴保存（不要放进命令行参数或环境变量）
-cat > ~/.config/sbm/token
-# 本机或 SSH 隧道（ssh -L 19090:127.0.0.1:9090 user@host）：
-sbm ctl --server http://127.0.0.1:19090 status
-# 局域网直连须用管理器内置 HTTPS，并固定证书指纹：
-sbm ctl --server https://<管理IP>:9090 --fingerprint <SHA-256> status`;
-
   return (
     <div className="space-y-6">
       <div>
@@ -175,14 +184,9 @@ sbm ctl --server https://<管理IP>:9090 --fingerprint <SHA-256> status`;
             <Button size="sm" variant="light" className="mt-2" onPress={() => setCreated(null)}>我已保存</Button>
           </div>
         )}
-        <details className="mt-4">
-          <summary className="cursor-pointer text-sm text-zinc-600 dark:text-zinc-400">接入步骤</summary>
-          <div className="mt-2 flex items-start gap-2">
-            <pre className="min-w-0 flex-1 overflow-x-auto rounded bg-zinc-100 p-3 font-mono text-xs dark:bg-black/40">{quickStart}</pre>
-            <Button size="sm" variant="flat" isIconOnly aria-label="复制接入步骤" onPress={() => copy(quickStart)}><Copy className="size-4" /></Button>
-          </div>
-        </details>
       </section>
+
+      <AgentConnection onCopy={copy} />
 
       <section className={sectionClass}>
         <h2 className="font-semibold text-zinc-900 dark:text-zinc-100">令牌</h2>

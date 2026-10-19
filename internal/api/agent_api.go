@@ -53,6 +53,7 @@ func (s *Server) setupAgentRoutes() {
 
 // setupAgentAdminRoutes 挂在管理员会话路由组下；令牌不能调用。
 func (s *Server) setupAgentAdminRoutes(api *gin.RouterGroup) {
+	api.GET("/agent/connection", s.agentConnection)
 	api.GET("/agent/tokens", s.listAgentTokens)
 	api.POST("/agent/tokens", s.createAgentToken)
 	api.DELETE("/agent/tokens/:id", s.revokeAgentToken)

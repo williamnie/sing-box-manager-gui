@@ -2,6 +2,12 @@ import { api } from './index';
 
 export type AgentScope = 'read' | 'runtime' | 'write' | 'deploy';
 
+export interface AgentConnection {
+  server: string;
+  fingerprint: string;
+  allow_insecure_http: boolean;
+}
+
 export interface AgentToken {
   id: string;
   name: string;
@@ -45,6 +51,7 @@ export interface AuditEntry {
 }
 
 export const agentApi = {
+  connection: () => api.get<{ data: AgentConnection }>('/agent/connection'),
   tokens: () => api.get<{ data: AgentToken[]; max_days: number }>('/agent/tokens'),
   createToken: (body: { name: string; scopes: AgentScope[]; days: number; cidrs: string[] }) =>
     api.post<{ data: AgentToken; token: string }>('/agent/tokens', body),

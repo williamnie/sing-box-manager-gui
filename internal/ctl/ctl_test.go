@@ -25,8 +25,18 @@ func tokenFile(t *testing.T, mode os.FileMode) string {
 }
 
 func runCtl(args ...string) (int, string, string) {
+	configDir, err := os.MkdirTemp("", "sbm-ctl-test-*")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(configDir)
 	var out, errOut bytes.Buffer
-	code := Run(args, &out, &errOut, strings.NewReader(""), func(string) string { return "" })
+	code := Run(args, &out, &errOut, strings.NewReader(""), func(key string) string {
+		if key == "XDG_CONFIG_HOME" {
+			return configDir
+		}
+		return ""
+	})
 	return code, out.String(), errOut.String()
 }
 
