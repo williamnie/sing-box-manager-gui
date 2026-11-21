@@ -10,7 +10,12 @@ export const api = axios.create({
 });
 
 export function errorMessage(error: unknown, fallback = t('操作失败')): string {
-  if (axios.isAxiosError(error)) return error.response?.data?.error || fallback;
+  if (axios.isAxiosError(error)) {
+    const message = error.response?.data?.error;
+    // Server messages are written in Chinese; translate known strings through
+    // the dictionary and pass unknown ones through unchanged.
+    return typeof message === 'string' && message ? t(message) : fallback;
+  }
   return error instanceof Error ? error.message : fallback;
 }
 
