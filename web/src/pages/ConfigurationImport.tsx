@@ -6,7 +6,7 @@ import { useStore } from '../store';
 import { toast } from '../components/Toast';
 import ConfirmModal from '../components/ConfirmModal';
 import { ArrowLeft, Upload, FileCode, AlertOctagon, AlertTriangle, CheckCircle2, RotateCcw, Copy, ChevronDown, ChevronUp } from 'lucide-react';
-import { t } from '../i18n';
+import { t, translateBackend } from '../i18n';
 
 interface ImportPreview {
   hash: string;
@@ -269,7 +269,7 @@ export default function ConfigurationImport() {
               </div>
               <ul className="space-y-1 pl-4 list-disc text-xs text-red-300 font-mono">
                 {preview.blockers.map((item, idx) => (
-                  <li key={idx} className="leading-relaxed">{item}</li>
+                  <li key={idx} className="leading-relaxed">{translateBackend(item)}</li>
                 ))}
               </ul>
             </div>
@@ -284,7 +284,7 @@ export default function ConfigurationImport() {
               </div>
               <ul className="space-y-1 pl-4 list-disc text-xs text-amber-800 dark:text-amber-300 font-mono">
                 {preview.warnings.map((item, idx) => (
-                  <li key={idx} className="leading-relaxed">{item}</li>
+                  <li key={idx} className="leading-relaxed">{translateBackend(item)}</li>
                 ))}
               </ul>
             </div>
@@ -303,7 +303,7 @@ export default function ConfigurationImport() {
               </div>
               <ul className="space-y-1 pl-4 list-disc text-xs text-zinc-400 font-mono">
                 {preview.omitted.map((item, idx) => (
-                  <li key={idx}>{item}</li>
+                  <li key={idx}>{translateBackend(item)}</li>
                 ))}
               </ul>
               <div className="pt-2 border-t border-white/[0.06]">

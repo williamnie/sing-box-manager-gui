@@ -424,7 +424,7 @@ export default function Gateway() {
 
         <div className="p-5 space-y-4 font-mono text-xs">
           <p className="text-zinc-400 text-xs">
-            {t('标准发布流程：保存草案 → 预览变更 → 预检内核环境 → 确认启用应用。')}应用操作会自动重检端口、策略路由与防火墙规则。
+            {t('标准发布流程：保存草案 → 预览变更 → 预检内核环境 → 确认启用应用。')}{t('应用操作会自动重检端口、策略路由与防火墙规则。')}
           </p>
 
           <div className="flex flex-wrap items-center gap-2.5 pt-2">

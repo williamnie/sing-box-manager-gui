@@ -44,7 +44,7 @@ import PanelPreferences from '../components/PanelPreferences';
 import PasswordSettings from '../components/PasswordSettings';
 import UpdatePanel from '../components/UpdatePanel';
 import { Link } from 'react-router-dom';
-import { t } from '../i18n';
+import { t, translateBackend } from '../i18n';
 
 function randomSecret() {
   return Array.from(crypto.getRandomValues(new Uint8Array(24)), (byte) =>
@@ -303,11 +303,11 @@ export default function Settings() {
       const res = await daemonApi.install();
       const data = res.data;
       if (data.action === 'exit') {
-        toast.success(data.message);
+        toast.success(translateBackend(data.message));
       } else if (data.action === 'manual') {
-        toast.info(data.message);
+        toast.info(translateBackend(data.message));
       } else {
-        toast.success(data.message || t('系统守护进程已成功安装'));
+        toast.success(data.message ? translateBackend(data.message) : t('系统守护进程已成功安装'));
       }
       await fetchDaemonStatus();
     } catch (error) {
@@ -1137,7 +1137,7 @@ export default function Settings() {
                         : 'text-zinc-400'
                     }`}
                   >
-                    &gt; {downloadProgress.message}
+                    &gt; {translateBackend(downloadProgress.message)}
                   </p>
                 </div>
               )}

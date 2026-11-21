@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { en } from './en';
+import { backendTemplates, en } from './en';
 
 export type Locale = 'zh-CN' | 'en';
 
@@ -77,4 +77,40 @@ export function t(message: string, params?: Record<string, string | number | boo
     }
   }
   return text;
+}
+
+let compiledTemplates: Array<{ re: RegExp; replacement: string }> | null = null;
+
+function getCompiledTemplates() {
+  if (compiledTemplates) return compiledTemplates;
+  compiledTemplates = backendTemplates.map(([template, replacement]) => {
+    const parts = template.split(/%[svd]/);
+    const pattern = parts.map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('(.*)');
+    return { re: new RegExp(`^${pattern}`), replacement };
+  });
+  return compiledTemplates;
+}
+
+/**
+ * Translate a message composed by the backend. Exact matches use the main
+ * dictionary; runtime-composed messages (`"prefix: " + err` or fmt.Sprintf)
+ * are matched against the backend templates, and unknown messages pass
+ * through unchanged. Chinese never needs this — it returns as-is.
+ */
+export function translateBackend(message: string | undefined | null): string {
+  if (!message) return '';
+  if (current === 'zh-CN') return message;
+  const exact = en[message];
+  if (exact) return exact;
+  for (const { re, replacement } of getCompiledTemplates()) {
+    const match = message.match(re);
+    if (match) {
+      let text = replacement;
+      for (let i = 1; i < match.length; i++) {
+        text = text.split(`{${i - 1}}`).join(match[i] ?? '');
+      }
+      return text;
+    }
+  }
+  return message;
 }

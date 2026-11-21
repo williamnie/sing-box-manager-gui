@@ -682,7 +682,7 @@ export default function Subscriptions() {
                       >
                         {countryOptions.map((opt) => (
                           <SelectItem key={opt.code} value={opt.code}>
-                            {opt.emoji} {opt.name}
+                            {opt.emoji} {t(opt.name)}
                           </SelectItem>
                         ))}
                       </AppSelect>
@@ -770,7 +770,7 @@ export default function Subscriptions() {
               >
                 {countryOptions.map((opt) => (
                   <SelectItem key={opt.code} value={opt.code}>
-                    {opt.name}
+                    {t(opt.name)}
                   </SelectItem>
                 ))}
               </AppSelect>
@@ -788,7 +788,7 @@ export default function Subscriptions() {
               >
                 {countryOptions.map((opt) => (
                   <SelectItem key={opt.code} value={opt.code}>
-                    {opt.name}
+                    {t(opt.name)}
                   </SelectItem>
                 ))}
               </AppSelect>

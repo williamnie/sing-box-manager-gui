@@ -25,7 +25,7 @@ import RuleOverview from '../components/RuleOverview';
 import DomainBlocklistEditor from '../components/DomainBlocklistEditor';
 import { domainBlocklistID } from '../api/domainBlocklist';
 import { createSTUNRule, isScopedSTUNRule, isSTUNOutboundAllowed, validateSTUNRule } from '../utils/rulePolicy';
-import { t } from '../i18n';
+import { t, translateBackend } from '../i18n';
 
 // 规则集验证结果类型
 interface ValidationResult {
@@ -608,7 +608,7 @@ export default function Rules() {
                           >
                             {result.valid ? <CheckCircle className="size-3.5" /> : <XCircle className="size-3.5" />}
                             <span className="font-semibold">{name}</span>
-                            <span className="text-[10px] text-zinc-500">- {result.message}</span>
+                            <span className="text-[10px] text-zinc-500">- {translateBackend(result.message)}</span>
                           </div>
                         );
                       })}

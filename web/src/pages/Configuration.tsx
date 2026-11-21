@@ -7,7 +7,7 @@ import ConfirmModal from '../components/ConfirmModal';
 import { toast } from '../components/Toast';
 import ConfigPreview from '../components/ConfigPreview';
 import type { ConfigPreviewInfo } from '../components/ConfigPreview';
-import { t } from '../i18n';
+import { t, translateBackend } from '../i18n';
 
 interface ConfigVersion {name: string; hash: string; updated_at: string; bytes: number; preview: string; preview_info?: ConfigPreviewInfo}
 interface ConfigDiff { current: string; candidate: string; changed: boolean; current_info?: ConfigPreviewInfo; candidate_info?: ConfigPreviewInfo }
@@ -39,7 +39,7 @@ export default function Configuration() {
 
   const check = async () => {
     setBusy('check'); setError(''); setChecked(false);
-    try { const response = await configApi.check(); setCheckResult(response.data.data || response.data.message || t('候选配置校验通过')); setChecked(true); }
+    try { const response = await configApi.check(); setCheckResult(response.data.data || (response.data.message ? translateBackend(response.data.message) : '') || t('候选配置校验通过')); setChecked(true); }
     catch (cause) { setError(errorMessage(cause, t('候选配置校验失败'))); }
     finally { setBusy(''); }
   };
@@ -52,7 +52,7 @@ export default function Configuration() {
 
   const restore = async () => {
     setBusy('restore');setError('');
-    try {const response=await configApi.restore(restoreHash);toast.success(response.data.message);await useStore.getState().fetchSettings();await refreshStatus();await refresh();}
+    try {const response=await configApi.restore(restoreHash);toast.success(translateBackend(response.data.message));await useStore.getState().fetchSettings();await refreshStatus();await refresh();}
     catch(cause){setError(errorMessage(cause,t('版本恢复失败')));}
     finally{setBusy('');setRestoreHash('');}
   };

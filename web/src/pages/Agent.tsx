@@ -8,7 +8,7 @@ import { toast } from '../components/Toast';
 import useVisibleInterval from '../hooks/useVisibleInterval';
 import ConfirmModal from '../components/ConfirmModal';
 import AgentConnection, { DeviceTag } from '../components/AgentConnection';
-import { t } from '../i18n';
+import { t, translateBackend } from '../i18n';
 
 const scopeLabels: Record<AgentScope, string> = {
   read: '只读：状态、差异、日志、DNS、解释、审计',
@@ -282,8 +282,8 @@ export default function Agent() {
                     <td className="whitespace-nowrap py-1.5 pr-3">{formatTime(a.at)}</td>
                     <td className="pr-3 font-mono">{a.actor}</td>
                     <td className="pr-3 font-mono">{a.action}</td>
-                    <td className="pr-3">{a.result}</td>
-                    <td className="break-all text-zinc-500">{a.detail}</td>
+                    <td className="pr-3">{translateBackend(a.result)}</td>
+                    <td className="break-all text-zinc-500">{translateBackend(a.detail)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -301,7 +301,7 @@ export default function Agent() {
         onConfirm={() => {
           if (!revertPreview) return;
           if (revertPreview.apply_ready === false) {
-            toast.error(revertPreview.blocked_reason || t('当前不能应用撤销'));
+            toast.error(revertPreview.blocked_reason ? translateBackend(revertPreview.blocked_reason) : t('当前不能应用撤销'));
             return;
           }
           void act(() => agentApi.apply(revertPreview.id), t('撤销已应用，请在确认窗口内检查并确认')).then(() => setRevertPreview(null));
