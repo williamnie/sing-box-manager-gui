@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { toast } from '../components/Toast';
 import type { Settings } from '../store';
+import { t, translateBackend } from '../i18n';
 
 export const api = axios.create({
   baseURL: '/api',
@@ -8,14 +9,19 @@ export const api = axios.create({
   withCredentials: true,
 });
 
-export function errorMessage(error: unknown, fallback = '操作失败'): string {
-  if (axios.isAxiosError(error)) return error.response?.data?.error || fallback;
+export function errorMessage(error: unknown, fallback = t('操作失败')): string {
+  if (axios.isAxiosError(error)) {
+    const message = error.response?.data?.error;
+    // Server messages are written in Chinese; translate known strings through
+    // the dictionary and pass unknown ones through unchanged.
+    return typeof message === 'string' && message ? translateBackend(message) : fallback;
+  }
   return error instanceof Error ? error.message : fallback;
 }
 
 api.interceptors.response.use((response) => {
   // 自动应用失败仍可能已保存数据，必须显示服务端警告。
-  if (response.data?.warning) toast.info(response.data.warning);
+  if (response.data?.warning) toast.info(translateBackend(response.data.warning));
   return response;
 }, (error: unknown) => {
   if (axios.isAxiosError(error) && error.response?.status === 401) {

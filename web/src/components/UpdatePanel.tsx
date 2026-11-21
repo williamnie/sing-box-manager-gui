@@ -4,9 +4,10 @@ import { Button, Switch } from '@nextui-org/react';
 import { ArrowUpCircle, CheckCircle, ExternalLink, RefreshCw } from 'lucide-react';
 import { useUpdateStore } from '../store/update';
 import UpdateInstallButton from './UpdateInstallButton';
+import { t } from '../i18n';
 
 function formatTime(value?: string) {
-  return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '尚未检查';
+  return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : t('尚未检查');
 }
 
 export default function UpdatePanel() {
@@ -34,7 +35,7 @@ export default function UpdatePanel() {
         <div className="flex items-center gap-2">
           <ArrowUpCircle className="w-4 h-4 text-interface-orange" />
           <h2 className="font-mono text-xs font-semibold text-white tracking-wide uppercase">
-            SBM_UPDATE // 版本更新
+            {t('SBM_UPDATE // 版本更新')}
           </h2>
         </div>
         <span className="font-mono text-[10px] text-zinc-500">CURRENT: v{status.current_version}</span>
@@ -43,10 +44,8 @@ export default function UpdatePanel() {
       <div className="p-4 space-y-4">
         <div className="p-3 bg-[#0d0e12] border border-white/[0.08] rounded-[3px] flex items-center justify-between gap-4">
           <div>
-            <p className="font-mono text-xs font-semibold text-zinc-200">自动检查更新 (AUTO_CHECK)</p>
-            <p className="font-mono text-[10px] text-zinc-500 mt-0.5 leading-relaxed">
-              每 12 小时检查 GitHub 最新发布，有新版本时在页面顶部提示；不会自动下载，点击“立即更新”后才安装
-            </p>
+            <p className="font-mono text-xs font-semibold text-zinc-200">{t('自动检查更新 (AUTO_CHECK)')}</p>
+            <p className="font-mono text-[10px] text-zinc-500 mt-0.5 leading-relaxed">{t('每 12 小时检查 GitHub 最新发布，有新版本时在页面顶部提示；不会自动下载，点击“立即更新”后才安装')}</p>
           </div>
           <Switch
             size="sm"
@@ -69,11 +68,11 @@ export default function UpdatePanel() {
             )}
             <div className="min-w-0">
               <p className="font-mono text-xs font-semibold text-white">
-                {status.available && latest ? `发现新版本 v${latest.version}` : latest ? '当前已是最新版本' : '尚未获取最新版本'}
+                {status.available && latest ? t('发现新版本 v{p1}', { p1: latest.version }) : latest ? t('当前已是最新版本') : t('尚未获取最新版本')}
               </p>
               <p className="font-mono text-[11px] text-zinc-500 mt-0.5">
-                最近检查：{formatTime(status.checked_at)}
-                {latest && ` · 最新发布：v${latest.version}`}
+                {t('最近检查：')}{formatTime(status.checked_at)}
+                {latest && t(' · 最新发布：v{p1}', { p1: latest.version })}
               </p>
               {status.error && <p className="font-mono text-[11px] text-rose-400 mt-0.5">{status.error}</p>}
               {status.available && status.install_blocked && (
@@ -90,9 +89,7 @@ export default function UpdatePanel() {
               startContent={checking ? null : <RefreshCw className="w-3.5 h-3.5" />}
               isLoading={checking}
               onPress={() => void check()}
-            >
-              检查更新
-            </Button>
+            >{t('检查更新')}</Button>
             <UpdateInstallButton className="font-mono text-xs rounded-[3px] bg-interface-orange text-white shadow-geek-glow" />
           </div>
         </div>
@@ -108,7 +105,7 @@ export default function UpdatePanel() {
               )}
             </div>
             <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-[11px] text-zinc-300 leading-relaxed">
-              {latest.notes || '该版本未提供更新说明'}
+              {latest.notes || t('该版本未提供更新说明')}
             </pre>
           </div>
         )}

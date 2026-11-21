@@ -6,6 +6,7 @@ import { agentApi, type AgentChangeset } from '../api/agent';
 import { errorMessage } from '../api';
 import { toast } from './Toast';
 import useVisibleInterval from '../hooks/useVisibleInterval';
+import { t } from '../i18n';
 
 // 确认窗口期间其他配置写入会被拒绝，因此在所有页面顶部提示并提供确认/回滚入口。
 export default function AgentBanner() {
@@ -41,7 +42,7 @@ export default function AgentBanner() {
   if (journalError) {
     return (
       <div role="alert" className="mb-4 rounded border border-danger/40 bg-danger/10 px-4 py-3 text-xs text-danger">
-        Agent 变更日志无法读取，已暂停配置写入：{journalError}
+        {t('Agent 变更日志无法读取，已暂停配置写入：')}{journalError}
       </div>
     );
   }
@@ -70,22 +71,22 @@ export default function AgentBanner() {
         <Bot className="size-4 shrink-0" />
         <div className="min-w-0 flex-1">
           <p className="font-semibold text-zinc-900 dark:text-zinc-100">
-            {recovery ? 'Agent 变更需要人工处理' : rolling ? 'Agent 变更正在回滚' : `Agent 变更等待确认 · 剩余 ${remaining} 秒`}
+            {recovery ? t('Agent 变更需要人工处理') : rolling ? t('Agent 变更正在回滚') : t('Agent 变更等待确认 · 剩余 {remaining} 秒', { remaining: remaining })}
             <span className="ml-2 font-mono font-normal text-zinc-500">{active.actor}</span>
           </p>
           <p className="mt-0.5 truncate text-zinc-600 dark:text-zinc-400">
             {recovery ? active.error : (active.title || active.changes.join('；'))}
           </p>
           <p className="mt-0.5 text-zinc-500">
-            {recovery ? '处理前暂停其他配置写入。' : '确认或回滚前暂停其他配置与运行态写入；到期未确认将自动回滚（管理器停机期间不保证准时）。'}
+            {recovery ? t('处理前暂停其他配置写入。') : t('确认或回滚前暂停其他配置与运行态写入；到期未确认将自动回滚（管理器停机期间不保证准时）。')}
           </p>
         </div>
         {recovery ? (
-          <Button as={Link} to="/agent" size="sm" variant="flat">查看并处理</Button>
+          <Button as={Link} to="/agent" size="sm" variant="flat">{t('查看并处理')}</Button>
         ) : rolling ? null : (
           <div className="flex gap-2">
-            <Button size="sm" color="primary" isDisabled={busy || remaining === 0} onPress={() => run(() => agentApi.confirm(active), '已确认 Agent 变更')}>确认保留</Button>
-            <Button size="sm" variant="flat" color="danger" isDisabled={busy} onPress={() => run(() => agentApi.rollback(active.id), '已回滚 Agent 变更')}>立即回滚</Button>
+            <Button size="sm" color="primary" isDisabled={busy || remaining === 0} onPress={() => run(() => agentApi.confirm(active), t('已确认 Agent 变更'))}>{t('确认保留')}</Button>
+            <Button size="sm" variant="flat" color="danger" isDisabled={busy} onPress={() => run(() => agentApi.rollback(active.id), t('已回滚 Agent 变更'))}>{t('立即回滚')}</Button>
           </div>
         )}
       </div>

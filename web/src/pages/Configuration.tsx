@@ -7,6 +7,7 @@ import ConfirmModal from '../components/ConfirmModal';
 import { toast } from '../components/Toast';
 import ConfigPreview from '../components/ConfigPreview';
 import type { ConfigPreviewInfo } from '../components/ConfigPreview';
+import { t, translateBackend } from '../i18n';
 
 interface ConfigVersion {name: string; hash: string; updated_at: string; bytes: number; preview: string; preview_info?: ConfigPreviewInfo}
 interface ConfigDiff { current: string; candidate: string; changed: boolean; current_info?: ConfigPreviewInfo; candidate_info?: ConfigPreviewInfo }
@@ -20,7 +21,7 @@ export default function Configuration() {
   const [checkResult, setCheckResult] = useState<unknown>(null);
   const [checked, setChecked] = useState(false);
   const [confirm, setConfirm] = useState(false);
-  const [platform, setPlatform] = useState('未知');
+  const [platform, setPlatform] = useState(t('未知'));
   const settings = useStore((state) => state.settings);
   const refreshStatus = useStore((state) => state.fetchServiceStatus);
 
@@ -31,28 +32,28 @@ export default function Configuration() {
       setVersions(history.data.data);
       setDiff(response.data.data); setPlatform(deployment.data.data.platform);
     }
-    catch (cause) { setError(errorMessage(cause, '配置预览失败')); }
+    catch (cause) { setError(errorMessage(cause, t('配置预览失败'))); }
     finally { setBusy(''); }
   }, []);
   useEffect(() => { void refresh(); }, [refresh]);
 
   const check = async () => {
     setBusy('check'); setError(''); setChecked(false);
-    try { const response = await configApi.check(); setCheckResult(response.data.data || response.data.message || '候选配置校验通过'); setChecked(true); }
-    catch (cause) { setError(errorMessage(cause, '候选配置校验失败')); }
+    try { const response = await configApi.check(); setCheckResult(response.data.data || (response.data.message ? translateBackend(response.data.message) : '') || t('候选配置校验通过')); setChecked(true); }
+    catch (cause) { setError(errorMessage(cause, t('候选配置校验失败'))); }
     finally { setBusy(''); }
   };
   const apply = async () => {
     setBusy('apply'); setError('');
-    try { await configApi.apply(); toast.success('配置已校验并应用；运行中的实例已通过健康检查'); await refreshStatus(); await refresh(); }
-    catch (cause) { setError(errorMessage(cause, '应用失败，请查看恢复结果')); }
+    try { await configApi.apply(); toast.success(t('配置已校验并应用；运行中的实例已通过健康检查')); await refreshStatus(); await refresh(); }
+    catch (cause) { setError(errorMessage(cause, t('应用失败，请查看恢复结果'))); }
     finally { setBusy(''); setConfirm(false); }
   };
 
   const restore = async () => {
     setBusy('restore');setError('');
-    try {const response=await configApi.restore(restoreHash);toast.success(response.data.message);await useStore.getState().fetchSettings();await refreshStatus();await refresh();}
-    catch(cause){setError(errorMessage(cause,'版本恢复失败'));}
+    try {const response=await configApi.restore(restoreHash);toast.success(translateBackend(response.data.message));await useStore.getState().fetchSettings();await refreshStatus();await refresh();}
+    catch(cause){setError(errorMessage(cause,t('版本恢复失败')));}
     finally{setBusy('');setRestoreHash('');}
   };
   return (
@@ -65,9 +66,7 @@ export default function Configuration() {
             <span className="text-zinc-400 dark:text-zinc-600">--</span>
             <span className="text-zinc-500 dark:text-zinc-400">SING-BOX JSON CONFIG</span>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white font-sans flex items-center gap-3">
-            配置审阅与发布
-          </h1>
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white font-sans flex items-center gap-3">{t('配置审阅与发布')}</h1>
         </div>
 
         <div className="flex items-center gap-2 font-mono text-xs">
@@ -82,17 +81,13 @@ export default function Configuration() {
 
       <div className="flex flex-wrap items-center gap-4 text-xs font-mono">
         <Link className="text-[#ff5722] hover:text-[#ff6e40] flex items-center gap-1 transition-colors" to="/configuration/import">
-          <span>&rarr; 导入外部 sing-box JSON 配置</span>
+          <span>&rarr; {t('导入外部 sing-box JSON 配置')}</span>
         </Link>
         <span className="text-zinc-700">|</span>
-        <Link className="text-zinc-400 hover:text-white transition-colors" to="/rules">
-          查看分流规则匹配优先级
-        </Link>
+        <Link className="text-zinc-400 hover:text-white transition-colors" to="/rules">{t('查看分流规则匹配优先级')}</Link>
       </div>
 
-      <p className="text-xs font-mono text-zinc-500">
-        比较已加载应用的原生 JSON 配置与根据当前设置实时编译的候选配置。敏感凭据已在服务端脱敏；大配置仅展示开头片段，可下载完整脱敏内容供审阅。
-      </p>
+      <p className="text-xs font-mono text-zinc-500">{t('比较已加载应用的原生 JSON 配置与根据当前设置实时编译的候选配置。敏感凭据已在服务端脱敏；大配置仅展示开头片段，可下载完整脱敏内容供审阅。')}</p>
 
       {error ? (
         <div role="alert" className="p-3.5 rounded-[3px] bg-rose-500/10 border border-rose-500/30 text-rose-400 font-mono text-xs whitespace-pre-wrap">
@@ -108,29 +103,23 @@ export default function Configuration() {
           isDisabled={!!busy}
           isLoading={busy === 'preview'}
           onPress={refresh}
-        >
-          重新拉取对比
-        </Button>
+        >{t('重新拉取对比')}</Button>
         <Button
           size="sm"
           className="rounded-[3px] font-mono text-xs border border-cyan-500/30 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20"
           isDisabled={!!busy || !diff}
           isLoading={busy === 'check'}
           onPress={check}
-        >
-          校验候选配置语法
-        </Button>
+        >{t('校验候选配置语法')}</Button>
         <Button
           size="sm"
           className="rounded-[3px] font-mono text-xs bg-[#ff5722] hover:bg-[#ff6e40] text-black font-semibold uppercase tracking-wider shadow-geek-glow"
           isDisabled={!!busy || !checked || settings?.deployment_role === 'gateway'}
           onPress={() => setConfirm(true)}
-        >
-          立即原子应用配置
-        </Button>
+        >{t('立即原子应用配置')}</Button>
         {settings?.deployment_role === 'gateway' && (
           <Link to="/gateway" className="text-xs font-mono text-[#ff5722] hover:underline self-center ml-2">
-            网关模式请在「部署与设备」中安全应用 &rarr;
+            {t('网关模式请在「部署与设备」中安全应用')} &rarr;
           </Link>
         )}
       </div>
@@ -140,13 +129,13 @@ export default function Configuration() {
         <div className="space-y-3 font-mono text-xs">
           <div className="flex items-center gap-2 text-zinc-400">
             <span className={`size-2 rounded-full ${diff.changed ? 'bg-amber-400' : 'bg-emerald-400'}`}></span>
-            <span>{diff.changed ? 'DIFF STATUS: 存在未应用的改动 (PENDING CHANGES)' : 'DIFF STATUS: 候选配置与当前一致 (IN SYNC)'}</span>
+            <span>{diff.changed ? t('DIFF STATUS: 存在未应用的改动 (PENDING CHANGES)') : t('DIFF STATUS: 候选配置与当前一致 (IN SYNC)')}</span>
           </div>
 
           <div className="grid xl:grid-cols-2 gap-4">
             {([
-              { title: 'RUNNING // 当前已生效配置', content: diff.current, badge: 'ACTIVE', source: 'current' as const, info: diff.current_info },
-              { title: 'CANDIDATE // 编译后的候选草案', content: diff.candidate, badge: 'CANDIDATE', source: 'candidate' as const, info: diff.candidate_info },
+              { title: t('RUNNING // 当前已生效配置'), content: diff.current, badge: 'ACTIVE', source: 'current' as const, info: diff.current_info },
+              { title: t('CANDIDATE // 编译后的候选草案'), content: diff.candidate, badge: 'CANDIDATE', source: 'candidate' as const, info: diff.candidate_info },
             ]).map((item) => (
               <div key={item.title} className="min-w-0 rounded-[4px] border border-white/[0.08] bg-[#07080b] overflow-hidden shadow-sm">
                 <div className="h-9 px-4 border-b border-white/[0.08] bg-[#0e1017] flex items-center justify-between text-xs">
@@ -168,7 +157,7 @@ export default function Configuration() {
       {Boolean(checkResult) && (
         <div className="rounded-[4px] border border-emerald-500/30 bg-[#070b09] overflow-hidden font-mono text-xs">
           <div className="h-8 px-4 border-b border-emerald-500/20 bg-emerald-950/20 flex items-center justify-between text-emerald-400">
-            <span>// 语法与运行时依赖校验通过 (PRE-FLIGHT VALIDATION PASSED)</span>
+            <span>{t('// 语法与运行时依赖校验通过 (PRE-FLIGHT VALIDATION PASSED)')}</span>
             <span className="text-[10px]">OK</span>
           </div>
           <pre className="p-4 text-[11px] text-zinc-300 whitespace-pre-wrap break-all">
@@ -180,12 +169,10 @@ export default function Configuration() {
       {/* 配置版本流水线 */}
       <div className="rounded-[4px] border border-white/[0.08] bg-[#0b0c10] overflow-hidden">
         <div className="h-9 px-4 border-b border-white/[0.08] bg-[#0e1017] flex items-center justify-between">
-          <span className="font-mono text-xs text-white font-semibold">// 历史快照版本 (CONFIG REVISIONS)</span>
+          <span className="font-mono text-xs text-white font-semibold">{t('// 历史快照版本 (CONFIG REVISIONS)')}</span>
         </div>
         <div className="p-4 space-y-3 font-mono text-xs">
-          <p className="text-zinc-500 text-[11px]">
-            系统自动保留当前版本与上一次备份版本。若新配置出现意外，可一键校验并安全回滚。
-          </p>
+          <p className="text-zinc-500 text-[11px]">{t('系统自动保留当前版本与上一次备份版本。若新配置出现意外，可一键校验并安全回滚。')}</p>
           <div className="space-y-2">
             {versions.map((version) => (
               <div key={version.name} className="flex flex-wrap items-center justify-between p-3 rounded-[3px] bg-[#07080b] border border-white/[0.05] gap-3">
@@ -203,9 +190,7 @@ export default function Configuration() {
                     className="rounded-[2px] font-mono text-xs bg-amber-500/10 border border-amber-500/20 text-amber-800 dark:text-amber-300 hover:bg-amber-500/20"
                     isDisabled={!!busy}
                     onPress={() => setRestoreHash(version.hash)}
-                  >
-                    恢复此版本
-                  </Button>
+                  >{t('恢复此版本')}</Button>
                 )}
               </div>
             ))}
@@ -215,29 +200,27 @@ export default function Configuration() {
 
       <ConfirmModal
         isOpen={!!restoreHash}
-        title="恢复前一配置快照"
+        title={t('恢复前一配置快照')}
         busy={busy === 'restore'}
         onClose={() => setRestoreHash('')}
         onConfirm={restore}
-        confirmLabel="校验并回滚"
+        confirmLabel={t('校验并回滚')}
       >
         <div className="space-y-3 font-mono text-xs">
-          <p>前一版本必须通过内核语法校验；运行中的实例会重启并做健康检查，失败自动恢复。</p>
+          <p>{t('前一版本必须通过内核语法校验；运行中的实例会重启并做健康检查，失败自动恢复。')}</p>
           <ConfigPreview content={versions.find((v) => v.name === 'previous')?.preview || ''} info={versions.find((v) => v.name === 'previous')?.preview_info} source="previous" />
         </div>
       </ConfirmModal>
 
       <ConfirmModal
         isOpen={confirm}
-        title="应用并激活候选配置"
+        title={t('应用并激活候选配置')}
         busy={busy === 'apply'}
         onClose={() => setConfirm(false)}
         onConfirm={apply}
-        confirmLabel="原子应用并重启"
+        confirmLabel={t('原子应用并重启')}
       >
-        <p className="font-mono text-xs text-zinc-300 leading-relaxed">
-          服务端会重新生成并校验候选配置，备份当前配置，再原子切换并检查核心进程健康状态。正在活跃的长连接可能会短暂重置。
-        </p>
+        <p className="font-mono text-xs text-zinc-300 leading-relaxed">{t('服务端会重新生成并校验候选配置，备份当前配置，再原子切换并检查核心进程健康状态。正在活跃的长连接可能会短暂重置。')}</p>
       </ConfirmModal>
     </div>
   );

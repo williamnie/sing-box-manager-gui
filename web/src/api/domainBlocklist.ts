@@ -1,5 +1,6 @@
 import { api } from './index';
 import type { Rule } from '../store';
+import { t } from '../i18n';
 
 export const domainBlocklistID = 'custom-domain-reject';
 export interface DomainBlocklist {
@@ -23,5 +24,5 @@ export const domainBlocklistApi = {
 
 export function blocklistSaveMessage(result: BlocklistResult): string {
   if (result.warning) return '';
-  return result.application === 'applied' ? '拦截集合已保存并应用；实际处理仍取决于设备路径和规则优先级' : '拦截集合已保存，请到配置审阅检查并应用';
+  return result.application === 'applied' ? t('拦截集合已保存并应用；实际处理仍取决于设备路径和规则优先级') : t('拦截集合已保存，请到配置审阅检查并应用');
 }

@@ -25,6 +25,7 @@ import RuleOverview from '../components/RuleOverview';
 import DomainBlocklistEditor from '../components/DomainBlocklistEditor';
 import { domainBlocklistID } from '../api/domainBlocklist';
 import { createSTUNRule, isScopedSTUNRule, isSTUNOutboundAllowed, validateSTUNRule } from '../utils/rulePolicy';
+import { t, translateBackend } from '../i18n';
 
 // 规则集验证结果类型
 interface ValidationResult {
@@ -35,22 +36,22 @@ interface ValidationResult {
 }
 
 const baseOutboundOptions = [
-  { value: 'Proxy', label: 'Proxy（全部代理节点）' },
-  { value: 'DIRECT', label: 'DIRECT (直连)' },
-  { value: 'REJECT', label: 'REJECT (拦截)' },
+  { value: 'Proxy', label: t('Proxy（全部代理节点）') },
+  { value: 'DIRECT', label: t('DIRECT (直连)') },
+  { value: 'REJECT', label: t('REJECT (拦截)') },
 ];
 
 const ruleTypeOptions = [
-  { value: 'domain_suffix', label: '域名后缀 (domain_suffix)' },
-  { value: 'domain_keyword', label: '域名关键字 (domain_keyword)' },
-  { value: 'domain', label: '完整域名 (domain)' },
-  { value: 'ip_cidr', label: 'IP 段 (ip_cidr)' },
-  { value: 'geosite', label: 'GeoSite 规则集' },
-  { value: 'geoip', label: 'GeoIP 规则集' },
-  { value: 'port', label: '端口 (port)' },
-  { value: 'port_range', label: '目标端口范围 (port_range)' },
-  { value: 'match', label: '联合条件 (match)' },
-  { value: 'process_name', label: '本机进程名 (process_name)' },
+  { value: 'domain_suffix', label: t('域名后缀 (domain_suffix)') },
+  { value: 'domain_keyword', label: t('域名关键字 (domain_keyword)') },
+  { value: 'domain', label: t('完整域名 (domain)') },
+  { value: 'ip_cidr', label: t('IP 段 (ip_cidr)') },
+  { value: 'geosite', label: t('GeoSite 规则集') },
+  { value: 'geoip', label: t('GeoIP 规则集') },
+  { value: 'port', label: t('端口 (port)') },
+  { value: 'port_range', label: t('目标端口范围 (port_range)') },
+  { value: 'match', label: t('联合条件 (match)') },
+  { value: 'process_name', label: t('本机进程名 (process_name)') },
 ];
 
 const defaultRule: Omit<Rule, 'id'> = {
@@ -134,7 +135,7 @@ export default function Rules() {
           valid: false,
           url: '',
           tag: '',
-          message: '验证请求失败',
+          message: t('验证请求失败'),
         };
       }
     }
@@ -201,7 +202,7 @@ export default function Rules() {
     if (Array.isArray(imported?.outbounds)) {
       for (const outbound of imported.outbounds) {
         if (outbound && typeof outbound === 'object' && 'tag' in outbound && typeof outbound.tag === 'string') {
-          addOption(outbound.tag, `${outbound.tag} (已导入)`);
+          addOption(outbound.tag, t('{p1} (已导入)', { p1: outbound.tag }));
         }
       }
     }
@@ -209,25 +210,25 @@ export default function Rules() {
       ...subscriptions.filter((subscription) => subscription.enabled).flatMap((subscription) => subscription.nodes || []),
       ...manualNodes.filter((node) => node.enabled).map((node) => node.node),
     ];
-    if (settings?.proxy_plan?.managed_only) addOption('GLOBAL', 'GLOBAL（全部出口）');
+    if (settings?.proxy_plan?.managed_only) addOption('GLOBAL', t('GLOBAL（全部出口）'));
     if (nativeNodes.length > 0 && !settings?.proxy_plan) {
       for (const group of ['Auto', 'Proxy', 'Final']) {
         const tag = imported ? `Managed ${group}` : group;
-        addOption(tag, `${tag} (管理器选择组)`);
+        addOption(tag, t('{tag} (管理器选择组)', { tag: tag }));
       }
     }
-    for (const node of nativeNodes) addOption(node.tag, `${node.tag} (节点)`);
+    for (const node of nativeNodes) addOption(node.tag, t('{p1} (节点)', { p1: node.tag }));
 
     // 添加国家节点组
     if (!settings?.proxy_plan || settings.proxy_plan.managed_only) countryGroups.forEach((group) => {
       const label = `${group.emoji} ${group.name}`;
-      addOption(label, `${label} (${group.node_count}节点)`);
+      addOption(label, t('{label} ({p2}节点)', { label: label, p2: group.node_count }));
     });
 
     // 添加过滤器
     filters.forEach((filter) => {
       if (filter.enabled) {
-        addOption(filter.name, `${filter.name} (过滤器)`);
+        addOption(filter.name, t('{p1} (过滤器)', { p1: filter.name }));
       }
     });
 
@@ -341,17 +342,17 @@ export default function Rules() {
       ports: parseList(portsText).map(Number),
     };
     if (requireSource && !ruleData.source_cidrs?.length) {
-      toast.error('请填写来源 IP / CIDR，不能将此 STUN 规则扩展到所有设备'); return;
+      toast.error(t('请填写来源 IP / CIDR，不能将此 STUN 规则扩展到所有设备')); return;
     }
     if (stunTemplate) {
       const error = validateSTUNRule(ruleData, getSTUNOutboundOptions().map((option) => option.value));
       if (error) { toast.error(error); return; }
     }
     if (ruleData.ports.some((port) => !Number.isInteger(port) || port < 1 || port > 65535)) {
-      toast.error('目标端口必须是 1–65535 的整数'); return;
+      toast.error(t('目标端口必须是 1–65535 的整数')); return;
     }
     if (settings?.deployment_role === 'gateway' && (ruleData.rule_type === 'process_name' || ruleData.process_names?.length)) {
-      toast.error('家庭网关不能识别局域网设备的远端进程名，请使用来源地址联合匹配'); return;
+      toast.error(t('家庭网关不能识别局域网设备的远端进程名，请使用来源地址联合匹配')); return;
     }
     setSubmitting(true);
     try {
@@ -379,37 +380,29 @@ export default function Rules() {
             <span className="text-zinc-400 dark:text-zinc-600">--</span>
             <span className="text-zinc-500 dark:text-zinc-400">DECISION PIPELINE</span>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white font-sans flex items-center gap-3">
-            分流规则引擎
-          </h1>
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white font-sans flex items-center gap-3">{t('分流规则引擎')}</h1>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 font-mono text-xs">
-          <Button size="sm" className="rounded border border-zinc-200 bg-white text-zinc-700 dark:border-white/10 dark:bg-[#12141d] dark:text-zinc-200" onPress={() => setBlocklistOpen(true)}>编辑拦截集合</Button>
+          <Button size="sm" className="rounded border border-zinc-200 bg-white text-zinc-700 dark:border-white/10 dark:bg-[#12141d] dark:text-zinc-200" onPress={() => setBlocklistOpen(true)}>{t('编辑拦截集合')}</Button>
           <Button
             size="sm"
             className="rounded-[3px] font-mono text-xs border border-zinc-200 dark:border-white/[0.1] bg-white dark:bg-[#12141d] hover:bg-zinc-100 dark:hover:bg-[#181c28] text-zinc-700 dark:text-zinc-300 shadow-2xs"
             onPress={handleAddSTUNRule}
-          >
-            添加 STUN 专用规则
-          </Button>
+          >{t('添加 STUN 专用规则')}</Button>
           <Button
             size="sm"
             className="rounded-[3px] font-mono text-xs bg-[#ff5722] hover:bg-[#ff6e40] text-white font-semibold uppercase tracking-wider shadow-geek-glow"
             startContent={<Plus size={14} className="fill-current" />}
             onPress={handleAddRule}
-          >
-            添加分流规则
-          </Button>
+          >{t('添加分流规则')}</Button>
         </div>
       </div>
 
       {settings?.deployment_role === 'gateway' && settings.gateway?.access_mode === 'dns' && (
         <div className="relative rounded-[3px] border border-amber-500/20 bg-amber-500/5 p-3.5 text-xs text-amber-800 dark:text-amber-200/90 font-mono leading-relaxed overflow-hidden">
           <div className="absolute left-0 top-0 bottom-0 w-1 bg-amber-400"></div>
-          <span className="font-bold text-amber-800 dark:text-amber-300 mr-2">[DNS_BYPASS_NOTICE]</span>
-          DNS 分流旁路：域名规则决定真实地址或 FakeIP；端口、协议等条件仍仅匹配进入实例的连接，不扩大为整域 DNS 规则。STUN、硬编码 IP、应用自带 DoH 和 IPv6 旁路流量可能不经过实例。
-        </div>
+          <span className="font-bold text-amber-800 dark:text-amber-300 mr-2">[DNS_BYPASS_NOTICE]</span>{t('DNS 分流旁路：域名规则决定真实地址或 FakeIP；端口、协议等条件仍仅匹配进入实例的连接，不扩大为整域 DNS 规则。STUN、硬编码 IP、应用自带 DoH 和 IPv6 旁路流量可能不经过实例。')}</div>
       )}
 
       <DomainBlocklistEditor isOpen={blocklistOpen} onClose={() => setBlocklistOpen(false)} onSaved={() => { void fetchRules(); setOverviewRevision(value => value + 1); }} />
@@ -444,13 +437,13 @@ export default function Rules() {
         <ModalContent>
           <ModalHeader className="flex items-center gap-2">
             <span className="size-2 rounded-full bg-[#ff5722]"></span>
-            <span>{stunTemplate ? (editingRule ? '编辑限定来源的 STUN 规则' : '添加限定来源的 STUN 规则') : editingRule ? '编辑分流规则' : '添加分流规则'}</span>
+            <span>{stunTemplate ? (editingRule ? t('编辑限定来源的 STUN 规则') : t('添加限定来源的 STUN 规则')) : editingRule ? t('编辑分流规则') : t('添加分流规则')}</span>
           </ModalHeader>
           <ModalBody>
             <div className="space-y-4">
               <Input
-                label="规则标识名称"
-                placeholder="例如：流媒体直连、广告域名屏蔽"
+                label={t('规则标识名称')}
+                placeholder={t('例如：流媒体直连、广告域名屏蔽')}
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 variant="bordered"
@@ -463,12 +456,12 @@ export default function Rules() {
 
               {stunTemplate ? (
                 <div className="space-y-1.5 text-xs rounded-[3px] bg-cyan-500/10 border border-cyan-500/20 p-3 font-mono text-cyan-200/90 leading-relaxed">
-                  <p>仅处理指定来源设备的 STUN 流量，不改变普通网站、全部 UDP 或 BT / PT 的分流。</p>
-                  <p>请选择支持所需流量的真实代理出站，或 REJECT 拒绝。</p>
+                  <p>{t('仅处理指定来源设备的 STUN 流量，不改变普通网站、全部 UDP 或 BT / PT 的分流。')}</p>
+                  <p>{t('请选择支持所需流量的真实代理出站，或 REJECT 拒绝。')}</p>
                 </div>
               ) : (
                 <AppSelect
-                  label="匹配类型 (Rule Type)"
+                  label={t('匹配类型 (Rule Type)')}
                   selectedKeys={[formData.rule_type]}
                   onChange={(e) => setFormData({ ...formData, rule_type: e.target.value })}
                 >
@@ -482,23 +475,23 @@ export default function Rules() {
 
               {stunTemplate && stunRejectConflict && (
                 <p role="alert" className="text-xs font-mono text-amber-800 dark:text-amber-300 p-2 rounded bg-amber-500/10 border border-amber-500/20">
-                  [WARN] 导入配置的 REJECT 标签被非拒绝出站占用，已从此便捷设置中排除。
+                  {t('[WARN] 导入配置的 REJECT 标签被非拒绝出站占用，已从此便捷设置中排除。')}
                 </p>
               )}
 
               {formData.rule_type !== 'match' ? (
                 <Textarea
-                  label="规则匹配值 (Values)"
+                  label={t('规则匹配值 (Values)')}
                   placeholder={
                     formData.rule_type === 'domain_suffix'
-                      ? '每行一个域名后缀，例如：\ngoogle.com\nyoutube.com'
+                      ? t('每行一个域名后缀，例如：\\ngoogle.com\\nyoutube.com')
                       : formData.rule_type === 'ip_cidr'
-                      ? '每行一个 IP 段，例如：\n192.0.2.0/24\n198.51.100.0/24'
+                      ? t('每行一个 IP 段，例如：\\n192.0.2.0/24\\n198.51.100.0/24')
                       : formData.rule_type === 'geosite'
-                      ? '每行一个 geosite 规则集名称，例如：\ngoogle\nyoutube\ncursor'
+                      ? t('每行一个 geosite 规则集名称，例如：\\ngoogle\\nyoutube\\ncursor')
                       : formData.rule_type === 'geoip'
-                      ? '每行一个 geoip 规则集名称，例如：\ncn\ngoogle'
-                      : '每行一个值'
+                      ? t('每行一个 geoip 规则集名称，例如：\\ncn\\ngoogle')
+                      : t('每行一个值')
                   }
                   value={valuesText}
                   onChange={(e) => setValuesText(e.target.value)}
@@ -511,12 +504,12 @@ export default function Rules() {
                   }}
                 />
               ) : !stunTemplate ? (
-                <p className="text-xs font-mono text-zinc-500">联合条件规则可匹配来源、网络、协议或端口，至少填写一项。</p>
+                <p className="text-xs font-mono text-zinc-500">{t('联合条件规则可匹配来源、网络、协议或端口，至少填写一项。')}</p>
               ) : null}
 
               {stunTemplate && settings?.devices?.some((device) => device.enabled && device.addresses?.length) && (
                 <AppSelect
-                  label="从已保存设备快速填入来源"
+                  label={t('从已保存设备快速填入来源')}
                   selectedKeys={[]}
                   onChange={(event) => {
                     const device = settings.devices?.find((item) => item.id === event.target.value);
@@ -525,7 +518,7 @@ export default function Rules() {
                 >
                   {settings.devices.filter((device) => device.enabled && device.addresses?.length).map((device) => (
                     <SelectItem key={device.id} textValue={device.name || device.id}>
-                      {device.name || '未命名设备'} · {device.addresses.join(', ')}
+                      {device.name || t('未命名设备')} · {device.addresses.join(', ')}
                     </SelectItem>
                   ))}
                 </AppSelect>
@@ -533,12 +526,12 @@ export default function Rules() {
 
               <div className="grid sm:grid-cols-2 gap-4" key={editingRule?.id || 'new'}>
                 <Textarea
-                  label="来源 IP / CIDR"
+                  label={t('来源 IP / CIDR')}
                   isRequired={requireSource}
                   value={sourceText}
                   onValueChange={(value) => { setSourceText(value); setFormData({ ...formData, source_cidrs: parseList(value) }); }}
-                  placeholder="例如 192.0.2.10/32"
-                  description={requireSource ? '必填，只处理可观察到的指定来源' : '留空表示匹配所有设备来源'}
+                  placeholder={t('例如 192.0.2.10/32')}
+                  description={requireSource ? t('必填，只处理可观察到的指定来源') : t('留空表示匹配所有设备来源')}
                   minRows={1}
                   maxRows={5}
                   variant="bordered"
@@ -551,7 +544,7 @@ export default function Rules() {
                 {!stunTemplate ? (
                   <>
                     <AppSelect
-                      label="传输网络"
+                      label={t('传输网络')}
                       selectionMode="multiple"
                       selectedKeys={formData.network || []}
                       onSelectionChange={(keys) => setFormData({ ...formData, network: Array.from(keys) as ('tcp' | 'udp')[] })}
@@ -559,9 +552,9 @@ export default function Rules() {
                       <SelectItem key="tcp">TCP</SelectItem>
                       <SelectItem key="udp">UDP</SelectItem>
                     </AppSelect>
-                    <ListInput label="识别协议" values={formData.protocol || []} onChange={(protocol) => setFormData({ ...formData, protocol })} placeholder="例如 dns、http、tls、stun" />
+                    <ListInput label={t('识别协议')} values={formData.protocol || []} onChange={(protocol) => setFormData({ ...formData, protocol })} placeholder={t('例如 dns、http、tls、stun')} />
                     <Input
-                      label="目标端口"
+                      label={t('目标端口')}
                       value={portsText}
                       onValueChange={setPortsText}
                       placeholder="443, 853"
@@ -572,17 +565,15 @@ export default function Rules() {
                         input: "font-mono text-xs text-white",
                       }}
                     />
-                    <ListInput label="目标端口范围" values={formData.port_ranges || []} onChange={(port_ranges) => setFormData({ ...formData, port_ranges })} placeholder="例如 6881:6999" description="宽范围可能误命中普通流量" />
+                    <ListInput label={t('目标端口范围')} values={formData.port_ranges || []} onChange={(port_ranges) => setFormData({ ...formData, port_ranges })} placeholder={t('例如 6881:6999')} description={t('宽范围可能误命中普通流量')} />
                     {settings?.deployment_role !== 'gateway' ? (
-                      <ListInput label="本机进程名" values={formData.process_names || []} onChange={(process_names) => setFormData({ ...formData, process_names })} description="仅适用于单机本地进程" />
+                      <ListInput label={t('本机进程名')} values={formData.process_names || []} onChange={(process_names) => setFormData({ ...formData, process_names })} description={t('仅适用于单机本地进程')} />
                     ) : (
-                      <p className="text-xs font-mono text-amber-800 dark:text-amber-300 p-2.5 rounded bg-amber-500/10 border border-amber-500/20">网关模式无法识别局域网设备上的进程名。</p>
+                      <p className="text-xs font-mono text-amber-800 dark:text-amber-300 p-2.5 rounded bg-amber-500/10 border border-amber-500/20">{t('网关模式无法识别局域网设备上的进程名。')}</p>
                     )}
                   </>
                 ) : (
-                  <p className="text-xs font-mono text-zinc-400 p-2.5 rounded bg-black/40 border border-white/[0.06]">
-                    协议: STUN；不限定端口，不误伤其他 UDP。
-                  </p>
+                  <p className="text-xs font-mono text-zinc-400 p-2.5 rounded bg-black/40 border border-white/[0.06]">{t('协议: STUN；不限定端口，不误伤其他 UDP。')}</p>
                 )}
               </div>
 
@@ -590,7 +581,7 @@ export default function Rules() {
               {(formData.rule_type === 'geosite' || formData.rule_type === 'geoip') && valuesText.trim() && (
                 <div className="space-y-2 p-3 rounded-[3px] bg-black/40 border border-white/[0.06]">
                   <div className="flex items-center gap-2 font-mono text-xs text-zinc-400">
-                    <span>规则集预检结果:</span>
+                    <span>{t('规则集预检结果:')}</span>
                     {isValidating && <Spinner size="sm" />}
                   </div>
                   <div className="space-y-1 max-h-32 overflow-y-auto font-mono text-xs">
@@ -604,7 +595,7 @@ export default function Rules() {
                           return (
                             <div key={name} className="flex items-center gap-2 text-zinc-500">
                               <Spinner size="sm" />
-                              <span>{name} - 验证中...</span>
+                              <span>{t('{p1} - 验证中...', { p1: name })}</span>
                             </div>
                           );
                         }
@@ -617,7 +608,7 @@ export default function Rules() {
                           >
                             {result.valid ? <CheckCircle className="size-3.5" /> : <XCircle className="size-3.5" />}
                             <span className="font-semibold">{name}</span>
-                            <span className="text-[10px] text-zinc-500">- {result.message}</span>
+                            <span className="text-[10px] text-zinc-500">- {translateBackend(result.message)}</span>
                           </div>
                         );
                       })}
@@ -626,7 +617,7 @@ export default function Rules() {
               )}
 
               <AppSelect
-                label="目标出站 (Outbound)"
+                label={t('目标出站 (Outbound)')}
                 selectedKeys={[formData.outbound]}
                 onChange={(e) => setFormData({ ...formData, outbound: e.target.value })}
               >
@@ -639,8 +630,8 @@ export default function Rules() {
 
               <Input
                 type="number"
-                label="优先级 (Priority)"
-                placeholder="数字越小优先级越高 (如 10, 50, 100)"
+                label={t('优先级 (Priority)')}
+                placeholder={t('数字越小优先级越高 (如 10, 50, 100)')}
                 value={String(formData.priority)}
                 onChange={(e) =>
                   setFormData({ ...formData, priority: e.target.value === '' ? 100 : Number(e.target.value) })
@@ -654,7 +645,7 @@ export default function Rules() {
               />
 
               <div className="flex items-center justify-between p-2.5 rounded-[3px] bg-white/[0.02] border border-white/[0.05]">
-                <span className="font-mono text-xs text-zinc-300">是否立即启用该规则</span>
+                <span className="font-mono text-xs text-zinc-300">{t('是否立即启用该规则')}</span>
                 <Switch
                   size="sm"
                   isSelected={formData.enabled}
@@ -670,9 +661,7 @@ export default function Rules() {
               variant="flat"
               onPress={onClose}
               className="rounded-[2px] font-mono text-xs border border-white/[0.1] bg-white/[0.05] text-zinc-300 hover:text-white"
-            >
-              取消
-            </Button>
+            >{t('取消')}</Button>
             <Button
               size="sm"
               className="rounded-[2px] font-mono text-xs bg-[#ff5722] hover:bg-[#ff6e40] text-black font-semibold uppercase tracking-wider"
@@ -680,14 +669,14 @@ export default function Rules() {
               isLoading={submitting}
               isDisabled={!formData.name.trim() || (requireSource && !formData.source_cidrs?.length) || (formData.rule_type !== 'match' && !valuesText.trim()) || isValidating || !allValidationsPassed()}
             >
-              {editingRule ? '保存修改' : '确认添加'}
+              {editingRule ? t('保存修改') : t('确认添加')}
             </Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
-      <ConfirmModal isOpen={!!deleteTarget} title="删除规则" busy={deleting} onClose={() => setDeleteTarget(null)} onConfirm={() => void confirmDeleteRule()} confirmLabel="删除">
-        <p>确定删除规则「{deleteTarget?.name}」？删除后，这部分流量会继续匹配后续规则或默认出站。</p>
-        <p>{autoApply ? '删除后会自动校验并应用配置；运行中的 sing-box 会自动重启，无需手动重启。已停止的内核不会自动启动。' : '删除后需点击“检查与应用”才能生效；应用时会自动重启运行中的 sing-box。'}</p>
+      <ConfirmModal isOpen={!!deleteTarget} title={t('删除规则')} busy={deleting} onClose={() => setDeleteTarget(null)} onConfirm={() => void confirmDeleteRule()} confirmLabel={t('删除')}>
+        <p>{t('确定删除规则「{p1}」？删除后，这部分流量会继续匹配后续规则或默认出站。', { p1: deleteTarget?.name ?? '' })}</p>
+        <p>{autoApply ? t('删除后会自动校验并应用配置；运行中的 sing-box 会自动重启，无需手动重启。已停止的内核不会自动启动。') : t('删除后需点击“检查与应用”才能生效；应用时会自动重启运行中的 sing-box。')}</p>
       </ConfirmModal>
     </div>
   );

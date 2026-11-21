@@ -1,13 +1,14 @@
 import { useTheme, type ThemeMode } from '../utils/theme';
 import { Sun, Moon, Laptop } from 'lucide-react';
+import { t } from '../i18n';
 
 export default function ThemeToggle() {
   const { themeMode, resolvedTheme, setThemeMode } = useTheme();
 
   const options: { mode: ThemeMode; label: string; icon: typeof Sun }[] = [
-    { mode: 'system', label: '跟随系统', icon: Laptop },
-    { mode: 'light', label: '浅色模式', icon: Sun },
-    { mode: 'dark', label: '深色模式', icon: Moon },
+    { mode: 'system', label: t('跟随系统'), icon: Laptop },
+    { mode: 'light', label: t('浅色模式'), icon: Sun },
+    { mode: 'dark', label: t('深色模式'), icon: Moon },
   ];
 
   return (
@@ -20,7 +21,7 @@ export default function ThemeToggle() {
           <button
             key={opt.mode}
             type="button"
-            title={`${opt.label} ${opt.mode === 'system' ? `(${resolvedTheme === 'dark' ? '系统暗色' : '系统浅色'})` : ''}`}
+            title={`${opt.label} ${opt.mode === 'system' ? `(${resolvedTheme === 'dark' ? t('系统暗色') : t('系统浅色')})` : ''}`}
             onClick={() => setThemeMode(opt.mode)}
             className={`flex items-center gap-1.5 px-2 py-1 rounded-[2px] text-xs font-mono transition-all cursor-pointer ${
               isActive

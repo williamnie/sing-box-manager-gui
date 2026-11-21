@@ -1,4 +1,5 @@
 import { api, errorMessage } from './index';
+import { t } from '../i18n';
 
 export interface RuntimeProxy {
   tag: string; type: string; selectable: boolean; members: string[]; selected: string; delay: number | null;
@@ -18,7 +19,7 @@ export class RuntimeCloseError extends Error {
   partial: CloseResult;
   unattempted: string[];
   constructor(partial: CloseResult, unattempted: string[], cause: unknown) {
-    super(`批量关闭中断：已确认关闭 ${partial.closed.length} 条，已结束 ${partial.missing.length} 条，失败 ${partial.failed.length} 条；其余 ${unattempted.length} 条尚未确认。${errorMessage(cause, '请求失败，请刷新后核对')}`);
+    super(t('批量关闭中断：已确认关闭 {p1} 条，已结束 {p2} 条，失败 {p3} 条；其余 {p4} 条尚未确认。{p5}', { p1: partial.closed.length, p2: partial.missing.length, p3: partial.failed.length, p4: unattempted.length, p5: errorMessage(cause, t('请求失败，请刷新后核对')) }));
     this.partial = partial;
     this.unattempted = unattempted;
   }

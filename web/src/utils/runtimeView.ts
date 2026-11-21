@@ -1,5 +1,6 @@
 import type { ConnectionSnapshot, RuntimeConnection, RuntimeProxy } from '../api/runtime';
 import type { ObservedGatewayClient } from '../api/gatewayClients';
+import { t } from '../i18n';
 
 export function formatBytes(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return '0 B';
@@ -14,7 +15,7 @@ export function selectedChain(tag: string, proxies: Map<string, RuntimeProxy>): 
   const visited = new Set<string>();
   let current = tag;
   while (current) {
-    if (visited.has(current)) return [...chain, '循环引用'];
+    if (visited.has(current)) return [...chain, t('循环引用')];
     visited.add(current);
     chain.push(current);
     const proxy = proxies.get(current);

@@ -2,6 +2,7 @@ import { errorMessage } from '../api';
 import { create } from 'zustand';
 import { subscriptionApi, filterApi, ruleApi, ruleGroupApi, settingsApi, serviceApi, nodeApi, manualNodeApi, monitorApi } from '../api';
 import { toast } from '../components/Toast';
+import { t } from '../i18n';
 
 // 类型定义
 export interface Subscription {
@@ -241,7 +242,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await subscriptionApi.getAll();
       set({ subscriptions: res.data.data || [] });
     } catch (error) {
-      toast.error(errorMessage(error, '请求失败，请检查管理服务'));
+      toast.error(errorMessage(error, t('请求失败，请检查管理服务')));
     }
   },
 
@@ -250,7 +251,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await manualNodeApi.getAll();
       set({ manualNodes: res.data.data || [] });
     } catch (error) {
-      toast.error(errorMessage(error, '请求失败，请检查管理服务'));
+      toast.error(errorMessage(error, t('请求失败，请检查管理服务')));
     }
   },
 
@@ -259,7 +260,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await nodeApi.getCountries();
       set({ countryGroups: res.data.data || [] });
     } catch (error) {
-      toast.error(errorMessage(error, '请求失败，请检查管理服务'));
+      toast.error(errorMessage(error, t('请求失败，请检查管理服务')));
     }
   },
 
@@ -268,7 +269,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await filterApi.getAll();
       set({ filters: res.data.data || [] });
     } catch (error) {
-      toast.error(errorMessage(error, '请求失败，请检查管理服务'));
+      toast.error(errorMessage(error, t('请求失败，请检查管理服务')));
     }
   },
 
@@ -277,7 +278,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await ruleApi.getAll();
       set({ rules: res.data.data || [] });
     } catch (error) {
-      toast.error(errorMessage(error, '请求失败，请检查管理服务'));
+      toast.error(errorMessage(error, t('请求失败，请检查管理服务')));
     }
   },
 
@@ -286,7 +287,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await ruleGroupApi.getAll();
       set({ ruleGroups: res.data.data || [] });
     } catch (error) {
-      toast.error(errorMessage(error, '请求失败，请检查管理服务'));
+      toast.error(errorMessage(error, t('请求失败，请检查管理服务')));
     }
   },
 
@@ -295,7 +296,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await settingsApi.get();
       set({ settings: res.data.data });
     } catch (error) {
-      toast.error(errorMessage(error, '请求失败，请检查管理服务'));
+      toast.error(errorMessage(error, t('请求失败，请检查管理服务')));
     }
   },
 
@@ -304,7 +305,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await serviceApi.status();
       set({ serviceStatus: res.data.data });
     } catch (error) {
-      toast.error(errorMessage(error, '请求失败，请检查管理服务'));
+      toast.error(errorMessage(error, t('请求失败，请检查管理服务')));
     }
   },
 
@@ -313,7 +314,7 @@ export const useStore = create<AppState>((set, get) => ({
       const res = await monitorApi.system();
       set({ systemInfo: res.data.data });
     } catch (error) {
-      toast.error(errorMessage(error, '请求失败，请检查管理服务'));
+      toast.error(errorMessage(error, t('请求失败，请检查管理服务')));
     }
   },
 
@@ -322,9 +323,9 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       await subscriptionApi.add(name, url);
       await get().fetchSubscriptions();
-      toast.success('订阅添加成功');
+      toast.success(t('订阅添加成功'));
     } catch (error) {
-      toast.error(errorMessage(error, '添加订阅失败'));
+      toast.error(errorMessage(error, t('添加订阅失败')));
       throw error;
     } finally {
       set({ loading: false });
@@ -336,9 +337,9 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       await subscriptionApi.update(id, { name, url });
       await get().fetchSubscriptions();
-      toast.success('订阅更新成功');
+      toast.success(t('订阅更新成功'));
     } catch (error) {
-      toast.error(errorMessage(error, '更新订阅失败'));
+      toast.error(errorMessage(error, t('更新订阅失败')));
       throw error;
     } finally {
       set({ loading: false });
@@ -349,10 +350,10 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       await subscriptionApi.delete(id);
       await get().fetchSubscriptions();
-      toast.success('订阅已删除');
+      toast.success(t('订阅已删除'));
     } catch (error) {
 
-      toast.error(errorMessage(error, '删除订阅失败'));
+      toast.error(errorMessage(error, t('删除订阅失败')));
     }
   },
 
@@ -363,10 +364,10 @@ export const useStore = create<AppState>((set, get) => ({
       await get().fetchSubscriptions();
       await get().fetchCountryGroups();
       // 自动应用失败的提示由 API 拦截器统一显示。
-      if (!res.data.warning) toast.success('订阅刷新成功');
+      if (!res.data.warning) toast.success(t('订阅刷新成功'));
     } catch (error) {
 
-      toast.error(errorMessage(error, '刷新订阅失败'));
+      toast.error(errorMessage(error, t('刷新订阅失败')));
     } finally {
       set({ loading: false });
     }
@@ -382,11 +383,11 @@ export const useStore = create<AppState>((set, get) => ({
         if (res.data.warning) {
           toast.info(res.data.warning);
         } else {
-          toast.success(`订阅已${enabled ? '启用' : '禁用'}`);
+          toast.success(t('订阅已{p1}', { p1: enabled ? t('启用') : t('禁用') }));
         }
       } catch (error) {
 
-        toast.error(errorMessage(error, '切换订阅状态失败'));
+        toast.error(errorMessage(error, t('切换订阅状态失败')));
       }
     }
   },
@@ -399,11 +400,11 @@ export const useStore = create<AppState>((set, get) => ({
       if (res.data.warning) {
         toast.info(res.data.warning);
       } else {
-        toast.success('节点添加成功');
+        toast.success(t('节点添加成功'));
       }
     } catch (error) {
 
-      toast.error(errorMessage(error, '添加节点失败'));
+      toast.error(errorMessage(error, t('添加节点失败')));
       throw error;
     }
   },
@@ -416,11 +417,11 @@ export const useStore = create<AppState>((set, get) => ({
       if (res.data.warning) {
         toast.info(res.data.warning);
       } else {
-        toast.success('节点更新成功');
+        toast.success(t('节点更新成功'));
       }
     } catch (error) {
 
-      toast.error(errorMessage(error, '更新节点失败'));
+      toast.error(errorMessage(error, t('更新节点失败')));
       throw error;
     }
   },
@@ -433,11 +434,11 @@ export const useStore = create<AppState>((set, get) => ({
       if (res.data.warning) {
         toast.info(res.data.warning);
       } else {
-        toast.success('节点已删除');
+        toast.success(t('节点已删除'));
       }
     } catch (error) {
 
-      toast.error(errorMessage(error, '删除节点失败'));
+      toast.error(errorMessage(error, t('删除节点失败')));
     }
   },
 
@@ -456,11 +457,11 @@ export const useStore = create<AppState>((set, get) => ({
         if (res.data.warning) {
           toast.info(res.data.warning);
         } else {
-          toast.success(`规则组已${enabled ? '启用' : '禁用'}`);
+          toast.success(t('规则组已{p1}', { p1: enabled ? t('启用') : t('禁用') }));
         }
       } catch (error) {
 
-        toast.error(errorMessage(error, '更新规则组失败'));
+        toast.error(errorMessage(error, t('更新规则组失败')));
       }
     }
   },
@@ -474,11 +475,11 @@ export const useStore = create<AppState>((set, get) => ({
         if (res.data.warning) {
           toast.info(res.data.warning);
         } else {
-          toast.success('规则组出站已更新');
+          toast.success(t('规则组出站已更新'));
         }
       } catch (error) {
 
-        toast.error(errorMessage(error, '更新规则组出站失败'));
+        toast.error(errorMessage(error, t('更新规则组出站失败')));
       }
     }
   },
@@ -490,11 +491,11 @@ export const useStore = create<AppState>((set, get) => ({
       if (res.data.warning) {
         toast.info(res.data.warning);
       } else {
-        toast.success('规则添加成功');
+        toast.success(t('规则添加成功'));
       }
     } catch (error) {
 
-      toast.error(errorMessage(error, '添加规则失败'));
+      toast.error(errorMessage(error, t('添加规则失败')));
       throw error;
     }
   },
@@ -506,11 +507,11 @@ export const useStore = create<AppState>((set, get) => ({
       if (res.data.warning) {
         toast.info(res.data.warning);
       } else {
-        toast.success('规则更新成功');
+        toast.success(t('规则更新成功'));
       }
     } catch (error) {
 
-      toast.error(errorMessage(error, '更新规则失败'));
+      toast.error(errorMessage(error, t('更新规则失败')));
       throw error;
     }
   },
@@ -522,10 +523,10 @@ export const useStore = create<AppState>((set, get) => ({
       if (res.data.warning) {
         toast.info(res.data.warning);
       } else {
-        toast.success(res.data.application === 'applied' ? '规则已删除并应用，sing-box 已自动重启' : '规则已删除，请在配置审阅中检查并应用');
+        toast.success(res.data.application === 'applied' ? t('规则已删除并应用，sing-box 已自动重启') : t('规则已删除，请在配置审阅中检查并应用'));
       }
     } catch (error: unknown) {
-      toast.error(errorMessage(error, '删除规则失败'));
+      toast.error(errorMessage(error, t('删除规则失败')));
       throw error;
     }
   },
@@ -534,10 +535,10 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       const res = await filterApi.add(filter);
       await get().fetchFilters();
-      if (!res.data.warning) toast.success(res.data.application === 'applied' ? '过滤器已添加并应用' : '过滤器已保存，需应用配置后生效');
+      if (!res.data.warning) toast.success(res.data.application === 'applied' ? t('过滤器已添加并应用') : t('过滤器已保存，需应用配置后生效'));
     } catch (error) {
 
-      toast.error(errorMessage(error, '添加过滤器失败'));
+      toast.error(errorMessage(error, t('添加过滤器失败')));
       throw error;
     }
   },
@@ -546,10 +547,10 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       const res = await filterApi.update(id, filter);
       await get().fetchFilters();
-      if (!res.data.warning) toast.success(res.data.application === 'applied' ? '过滤器已更新并应用' : '过滤器已保存，需应用配置后生效');
+      if (!res.data.warning) toast.success(res.data.application === 'applied' ? t('过滤器已更新并应用') : t('过滤器已保存，需应用配置后生效'));
     } catch (error) {
 
-      toast.error(errorMessage(error, '更新过滤器失败'));
+      toast.error(errorMessage(error, t('更新过滤器失败')));
       throw error;
     }
   },
@@ -558,10 +559,10 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       const res = await filterApi.delete(id);
       await get().fetchFilters();
-      if (!res.data.warning) toast.success(res.data.application === 'applied' ? '过滤器已删除并应用' : '过滤器删除已保存，需应用配置后生效');
+      if (!res.data.warning) toast.success(res.data.application === 'applied' ? t('过滤器已删除并应用') : t('过滤器删除已保存，需应用配置后生效'));
     } catch (error) {
 
-      toast.error(errorMessage(error, '删除过滤器失败'));
+      toast.error(errorMessage(error, t('删除过滤器失败')));
       throw error;
     }
   },
@@ -572,10 +573,10 @@ export const useStore = create<AppState>((set, get) => ({
       try {
         const res = await filterApi.update(id, { ...filter, enabled });
         await get().fetchFilters();
-        if (!res.data.warning) toast.success(res.data.application === 'applied' ? `过滤器已${enabled ? '启用' : '关闭'}并应用` : '过滤器状态已保存，需应用配置后生效');
+        if (!res.data.warning) toast.success(res.data.application === 'applied' ? t('过滤器已{p1}并应用', { p1: enabled ? t('启用') : t('关闭') }) : t('过滤器状态已保存，需应用配置后生效'));
       } catch (error) {
 
-        toast.error(errorMessage(error, '切换过滤器状态失败'));
+        toast.error(errorMessage(error, t('切换过滤器状态失败')));
         await get().fetchFilters();
       }
     }

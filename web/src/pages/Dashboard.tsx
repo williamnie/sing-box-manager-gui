@@ -7,6 +7,7 @@ import { errorMessage, serviceApi } from '../api';
 import { useNavigate } from 'react-router-dom';
 import { toast } from '../components/Toast';
 import useVisibleInterval from '../hooks/useVisibleInterval';
+import { t } from '../i18n';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -25,7 +26,7 @@ export default function Dashboard() {
 
   // 显示错误的辅助函数
   const showError = (title: string, error: unknown) => {
-    const message = errorMessage(error, error instanceof Error ? error.message : '操作失败');
+    const message = errorMessage(error, error instanceof Error ? error.message : t('操作失败'));
     setErrorModal({
       isOpen: true,
       title,
@@ -50,9 +51,9 @@ export default function Dashboard() {
     try {
       await serviceApi.start();
       await fetchServiceStatus();
-      toast.success('服务已启动');
+      toast.success(t('服务已启动'));
     } catch (error) {
-      showError('启动失败', error);
+      showError(t('启动失败'), error);
     }
   };
 
@@ -60,9 +61,9 @@ export default function Dashboard() {
     try {
       await serviceApi.stop();
       await Promise.all([fetchServiceStatus(), fetchSettings()]);
-      toast.success(settings?.deployment_role === 'gateway' && settings.gateway?.access_mode === 'dns' ? 'DNS 旁路已停止并恢复接管资源；再次使用请检查并启用' : '服务已停止');
+      toast.success(settings?.deployment_role === 'gateway' && settings.gateway?.access_mode === 'dns' ? t('DNS 旁路已停止并恢复接管资源；再次使用请检查并启用') : t('服务已停止'));
     } catch (error) {
-      showError('停止失败', error);
+      showError(t('停止失败'), error);
     }
   };
 
@@ -70,9 +71,9 @@ export default function Dashboard() {
     try {
       await serviceApi.restart();
       await fetchServiceStatus();
-      toast.success('服务已重启');
+      toast.success(t('服务已重启'));
     } catch (error) {
-      showError('重启失败', error);
+      showError(t('重启失败'), error);
     }
   };
 
@@ -90,9 +91,7 @@ export default function Dashboard() {
             <span className="text-zinc-400 dark:text-zinc-600">--</span>
             <span className="text-zinc-500 dark:text-zinc-400">CONTROL CENTER</span>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white font-sans flex items-center gap-3">
-            仪表盘控制台
-            <span className="text-xs font-mono font-normal px-2 py-0.5 rounded-[2px] bg-zinc-100 dark:bg-white/[0.05] border border-zinc-200 dark:border-white/[0.08] text-zinc-600 dark:text-zinc-400">
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white font-sans flex items-center gap-3">{t('仪表盘控制台')}<span className="text-xs font-mono font-normal px-2 py-0.5 rounded-[2px] bg-zinc-100 dark:bg-white/[0.05] border border-zinc-200 dark:border-white/[0.08] text-zinc-600 dark:text-zinc-400">
               CLUSTER: LOCAL
             </span>
           </h1>
@@ -104,9 +103,7 @@ export default function Dashboard() {
             className="font-mono text-xs rounded-[3px] border border-zinc-200 dark:border-white/[0.1] bg-white dark:bg-[#0f1118] text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white hover:border-[#ff5722]/50 shadow-2xs transition-all"
             endContent={<ArrowUpRight className="size-3 text-[#ff5722]" />}
             onPress={() => navigate('/gateway')}
-          >
-            部署与设备策略
-          </Button>
+          >{t('部署与设备策略')}</Button>
         </div>
       </div>
 
@@ -118,10 +115,10 @@ export default function Dashboard() {
         <div className="flex items-center gap-3 pl-2">
           <Zap className="size-4 text-[#ff5722] shrink-0" />
           <p className="text-xs text-zinc-700 dark:text-zinc-300 font-mono">
-            DEPLOYMENT: <span className="text-zinc-900 dark:text-white font-semibold">{settings?.deployment_role === 'gateway' ? (settings.gateway?.access_mode === 'dns' ? 'DNS 分流旁路 · 默认网关保持主路由' : '完整网关接管 · 默认网关指向本机') : '单机独立代理模式'}</span>
+            DEPLOYMENT: <span className="text-zinc-900 dark:text-white font-semibold">{settings?.deployment_role === 'gateway' ? (settings.gateway?.access_mode === 'dns' ? t('DNS 分流旁路 · 默认网关保持主路由') : t('完整网关接管 · 默认网关指向本机')) : t('单机独立代理模式')}</span>
           </p>
         </div>
-        <span className="text-[11px] text-zinc-400 dark:text-zinc-500 font-mono pl-2 sm:pl-0">草案与实际接管状态请在部署页核对</span>
+        <span className="text-[11px] text-zinc-400 dark:text-zinc-500 font-mono pl-2 sm:pl-0">{t('草案与实际接管状态请在部署页核对')}</span>
       </div>
 
       {/* E2B 沙盒终端视窗风格：核心服务面板 */}
@@ -155,7 +152,7 @@ export default function Dashboard() {
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-6 border-b border-zinc-100 dark:border-white/[0.06]">
             <div className="space-y-1">
               <div className="flex items-center gap-3">
-                <h2 className="text-xl font-bold font-sans tracking-tight text-zinc-900 dark:text-white">Sing-Box 内核服务</h2>
+                <h2 className="text-xl font-bold font-sans tracking-tight text-zinc-900 dark:text-white">{t('Sing-Box 内核服务')}</h2>
                 <span className={`font-mono text-[11px] px-2 py-0.5 rounded-[2px] border ${
                   isRunning
                     ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
@@ -164,9 +161,7 @@ export default function Dashboard() {
                   {isRunning ? '● ACTIVE (ONLINE)' : '○ INACTIVE'}
                 </span>
               </div>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 font-mono">
-                核心网络转发与路由协议处理引擎 · 单实例受控
-              </p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 font-mono">{t('核心网络转发与路由协议处理引擎 · 单实例受控')}</p>
             </div>
 
             {/* 控制操作按钮组 */}
@@ -178,17 +173,13 @@ export default function Dashboard() {
                     className="font-mono text-xs rounded-[3px] border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-300 font-medium transition-all"
                     startContent={<Square className="size-3.5 fill-current" />}
                     onPress={handleStop}
-                  >
-                    停止服务
-                  </Button>
+                  >{t('停止服务')}</Button>
                   <Button
                     size="sm"
                     className="font-mono text-xs rounded-[3px] border border-zinc-200 dark:border-white/[0.1] bg-zinc-100 hover:bg-zinc-200 dark:bg-[#141720] dark:hover:bg-[#1c202d] text-zinc-700 dark:text-zinc-200 transition-all"
                     startContent={<RefreshCw className="size-3.5 text-zinc-400" />}
                     onPress={handleRestart}
-                  >
-                    重启服务
-                  </Button>
+                  >{t('重启服务')}</Button>
                 </>
               ) : (
                 <Button
@@ -197,7 +188,7 @@ export default function Dashboard() {
                   startContent={<Play className="size-3.5 fill-current" />}
                   onPress={settings?.deployment_role === 'gateway' && settings.gateway?.access_mode === 'dns' && !settings.gateway.enabled ? () => navigate('/gateway') : handleStart}
                 >
-                  {settings?.deployment_role === 'gateway' && settings.gateway?.access_mode === 'dns' && !settings.gateway.enabled ? '检查并启用' : '启动服务'}
+                  {settings?.deployment_role === 'gateway' && settings.gateway?.access_mode === 'dns' && !settings.gateway.enabled ? t('检查并启用') : t('启动服务')}
                 </Button>
               )}
 
@@ -205,15 +196,13 @@ export default function Dashboard() {
                 size="sm"
                 className="font-mono text-xs rounded-[3px] border border-[#ff5722]/40 bg-[#ff5722]/10 hover:bg-[#ff5722]/20 text-[#ff5722] font-medium transition-all"
                 onPress={() => navigate('/configuration')}
-              >
-                审阅与应用配置
-              </Button>
+              >{t('审阅与应用配置')}</Button>
             </div>
           </div>
 
           {settings?.deployment_role === 'gateway' && settings.gateway?.access_mode === 'dns' && (
             <div className="mt-4 p-3 rounded-[3px] bg-amber-500/10 border border-amber-500/30 text-xs text-amber-700 dark:text-amber-300/90 font-mono">
-              [NOTICE] 显式停止会恢复 DNS 旁路接管资源并关闭启用状态；再次使用请前往部署页检查并启用。
+              {t('[NOTICE] 显式停止会恢复 DNS 旁路接管资源并关闭启用状态；再次使用请前往部署页检查并启用。')}
             </div>
           )}
 
@@ -264,14 +253,14 @@ export default function Dashboard() {
         {/* 指标 1：订阅 */}
         <div className="p-4 rounded-[4px] border border-zinc-200/80 dark:border-white/[0.08] bg-white dark:bg-[#0b0c10] hover:border-zinc-300 dark:hover:border-white/[0.15] shadow-2xs transition-all">
           <div className="flex items-center justify-between mb-3">
-            <span className="font-mono text-[11px] text-zinc-500 uppercase tracking-wider">订阅源配置</span>
+            <span className="font-mono text-[11px] text-zinc-500 uppercase tracking-wider">{t('订阅源配置')}</span>
             <div className="size-7 rounded-[2px] bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-600 dark:text-cyan-400">
               <Wifi className="size-3.5" />
             </div>
           </div>
           <div className="flex items-baseline gap-2">
             <span className="font-mono text-2xl font-bold text-zinc-900 dark:text-white">{enabledSubs}</span>
-            <span className="font-mono text-xs text-zinc-400 dark:text-zinc-500">/ {subscriptions.length} 启用</span>
+            <span className="font-mono text-xs text-zinc-400 dark:text-zinc-500">{t('/ {p1} 启用', { p1: subscriptions.length })}</span>
           </div>
           <div className="mt-3 w-full bg-zinc-100 dark:bg-zinc-800/60 h-1 rounded-full overflow-hidden">
             <div
@@ -284,7 +273,7 @@ export default function Dashboard() {
         {/* 指标 2：节点 */}
         <div className="p-4 rounded-[4px] border border-zinc-200/80 dark:border-white/[0.08] bg-white dark:bg-[#0b0c10] hover:border-zinc-300 dark:hover:border-white/[0.15] shadow-2xs transition-all">
           <div className="flex items-center justify-between mb-3">
-            <span className="font-mono text-[11px] text-zinc-500 uppercase tracking-wider">节点总数</span>
+            <span className="font-mono text-[11px] text-zinc-500 uppercase tracking-wider">{t('节点总数')}</span>
             <div className="size-7 rounded-[2px] bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
               <HardDrive className="size-3.5" />
             </div>
@@ -293,13 +282,13 @@ export default function Dashboard() {
             <span className="font-mono text-2xl font-bold text-zinc-900 dark:text-white">{totalNodes}</span>
             <span className="font-mono text-xs text-zinc-400 dark:text-zinc-500">PROXIES</span>
           </div>
-          <p className="mt-3 font-mono text-[10px] text-zinc-400 dark:text-zinc-500">已载入分流路由池</p>
+          <p className="mt-3 font-mono text-[10px] text-zinc-400 dark:text-zinc-500">{t('已载入分流路由池')}</p>
         </div>
 
         {/* 指标 3：SBM 进程 */}
         <div className="p-4 rounded-[4px] border border-zinc-200/80 dark:border-white/[0.08] bg-white dark:bg-[#0b0c10] hover:border-zinc-300 dark:hover:border-white/[0.15] shadow-2xs transition-all">
           <div className="flex items-center justify-between mb-3">
-            <span className="font-mono text-[11px] text-zinc-500 uppercase tracking-wider">SBM 管理器</span>
+            <span className="font-mono text-[11px] text-zinc-500 uppercase tracking-wider">{t('SBM 管理器')}</span>
             <div className="size-7 rounded-[2px] bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-600 dark:text-purple-400">
               <Cpu className="size-3.5" />
             </div>
@@ -325,7 +314,7 @@ export default function Dashboard() {
         {/* 指标 4：Sing-Box 资源 */}
         <div className="p-4 rounded-[4px] border border-zinc-200/80 dark:border-white/[0.08] bg-white dark:bg-[#0b0c10] hover:border-zinc-300 dark:hover:border-white/[0.15] shadow-2xs transition-all">
           <div className="flex items-center justify-between mb-3">
-            <span className="font-mono text-[11px] text-zinc-500 uppercase tracking-wider">Sing-Box 核心</span>
+            <span className="font-mono text-[11px] text-zinc-500 uppercase tracking-wider">{t('Sing-Box 核心')}</span>
             <div className="size-7 rounded-[2px] bg-[#ff5722]/10 border border-[#ff5722]/20 flex items-center justify-center text-[#ff5722]">
               <Activity className="size-3.5" />
             </div>
@@ -353,7 +342,7 @@ export default function Dashboard() {
       <div className="rounded-[4px] border border-zinc-200/80 dark:border-white/[0.08] bg-white dark:bg-[#0b0c10] shadow-2xs overflow-hidden">
         <div className="h-10 px-4 border-b border-zinc-200/80 dark:border-white/[0.08] bg-zinc-50 dark:bg-[#0e1017] flex items-center justify-between">
           <span className="font-mono text-xs text-zinc-700 dark:text-zinc-300 font-semibold tracking-wider uppercase">
-            // 订阅概览 (SUBSCRIPTIONS)
+            {t('// 订阅概览 (SUBSCRIPTIONS)')}
           </span>
           <button
             onClick={() => navigate('/subscriptions')}
@@ -365,9 +354,7 @@ export default function Dashboard() {
 
         <div className="p-4">
           {subscriptions.length === 0 ? (
-            <div className="p-8 text-center font-mono text-xs text-zinc-400 dark:text-zinc-500">
-              暂无已配置的订阅源，请前往「节点管理」添加
-            </div>
+            <div className="p-8 text-center font-mono text-xs text-zinc-400 dark:text-zinc-500">{t('暂无已配置的订阅源，请前往「节点管理」添加')}</div>
           ) : (
             <div className="space-y-2">
               {subscriptions.map((sub) => (
@@ -381,7 +368,7 @@ export default function Dashboard() {
                       {sub.name}
                     </span>
                     <span className="font-mono text-[11px] px-1.5 py-0.5 rounded-[2px] bg-zinc-100 dark:bg-white/[0.04] text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-white/[0.06]">
-                      {sub.node_count} 节点
+                      {t('{p1} 节点', { p1: sub.node_count })}
                     </span>
                   </div>
                   <span className="font-mono text-xs text-zinc-400 dark:text-zinc-500">

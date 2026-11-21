@@ -6,6 +6,7 @@ import { useStore } from '../store';
 import { toast } from '../components/Toast';
 import ConfirmModal from '../components/ConfirmModal';
 import { ArrowLeft, Upload, FileCode, AlertOctagon, AlertTriangle, CheckCircle2, RotateCcw, Copy, ChevronDown, ChevronUp } from 'lucide-react';
+import { t, translateBackend } from '../i18n';
 
 interface ImportPreview {
   hash: string;
@@ -36,9 +37,9 @@ export default function ConfigurationImport() {
     try {
       const response = await configImportApi.preview(config);
       setPreview(response.data.data);
-      toast.success('导入预览分析完成');
+      toast.success(t('导入预览分析完成'));
     } catch (cause) {
-      setError(errorMessage(cause, '无法解析导入配置'));
+      setError(errorMessage(cause, t('无法解析导入配置')));
     } finally {
       setBusy('');
     }
@@ -54,11 +55,11 @@ export default function ConfigurationImport() {
         setImported(true);
         setConfig('');
         setPreview(null);
-        toast.success('已导入草案，自动应用与网关接管已进入安全锁定状态');
+        toast.success(t('已导入草案，自动应用与网关接管已进入安全锁定状态'));
       } else {
         await configImportApi.rollback();
         setImported(false);
-        toast.success('已恢复导入前数据快照，请重新审阅配置');
+        toast.success(t('已恢复导入前数据快照，请重新审阅配置'));
       }
       await fetchSettings();
     } catch (cause) {
@@ -72,7 +73,7 @@ export default function ConfigurationImport() {
   const copyPolicy = () => {
     if (!preview) return;
     navigator.clipboard.writeText(JSON.stringify(preview.policy, null, 2));
-    toast.success('策略结构已复制到剪贴板');
+    toast.success(t('策略结构已复制到剪贴板'));
   };
 
   return (
@@ -88,15 +89,11 @@ export default function ConfigurationImport() {
               to="/configuration"
               className="inline-flex items-center gap-1 font-mono text-xs text-zinc-400 hover:text-white transition-colors"
             >
-              <ArrowLeft className="w-3.5 h-3.5" /> 返回配置管理
+              <ArrowLeft className="w-3.5 h-3.5" /> {t('返回配置管理')}
             </Link>
           </div>
-          <h1 className="text-xl md:text-2xl font-semibold text-white tracking-tight font-mono">
-            导入外部 sing-box 配置
-          </h1>
-          <p className="text-xs text-zinc-400 mt-1 max-w-2xl leading-relaxed">
-            粘贴任意来源最终生成的 sing-box JSON 或本地文件。系统仅导入路由与分流策略，保留草案沙盒模式，不会立即接管网关或启动新实例。
-          </p>
+          <h1 className="text-xl md:text-2xl font-semibold text-white tracking-tight font-mono">{t('导入外部 sing-box 配置')}</h1>
+          <p className="text-xs text-zinc-400 mt-1 max-w-2xl leading-relaxed">{t('粘贴任意来源最终生成的 sing-box JSON 或本地文件。系统仅导入路由与分流策略，保留草案沙盒模式，不会立即接管网关或启动新实例。')}</p>
         </div>
 
         <Button
@@ -106,9 +103,7 @@ export default function ConfigurationImport() {
           startContent={<RotateCcw className="w-3.5 h-3.5" />}
           isDisabled={!!busy}
           onPress={() => setConfirmation('rollback')}
-        >
-          恢复导入前数据快照
-        </Button>
+        >{t('恢复导入前数据快照')}</Button>
       </div>
 
       {/* 错误提示栏 */}
@@ -117,7 +112,7 @@ export default function ConfigurationImport() {
           <AlertOctagon className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
           <div className="space-y-1">
             <p className="font-mono text-xs font-semibold text-red-400 uppercase tracking-wider">
-              [PARSER_ERROR] 解析中断
+              {t('[PARSER_ERROR] 解析中断')}
             </p>
             <p className="font-mono text-xs text-red-300 whitespace-pre-wrap break-all leading-relaxed">
               {error}
@@ -131,23 +126,17 @@ export default function ConfigurationImport() {
         <div className="p-3.5 rounded-[4px] bg-emerald-950/30 border border-emerald-500/30 flex items-center justify-between gap-4">
           <div className="flex items-center gap-2.5">
             <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span className="font-mono text-xs text-emerald-300">
-              配置草案已安全写入。请转至配置中心审阅并执行差异核验。
-            </span>
+            <span className="font-mono text-xs text-emerald-300">{t('配置草案已安全写入。请转至配置中心审阅并执行差异核验。')}</span>
           </div>
           <div className="flex gap-2 shrink-0">
             <Link
               to="/configuration"
               className="font-mono text-xs px-2.5 py-1 bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 rounded-[2px] hover:bg-emerald-500/30"
-            >
-              配置审查 →
-            </Link>
+            >{t('配置审查 →')}</Link>
             <Link
               to="/gateway"
               className="font-mono text-xs px-2.5 py-1 bg-white/[0.05] border border-white/[0.08] text-zinc-300 rounded-[2px] hover:text-white"
-            >
-              部署与设备
-            </Link>
+            >{t('部署与设备')}</Link>
           </div>
         </div>
       )}
@@ -175,13 +164,11 @@ export default function ConfigurationImport() {
                 }}
                 className="font-mono text-[11px] text-zinc-500 hover:text-red-400 transition-colors px-2 py-0.5"
               >
-                [清空]
+                {t('[清空]')}
               </button>
             )}
             <label className="inline-flex items-center gap-1.5 font-mono text-[11px] text-interface-orange hover:text-orange-400 cursor-pointer bg-interface-orange/10 px-2.5 py-1 rounded-[2px] border border-interface-orange/20 transition-colors">
-              <Upload className="w-3 h-3" />
-              选择本地 JSON
-              <input
+              <Upload className="w-3 h-3" />{t('选择本地 JSON')}<input
                 type="file"
                 accept=".json,application/json"
                 className="sr-only"
@@ -189,7 +176,7 @@ export default function ConfigurationImport() {
                   const file = event.target.files?.[0];
                   if (!file) return;
                   if (file.size > 3 * 1024 * 1024) {
-                    setError('请选择不超过 3 MiB 的配置文件');
+                    setError(t('请选择不超过 3 MiB 的配置文件'));
                     return;
                   }
                   try {
@@ -197,7 +184,7 @@ export default function ConfigurationImport() {
                     setPreview(null);
                     setAcknowledged(false);
                   } catch {
-                    setError('读取文件失败');
+                    setError(t('读取文件失败'));
                   }
                   event.target.value = '';
                 }}
@@ -225,9 +212,7 @@ export default function ConfigurationImport() {
         </div>
 
         <div className="flex flex-col sm:flex-row sm:items-center justify-between px-3 py-2.5 bg-[#08080b] border-t border-white/[0.06] gap-3">
-          <span className="font-mono text-[11px] text-zinc-500">
-            * 仅提交至本地 sbm 服务分析内核模型；不会写入公网或云端。
-          </span>
+          <span className="font-mono text-[11px] text-zinc-500">{t('* 仅提交至本地 sbm 服务分析内核模型；不会写入公网或云端。')}</span>
           <Button
             size="sm"
             color="primary"
@@ -236,9 +221,7 @@ export default function ConfigurationImport() {
             isDisabled={!!busy || !config.trim()}
             onPress={inspect}
             startContent={!busy && <FileCode className="w-3.5 h-3.5" />}
-          >
-            执行解析与预览
-          </Button>
+          >{t('执行解析与预览')}</Button>
         </div>
       </div>
 
@@ -249,7 +232,7 @@ export default function ConfigurationImport() {
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-interface-orange" />
               <h2 className="font-mono text-sm font-semibold text-white tracking-wide uppercase">
-                PREVIEW_DIAGNOSTICS // 导入分析结果
+                {t('PREVIEW_DIAGNOSTICS // 导入分析结果')}
               </h2>
             </div>
             <span className="font-mono text-[10px] text-zinc-500">
@@ -260,9 +243,9 @@ export default function ConfigurationImport() {
           {/* 指标三列网格 */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {[
-              { label: 'OUTBOUNDS // 出站节点', count: preview.summary.outbounds, desc: '提取的节点与分流组' },
-              { label: 'ROUTE_RULES // 路由规则', count: preview.summary.rules, desc: '域名/IP/协议分流条目' },
-              { label: 'RULE_SETS // 规则集源', count: preview.summary.rule_sets, desc: '引用的远程或内联规则集' },
+              { label: t('OUTBOUNDS // 出站节点'), count: preview.summary.outbounds, desc: t('提取的节点与分流组') },
+              { label: t('ROUTE_RULES // 路由规则'), count: preview.summary.rules, desc: t('域名/IP/协议分流条目') },
+              { label: t('RULE_SETS // 规则集源'), count: preview.summary.rule_sets, desc: t('引用的远程或内联规则集') },
             ].map((item) => (
               <div
                 key={item.label}
@@ -282,11 +265,11 @@ export default function ConfigurationImport() {
             <div className="p-3 bg-red-950/20 border border-red-500/40 rounded-[3px] space-y-2">
               <div className="flex items-center gap-2 text-red-400 font-mono text-xs font-semibold uppercase">
                 <AlertOctagon className="w-4 h-4" />
-                BLOCKERS: 存在阻止导入的架构冲突 ({preview.blockers.length})
+                BLOCKERS: {t('存在阻止导入的架构冲突 ({p1})', { p1: preview.blockers.length })}
               </div>
               <ul className="space-y-1 pl-4 list-disc text-xs text-red-300 font-mono">
                 {preview.blockers.map((item, idx) => (
-                  <li key={idx} className="leading-relaxed">{item}</li>
+                  <li key={idx} className="leading-relaxed">{translateBackend(item)}</li>
                 ))}
               </ul>
             </div>
@@ -297,11 +280,11 @@ export default function ConfigurationImport() {
             <div className="p-3 bg-amber-950/20 border border-amber-500/30 rounded-[3px] space-y-2">
               <div className="flex items-center gap-2 text-amber-800 dark:text-amber-400 font-mono text-xs font-semibold uppercase">
                 <AlertTriangle className="w-4 h-4" />
-                WARNINGS: 需人工复核的规则变更 ({preview.warnings.length})
+                WARNINGS: {t('需人工复核的规则变更 ({p1})', { p1: preview.warnings.length })}
               </div>
               <ul className="space-y-1 pl-4 list-disc text-xs text-amber-800 dark:text-amber-300 font-mono">
                 {preview.warnings.map((item, idx) => (
-                  <li key={idx} className="leading-relaxed">{item}</li>
+                  <li key={idx} className="leading-relaxed">{translateBackend(item)}</li>
                 ))}
               </ul>
             </div>
@@ -312,15 +295,15 @@ export default function ConfigurationImport() {
             <div className="p-3 bg-[#0d0e12] border border-white/[0.08] rounded-[3px] space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-mono text-xs text-zinc-300 font-semibold uppercase tracking-wide">
-                  OMITTED: 不参与导入的环境配置项 ({preview.omitted.length})
+                  OMITTED: {t('不参与导入的环境配置项 ({p1})', { p1: preview.omitted.length })}
                 </div>
                 <span className="font-mono text-[10px] text-zinc-500">
-                  (TUN/网关接管/日志等级等将维持本地安全状态)
+                  {t('(TUN/网关接管/日志等级等将维持本地安全状态)')}
                 </span>
               </div>
               <ul className="space-y-1 pl-4 list-disc text-xs text-zinc-400 font-mono">
                 {preview.omitted.map((item, idx) => (
-                  <li key={idx}>{item}</li>
+                  <li key={idx}>{translateBackend(item)}</li>
                 ))}
               </ul>
               <div className="pt-2 border-t border-white/[0.06]">
@@ -331,9 +314,7 @@ export default function ConfigurationImport() {
                     label: 'font-mono text-xs text-zinc-300',
                     wrapper: 'before:border-white/30 after:bg-interface-orange',
                   }}
-                >
-                  我已知晓并复核以上未导入项，将在应用后根据网络环境手动补齐必要策略
-                </Checkbox>
+                >{t('我已知晓并复核以上未导入项，将在应用后根据网络环境手动补齐必要策略')}</Checkbox>
               </div>
             </div>
           ) : null}
@@ -347,7 +328,7 @@ export default function ConfigurationImport() {
             >
               <span className="flex items-center gap-2">
                 <FileCode className="w-3.5 h-3.5 text-interface-orange" />
-                查看解析提取的策略 AST 树 (凭据已脱敏)
+                {t('查看解析提取的策略 AST 树 (凭据已脱敏)')}
               </span>
               <div className="flex items-center gap-2">
                 {showPolicy && (
@@ -358,7 +339,7 @@ export default function ConfigurationImport() {
                       copyPolicy();
                     }}
                     className="p-1 text-zinc-400 hover:text-white"
-                    title="复制 JSON"
+                    title={t('复制 JSON')}
                   >
                     <Copy className="w-3 h-3" />
                   </button>
@@ -384,9 +365,7 @@ export default function ConfigurationImport() {
                 (!!preview.omitted?.length && !acknowledged)
               }
               onPress={() => setConfirmation('import')}
-            >
-              确认导入并生成草案
-            </Button>
+            >{t('确认导入并生成草案')}</Button>
           </div>
         </div>
       )}
@@ -400,9 +379,7 @@ export default function ConfigurationImport() {
         >
           <div className="flex items-center gap-2">
             <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest">DOCS // RUNBOOK</span>
-            <span className="font-mono text-xs font-medium text-zinc-200">
-              替换已有代理实例时的并行验证与无缝切换方案
-            </span>
+            <span className="font-mono text-xs font-medium text-zinc-200">{t('替换已有代理实例时的并行验证与无缝切换方案')}</span>
           </div>
           {showGuide ? <ChevronUp className="w-4 h-4 text-zinc-400" /> : <ChevronDown className="w-4 h-4 text-zinc-400" />}
         </button>
@@ -413,23 +390,23 @@ export default function ConfigurationImport() {
               {[
                 {
                   step: '01',
-                  title: '隔离与数据独立',
-                  desc: '新旧实例保持独立数据目录及端口，保持 TUN、DHCP 与网关接管关闭，避免与宿主服务冲突。',
+                  title: t('隔离与数据独立'),
+                  desc: t('新旧实例保持独立数据目录及端口，保持 TUN、DHCP 与网关接管关闭，避免与宿主服务冲突。'),
                 },
                 {
                   step: '02',
-                  title: '单机代理与规则核验',
-                  desc: '使用单台测试设备的 HTTP/SOCKS5 显式代理接入，验证新节点连通性与分流准确率。',
+                  title: t('单机代理与规则核验'),
+                  desc: t('使用单台测试设备的 HTTP/SOCKS5 显式代理接入，验证新节点连通性与分流准确率。'),
                 },
                 {
                   step: '03',
-                  title: '多协议与路由测试',
-                  desc: '在隔离 Linux 环境检查 TCP/UDP、IPv4/IPv6、回程路由及容器网络。严禁新旧 TUN 同时接管相同流量。',
+                  title: t('多协议与路由测试'),
+                  desc: t('在隔离 Linux 环境检查 TCP/UDP、IPv4/IPv6、回程路由及容器网络。严禁新旧 TUN 同时接管相同流量。'),
                 },
                 {
                   step: '04',
-                  title: '原子切换与回滚准备',
-                  desc: '安排维护窗口，先停止旧接管，再在控制台启用新网关；保留原有配置以便随时一键回退。',
+                  title: t('原子切换与回滚准备'),
+                  desc: t('安排维护窗口，先停止旧接管，再在控制台启用新网关；保留原有配置以便随时一键回退。'),
                 },
               ].map((item) => (
                 <div key={item.step} className="p-3 bg-[#0d0e12] border border-white/[0.06] rounded-[3px]">
@@ -442,9 +419,7 @@ export default function ConfigurationImport() {
                 </div>
               ))}
             </div>
-            <p className="text-[10px] text-zinc-500 pt-2 border-t border-white/[0.04]">
-              * 提示：逐步切换方案适用于替代生产环境已有代理实例。导入操作本身绝不会修改路由器、客户端或非受控服务。
-            </p>
+            <p className="text-[10px] text-zinc-500 pt-2 border-t border-white/[0.04]">{t('* 提示：逐步切换方案适用于替代生产环境已有代理实例。导入操作本身绝不会修改路由器、客户端或非受控服务。')}</p>
           </div>
         )}
       </div>
@@ -453,15 +428,15 @@ export default function ConfigurationImport() {
       <ConfirmModal
         isOpen={confirmation !== null}
         busy={!!busy}
-        title={confirmation === 'import' ? '确认保存配置草案' : '恢复导入前数据快照'}
+        title={confirmation === 'import' ? t('确认保存配置草案') : t('恢复导入前数据快照')}
         onClose={() => setConfirmation(null)}
         onConfirm={execute}
-        confirmLabel={confirmation === 'import' ? '执行导入' : '恢复数据快照'}
+        confirmLabel={confirmation === 'import' ? t('执行导入') : t('恢复数据快照')}
       >
         <p className="font-mono text-xs text-zinc-300 leading-relaxed">
           {confirmation === 'import'
-            ? '系统将备份并更新当前管理器策略，自动应用与网关接管将强制维持安全关闭。现有规则将迁移至导入前备份，导入策略将替换当前工作区草案。订阅与已有节点保持不变。'
-            : '系统将调取导入前的本地安全快照并原子恢复管理器数据，导入后的所有草案修改将被回滚。运行中的代理内核与网关接管需分别确认。'}
+            ? t('系统将备份并更新当前管理器策略，自动应用与网关接管将强制维持安全关闭。现有规则将迁移至导入前备份，导入策略将替换当前工作区草案。订阅与已有节点保持不变。')
+            : t('系统将调取导入前的本地安全快照并原子恢复管理器数据，导入后的所有草案修改将被回滚。运行中的代理内核与网关接管需分别确认。')}
         </p>
       </ConfirmModal>
     </div>

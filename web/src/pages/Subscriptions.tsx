@@ -29,6 +29,7 @@ import type { Subscription, ManualNode, Node, Filter } from '../store';
 import ConfirmModal from '../components/ConfirmModal';
 import FilterMembers from '../components/FilterMembers';
 import { filterCandidates, matchesFilter } from '../utils/filterMembers';
+import { t } from '../i18n';
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -50,20 +51,20 @@ const nodeTypeOptions = [
 ];
 
 const countryOptions = [
-  { code: 'HK', name: '香港', emoji: '🇭🇰' },
-  { code: 'TW', name: '台湾', emoji: '🇹🇼' },
-  { code: 'JP', name: '日本', emoji: '🇯🇵' },
-  { code: 'KR', name: '韩国', emoji: '🇰🇷' },
-  { code: 'SG', name: '新加坡', emoji: '🇸🇬' },
-  { code: 'US', name: '美国', emoji: '🇺🇸' },
-  { code: 'GB', name: '英国', emoji: '🇬🇧' },
-  { code: 'DE', name: '德国', emoji: '🇩🇪' },
-  { code: 'FR', name: '法国', emoji: '🇫🇷' },
-  { code: 'NL', name: '荷兰', emoji: '🇳🇱' },
-  { code: 'AU', name: '澳大利亚', emoji: '🇦🇺' },
-  { code: 'CA', name: '加拿大', emoji: '🇨🇦' },
-  { code: 'RU', name: '俄罗斯', emoji: '🇷🇺' },
-  { code: 'IN', name: '印度', emoji: '🇮🇳' },
+  { code: 'HK', name: t('香港'), emoji: '🇭🇰' },
+  { code: 'TW', name: t('台湾'), emoji: '🇹🇼' },
+  { code: 'JP', name: t('日本'), emoji: '🇯🇵' },
+  { code: 'KR', name: t('韩国'), emoji: '🇰🇷' },
+  { code: 'SG', name: t('新加坡'), emoji: '🇸🇬' },
+  { code: 'US', name: t('美国'), emoji: '🇺🇸' },
+  { code: 'GB', name: t('英国'), emoji: '🇬🇧' },
+  { code: 'DE', name: t('德国'), emoji: '🇩🇪' },
+  { code: 'FR', name: t('法国'), emoji: '🇫🇷' },
+  { code: 'NL', name: t('荷兰'), emoji: '🇳🇱' },
+  { code: 'AU', name: t('澳大利亚'), emoji: '🇦🇺' },
+  { code: 'CA', name: t('加拿大'), emoji: '🇨🇦' },
+  { code: 'RU', name: t('俄罗斯'), emoji: '🇷🇺' },
+  { code: 'IN', name: t('印度'), emoji: '🇮🇳' },
 ];
 
 const defaultNode: Node = {
@@ -175,7 +176,7 @@ export default function Subscriptions() {
       setEditingSubscription(null);
       onSubClose();
     } catch (error) {
-      toast.error(errorMessage(error, '请求失败，请检查管理服务'));
+      toast.error(errorMessage(error, t('请求失败，请检查管理服务')));
     } finally {
       setIsSubmitting(false);
     }
@@ -224,7 +225,7 @@ export default function Subscriptions() {
       const parsedNode = response.data.data as Node;
       setNodeForm(parsedNode);
     } catch (error) {
-      const message = errorMessage(error, '解析失败，请检查链接格式');
+      const message = errorMessage(error, t('解析失败，请检查链接格式'));
       setParseError(message);
     } finally {
       setIsParsing(false);
@@ -249,7 +250,7 @@ export default function Subscriptions() {
       }
       onNodeClose();
     } catch (error) {
-      toast.error(errorMessage(error, '请求失败，请检查管理服务'));
+      toast.error(errorMessage(error, t('请求失败，请检查管理服务')));
     } finally {
       setIsSubmitting(false);
     }
@@ -294,9 +295,9 @@ export default function Subscriptions() {
 
   const handleSaveFilter = async () => {
     if (!filterForm.name) return;
-    if (!filterForm.all_nodes && !filterForm.subscriptions.length) { toast.error('请选择来源订阅，或开启全部节点来源'); return; }
+    if (!filterForm.all_nodes && !filterForm.subscriptions.length) { toast.error(t('请选择来源订阅，或开启全部节点来源')); return; }
     if (filterForm.enabled && !filterCandidates(subscriptions, manualNodes, filterForm).some(({ node }) => matchesFilter(node, filterForm))) {
-      toast.error('请选择至少一个可用节点，或先停用此过滤器');
+      toast.error(t('请选择至少一个可用节点，或先停用此过滤器'));
       return;
     }
 
@@ -309,7 +310,7 @@ export default function Subscriptions() {
       }
       onFilterClose();
     } catch (error) {
-      toast.error(errorMessage(error, '请求失败，请检查管理服务'));
+      toast.error(errorMessage(error, t('请求失败，请检查管理服务')));
     } finally {
       setIsSubmitting(false);
     }
@@ -325,13 +326,13 @@ export default function Subscriptions() {
 
   return (
     <div className="space-y-6">
-      <ConfirmModal isOpen={!!deleteTarget} title="确认删除" onClose={() => setDeleteTarget(null)} onConfirm={async () => {
+      <ConfirmModal isOpen={!!deleteTarget} title={t('确认删除')} onClose={() => setDeleteTarget(null)} onConfirm={async () => {
         if (!deleteTarget) return;
         if (deleteTarget.type === 'subscription') await deleteSubscription(deleteTarget.id);
         else if (deleteTarget.type === 'node') await deleteManualNode(deleteTarget.id);
         else await deleteFilter(deleteTarget.id);
         setDeleteTarget(null);
-      }} confirmLabel="删除"><p>删除所选{deleteTarget?.type === 'subscription' ? '订阅及其节点' : deleteTarget?.type === 'node' ? '节点' : '过滤器'}？启用自动应用时会触发配置校验与应用。</p></ConfirmModal>
+      }} confirmLabel={t('删除')}><p>{t('删除所选{p1}？启用自动应用时会触发配置校验与应用。', { p1: deleteTarget?.type === 'subscription' ? t('订阅及其节点') : deleteTarget?.type === 'node' ? t('节点') : t('过滤器') })}</p></ConfirmModal>
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-zinc-200/80 dark:border-white/[0.08] pb-5">
         <div>
           <div className="flex items-center gap-2 mb-1.5 font-mono text-[11px] text-[#ff5722] tracking-wider uppercase font-semibold">
@@ -339,9 +340,7 @@ export default function Subscriptions() {
             <span className="text-zinc-400 dark:text-zinc-600">--</span>
             <span className="text-zinc-500 dark:text-zinc-400">SUBSCRIPTION POOL</span>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white font-sans flex items-center gap-3">
-            节点与订阅管理
-          </h1>
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white font-sans flex items-center gap-3">{t('节点与订阅管理')}</h1>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 font-mono text-xs">
@@ -350,38 +349,30 @@ export default function Subscriptions() {
             className="rounded-[3px] font-mono text-xs border border-zinc-200 dark:border-white/[0.1] bg-white dark:bg-[#12141d] hover:bg-zinc-100 dark:hover:bg-[#181c28] text-zinc-700 dark:text-zinc-300 shadow-2xs"
             startContent={<FilterIcon className="size-3.5 text-[#ff5722]" />}
             onPress={handleOpenAddFilter}
-          >
-            添加过滤器
-          </Button>
+          >{t('添加过滤器')}</Button>
           <Button
             size="sm"
             className="rounded-[3px] font-mono text-xs border border-zinc-200 dark:border-white/[0.1] bg-white dark:bg-[#12141d] hover:bg-zinc-100 dark:hover:bg-[#181c28] text-zinc-700 dark:text-zinc-300 shadow-2xs"
             startContent={<Plus className="size-3.5 text-zinc-400" />}
             onPress={handleOpenAddNode}
-          >
-            添加节点
-          </Button>
+          >{t('添加节点')}</Button>
           <Button
             size="sm"
             className="rounded-[3px] font-mono text-xs bg-[#ff5722] hover:bg-[#ff6e40] text-black font-semibold uppercase tracking-wider shadow-geek-glow"
             startContent={<Plus className="size-3.5 fill-current" />}
             onPress={handleOpenAddSubscription}
-          >
-            添加订阅
-          </Button>
+          >{t('添加订阅')}</Button>
         </div>
       </div>
 
       {Array.isArray(settings?.imported_policy?.outbounds) && settings.imported_policy.outbounds.length > 0 ? (
         <div className="relative rounded-[3px] border border-cyan-200 dark:border-cyan-500/20 bg-cyan-50 dark:bg-cyan-500/5 p-3.5 text-sm text-cyan-950 dark:text-cyan-200/90 leading-6 overflow-hidden">
           <div className="absolute left-0 top-0 bottom-0 w-1 bg-cyan-400"></div>
-          <span className="font-semibold text-cyan-800 dark:text-cyan-300 mr-2">[POLICY_INFO]</span>
-          这里管理订阅与手动节点。SMbox/ 等导入节点属于独立的配置快照，不会随订阅刷新或删除而变化。订阅节点通过“订阅节点选择 / 订阅自动测速”使用；清理导入节点需先处理旧分组和规则对它的引用。
-        </div>
+          <span className="font-semibold text-cyan-800 dark:text-cyan-300 mr-2">[POLICY_INFO]</span>{t('这里管理订阅与手动节点。SMbox/ 等导入节点属于独立的配置快照，不会随订阅刷新或删除而变化。订阅节点通过“订阅节点选择 / 订阅自动测速”使用；清理导入节点需先处理旧分组和规则对它的引用。')}</div>
       ) : null}
 
       <Tabs
-        aria-label="节点管理" defaultSelectedKey={params.get('tab') === 'filters' ? 'filters' : 'subscriptions'}
+        aria-label={t('节点管理')} defaultSelectedKey={params.get('tab') === 'filters' ? 'filters' : 'subscriptions'}
         variant="underlined"
         classNames={{
           tabList: "gap-6 border-b border-zinc-200 dark:border-white/[0.08] p-0 font-mono text-xs",
@@ -390,11 +381,11 @@ export default function Subscriptions() {
           tabContent: "text-slate-600 dark:text-zinc-400 group-data-[selected=true]:text-slate-950 dark:group-data-[selected=true]:text-white font-mono text-xs",
         }}
       >
-        <Tab key="subscriptions" title="// 订阅管理 (SUBS)">
+        <Tab key="subscriptions" title={t('// 订阅管理 (SUBS)')}>
           {subscriptions.length === 0 ? (
             <div className="mt-4 p-12 rounded-[4px] border border-white/[0.08] bg-[#0b0c10] text-center font-mono">
               <Globe className="size-10 mx-auto text-zinc-700 mb-3 stroke-[1.5]" />
-              <p className="text-zinc-500 text-xs">暂无订阅源，点击右上角「添加订阅」配置</p>
+              <p className="text-zinc-500 text-xs">{t('暂无订阅源，点击右上角「添加订阅」配置')}</p>
             </div>
           ) : (
             <div className="space-y-4 mt-4">
@@ -413,11 +404,11 @@ export default function Subscriptions() {
           )}
         </Tab>
 
-        <Tab key="manual" title="// 手动节点 (CUSTOM)">
+        <Tab key="manual" title={t('// 手动节点 (CUSTOM)')}>
           {manualNodes.length === 0 ? (
             <div className="mt-4 p-12 rounded-[4px] border border-white/[0.08] bg-[#0b0c10] text-center font-mono">
               <Server className="size-10 mx-auto text-zinc-700 mb-3 stroke-[1.5]" />
-              <p className="text-zinc-500 text-xs">暂无手动节点，可从单个分享链接解析添加</p>
+              <p className="text-zinc-500 text-xs">{t('暂无手动节点，可从单个分享链接解析添加')}</p>
             </div>
           ) : (
             <div className="space-y-3 mt-4">
@@ -470,11 +461,11 @@ export default function Subscriptions() {
           )}
         </Tab>
 
-        <Tab key="filters" title="// 过滤器 (FILTERS)">
+        <Tab key="filters" title={t('// 过滤器 (FILTERS)')}>
           {filters.length === 0 ? (
             <div className="mt-4 p-12 rounded-[4px] border border-white/[0.08] bg-[#0b0c10] text-center font-mono">
               <FilterIcon className="size-10 mx-auto text-zinc-700 mb-3 stroke-[1.5]" />
-              <p className="text-zinc-500 text-xs">暂无过滤器，可根据国家或关键字筛选节点创建动态组</p>
+              <p className="text-zinc-500 text-xs">{t('暂无过滤器，可根据国家或关键字筛选节点创建动态组')}</p>
             </div>
           ) : (
             <div className="space-y-3 mt-4">
@@ -489,7 +480,7 @@ export default function Subscriptions() {
                     </div>
                     <div>
                       <h3 className="font-mono text-sm font-semibold text-white">{filter.name}</h3>
-                      <p className="mt-1 text-xs text-zinc-400">{filter.node_tags != null ? '逐个选择' : '按条件动态匹配'} · 当前 {filterCandidates(subscriptions, manualNodes, filter).filter(({ node }) => matchesFilter(node, filter)).length} 个节点</p>
+                      <p className="mt-1 text-xs text-zinc-400">{filter.node_tags != null ? t('逐个选择') : t('按条件动态匹配')}{' '}{t('· 当前 {p1} 个节点', { p1: filterCandidates(subscriptions, manualNodes, filter).filter(({ node }) => matchesFilter(node, filter)).length })}</p>
                       <div className="flex flex-wrap gap-1.5 mt-1 font-mono text-[10px]">
                         {filter.include_countries?.length > 0 && (
                           <span className="px-1.5 py-0.5 rounded-[2px] bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
@@ -507,19 +498,19 @@ export default function Subscriptions() {
                           </span>
                         )}
                         <span className="px-1.5 py-0.5 rounded-[2px] bg-[#ff5722]/10 border border-[#ff5722]/30 text-[#ff5722] uppercase">
-                          MODE: {filter.mode === 'urltest' ? 'URLTEST (自动测速)' : 'SELECTOR (手动)'}
+                          MODE: {filter.mode === 'urltest' ? t('URLTEST (自动测速)') : t('SELECTOR (手动)')}
                         </span>
                       </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 self-end sm:self-auto font-mono">
                     <Button
-                      aria-label={`编辑 ${filter.name} 的节点`}
+                      aria-label={t('编辑 {p1} 的节点', { p1: filter.name })}
                       size="sm"
                       className="rounded-[2px] bg-white/[0.05] border border-white/[0.08] text-zinc-300 hover:text-white"
                       onPress={() => handleOpenEditFilter(filter)}
                     >
-                      <Pencil className="size-3.5" />编辑节点
+                      <Pencil className="size-3.5" />{t('编辑节点')}
                     </Button>
                     <Button
                       isIconOnly
@@ -542,11 +533,11 @@ export default function Subscriptions() {
           )}
         </Tab>
 
-        <Tab key="countries" title="// 按国家分组 (GEO)">
+        <Tab key="countries" title={t('// 按国家分组 (GEO)')}>
           {countryGroups.length === 0 ? (
             <div className="mt-4 p-12 rounded-[4px] border border-white/[0.08] bg-[#0b0c10] text-center font-mono">
               <Globe className="size-10 mx-auto text-zinc-700 mb-3 stroke-[1.5]" />
-              <p className="text-zinc-500 text-xs">暂无可用节点，请先添加订阅</p>
+              <p className="text-zinc-500 text-xs">{t('暂无可用节点，请先添加订阅')}</p>
             </div>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mt-4 font-mono">
@@ -558,7 +549,7 @@ export default function Subscriptions() {
                   <span className="text-3xl p-1 bg-white/[0.03] rounded-[2px]">{group.emoji}</span>
                   <div>
                     <h3 className="font-sans font-semibold text-sm text-white">{group.name}</h3>
-                    <p className="font-mono text-xs text-zinc-500">{group.node_count} 节点</p>
+                    <p className="font-mono text-xs text-zinc-500">{t('{p1} 节点', { p1: group.node_count })}</p>
                   </div>
                 </div>
               ))}
@@ -570,32 +561,30 @@ export default function Subscriptions() {
       {/* 添加/编辑订阅弹窗 */}
       <Modal isOpen={isSubOpen} onClose={onSubClose}>
         <ModalContent>
-          <ModalHeader>{editingSubscription ? '编辑订阅' : '添加订阅'}</ModalHeader>
+          <ModalHeader>{editingSubscription ? t('编辑订阅') : t('添加订阅')}</ModalHeader>
           <ModalBody>
             <Input
-              label="订阅名称"
-              placeholder="输入订阅名称"
+              label={t('订阅名称')}
+              placeholder={t('输入订阅名称')}
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
             <Input
-              label="订阅地址"
-              placeholder="输入订阅 URL"
+              label={t('订阅地址')}
+              placeholder={t('输入订阅 URL')}
               value={url}
               onChange={(e) => setUrl(e.target.value)}
             />
           </ModalBody>
           <ModalFooter>
-            <Button variant="flat" onPress={onSubClose}>
-              取消
-            </Button>
+            <Button variant="flat" onPress={onSubClose}>{t('取消')}</Button>
             <Button
               color="primary"
               onPress={handleSaveSubscription}
               isLoading={isSubmitting}
               isDisabled={!name || !url}
             >
-              {editingSubscription ? '保存' : '添加'}
+              {editingSubscription ? t('保存') : t('添加')}
             </Button>
           </ModalFooter>
         </ModalContent>
@@ -604,7 +593,7 @@ export default function Subscriptions() {
       {/* 添加/编辑节点弹窗 */}
       <Modal isOpen={isNodeOpen} onClose={onNodeClose} size="lg">
         <ModalContent>
-          <ModalHeader>{editingNode ? '编辑节点' : '添加节点'}</ModalHeader>
+          <ModalHeader>{editingNode ? t('编辑节点') : t('添加节点')}</ModalHeader>
           <ModalBody>
             <div className="space-y-4">
               {/* 节点链接输入 - 仅在添加模式显示 */}
@@ -612,8 +601,8 @@ export default function Subscriptions() {
                 <div className="space-y-2">
                   <div className="flex gap-2">
                     <Input
-                      label="节点链接"
-                      placeholder="粘贴节点链接，如 hysteria2://... vmess://... ss://... socks://..."
+                      label={t('节点链接')}
+                      placeholder={t('粘贴节点链接，如 hysteria2://... vmess://... ss://... socks://...')}
                       value={nodeUrl}
                       onChange={(e) => setNodeUrl(e.target.value)}
                       startContent={<Link className="w-4 h-4 text-gray-400" />}
@@ -626,15 +615,13 @@ export default function Subscriptions() {
                       isLoading={isParsing}
                       isDisabled={!nodeUrl.trim()}
                       className="self-end"
-                    >
-                      解析
-                    </Button>
+                    >{t('解析')}</Button>
                   </div>
                   {parseError && (
                     <p className="text-sm text-danger">{parseError}</p>
                   )}
                   <p className="text-xs text-gray-400">
-                    支持的协议: ss://, vmess://, vless://, trojan://, hysteria2://, tuic://, socks://
+                    {t('支持的协议: ss://, vmess://, vless://, trojan://, hysteria2://, tuic://, socks://')}
                   </p>
                 </div>
               )}
@@ -651,7 +638,7 @@ export default function Subscriptions() {
                           {nodeForm.type} · {nodeForm.server}:{nodeForm.server_port}
                         </p>
                       </div>
-                      <Chip size="sm" variant="flat" color="success">已解析</Chip>
+                      <Chip size="sm" variant="flat" color="success">{t('已解析')}</Chip>
                     </div>
                   </CardBody>
                 </Card>
@@ -659,18 +646,18 @@ export default function Subscriptions() {
 
               {/* 手动编辑区域 - 可折叠 */}
               <Accordion variant="bordered" selectionMode="multiple">
-                <AccordionItem key="manual" aria-label="手动编辑" title="手动编辑节点信息">
+                <AccordionItem key="manual" aria-label={t('手动编辑')} title={t('手动编辑节点信息')}>
                   <div className="space-y-4 pb-2">
                     <Input
-                      label="节点名称"
-                      placeholder="例如：香港-01"
+                      label={t('节点名称')}
+                      placeholder={t('例如：香港-01')}
                       value={nodeForm.tag}
                       onChange={(e) => setNodeForm({ ...nodeForm, tag: e.target.value })}
                     />
 
                     <div className="grid grid-cols-2 gap-4">
                       <AppSelect
-                        label="节点类型"
+                        label={t('节点类型')}
                         selectedKeys={[nodeForm.type]}
                         onChange={(e) => setNodeForm({ ...nodeForm, type: e.target.value })}
                       >
@@ -682,7 +669,7 @@ export default function Subscriptions() {
                       </AppSelect>
 
                       <AppSelect
-                        label="国家/地区"
+                        label={t('国家/地区')}
                         selectedKeys={[nodeForm.country || 'HK']}
                         onChange={(e) => {
                           const country = countryOptions.find(c => c.code === e.target.value);
@@ -695,7 +682,7 @@ export default function Subscriptions() {
                       >
                         {countryOptions.map((opt) => (
                           <SelectItem key={opt.code} value={opt.code}>
-                            {opt.emoji} {opt.name}
+                            {opt.emoji} {t(opt.name)}
                           </SelectItem>
                         ))}
                       </AppSelect>
@@ -703,7 +690,7 @@ export default function Subscriptions() {
 
                     <div className="grid grid-cols-2 gap-4">
                       <Input
-                        label="服务器地址"
+                        label={t('服务器地址')}
                         placeholder="example.com"
                         value={nodeForm.server}
                         onChange={(e) => setNodeForm({ ...nodeForm, server: e.target.value })}
@@ -711,7 +698,7 @@ export default function Subscriptions() {
 
                       <Input
                         type="number"
-                        label="端口"
+                        label={t('端口')}
                         placeholder="443"
                         value={String(nodeForm.server_port)}
                         onChange={(e) => setNodeForm({ ...nodeForm, server_port: parseInt(e.target.value) || 443 })}
@@ -722,7 +709,7 @@ export default function Subscriptions() {
               </Accordion>
 
               <div className="flex items-center justify-between">
-                <span>启用节点</span>
+                <span>{t('启用节点')}</span>
                 <Switch
                   isSelected={nodeEnabled}
                   onValueChange={setNodeEnabled}
@@ -732,16 +719,14 @@ export default function Subscriptions() {
             </div>
           </ModalBody>
           <ModalFooter>
-            <Button variant="flat" onPress={onNodeClose}>
-              取消
-            </Button>
+            <Button variant="flat" onPress={onNodeClose}>{t('取消')}</Button>
             <Button
               color="primary"
               onPress={handleSaveNode}
               isLoading={isSubmitting}
               isDisabled={!nodeForm.tag || !nodeForm.server}
             >
-              {editingNode ? '保存' : '添加'}
+              {editingNode ? t('保存') : t('添加')}
             </Button>
           </ModalFooter>
         </ModalContent>
@@ -750,30 +735,30 @@ export default function Subscriptions() {
       {/* 添加/编辑过滤器弹窗 */}
       <Modal isOpen={isFilterOpen} onClose={onFilterClose} size="2xl" scrollBehavior="inside">
         <ModalContent>
-          <ModalHeader>{editingFilter ? '编辑过滤器' : '添加过滤器'}</ModalHeader>
+          <ModalHeader>{editingFilter ? t('编辑过滤器') : t('添加过滤器')}</ModalHeader>
           <ModalBody>
             <div className="space-y-4">
               {/* 过滤器名称 */}
               <Input
-                label="过滤器名称"
-                placeholder="例如：日本高速节点、TikTok专用"
+                label={t('过滤器名称')}
+                placeholder={t('例如：日本高速节点、TikTok专用')}
                 value={filterForm.name}
                 onChange={(e) => setFilterForm({ ...filterForm, name: e.target.value })}
                 isRequired
               />
               <div className="flex items-center justify-between gap-3">
-                <div><span className="text-sm font-medium">全部订阅与手动节点</span><p className="text-xs text-default-500">关闭后只使用指定订阅中的节点</p></div>
-                <Switch aria-label="使用全部节点来源" isSelected={filterForm.all_nodes} onValueChange={checked => setFilterForm({ ...filterForm, all_nodes: checked, subscriptions: checked ? [] : subscriptions.map(sub => sub.id) })} />
+                <div><span className="text-sm font-medium">{t('全部订阅与手动节点')}</span><p className="text-xs text-default-500">{t('关闭后只使用指定订阅中的节点')}</p></div>
+                <Switch aria-label={t('使用全部节点来源')} isSelected={filterForm.all_nodes} onValueChange={checked => setFilterForm({ ...filterForm, all_nodes: checked, subscriptions: checked ? [] : subscriptions.map(sub => sub.id) })} />
               </div>
-              {!filterForm.all_nodes && <AppSelect label="节点来源订阅" selectionMode="multiple" selectedKeys={filterForm.subscriptions} onSelectionChange={keys => setFilterForm({ ...filterForm, subscriptions: Array.from(keys) as string[] })}>
-                {subscriptions.map(sub => <SelectItem key={sub.id} textValue={sub.name}>{sub.name}{sub.enabled ? '' : '（已停用）'}</SelectItem>)}
+              {!filterForm.all_nodes && <AppSelect label={t('节点来源订阅')} selectionMode="multiple" selectedKeys={filterForm.subscriptions} onSelectionChange={keys => setFilterForm({ ...filterForm, subscriptions: Array.from(keys) as string[] })}>
+                {subscriptions.map(sub => <SelectItem key={sub.id} textValue={sub.name}>{sub.name}{sub.enabled ? '' : t('（已停用）')}</SelectItem>)}
               </AppSelect>}
               <FilterMembers form={filterForm} onChange={setFilterForm} subscriptions={subscriptions} manualNodes={manualNodes} />
               {filterForm.node_tags == null && <>
               {/* 包含国家 */}
               <AppSelect
-                label="包含国家"
-                placeholder="选择要包含的国家（可多选）"
+                label={t('包含国家')}
+                placeholder={t('选择要包含的国家（可多选）')}
                 selectionMode="multiple"
                 selectedKeys={filterForm.include_countries}
                 onSelectionChange={(keys) => {
@@ -785,15 +770,15 @@ export default function Subscriptions() {
               >
                 {countryOptions.map((opt) => (
                   <SelectItem key={opt.code} value={opt.code}>
-                    {opt.name}
+                    {t(opt.name)}
                   </SelectItem>
                 ))}
               </AppSelect>
 
               {/* 排除国家 */}
               <AppSelect
-                label="排除国家"
-                placeholder="选择要排除的国家（可多选）"
+                label={t('排除国家')}
+                placeholder={t('选择要排除的国家（可多选）')}
                 selectionMode="multiple"
                 selectedKeys={filterForm.exclude_countries}
                 onSelectionChange={(keys) => setFilterForm({
@@ -803,15 +788,15 @@ export default function Subscriptions() {
               >
                 {countryOptions.map((opt) => (
                   <SelectItem key={opt.code} value={opt.code}>
-                    {opt.name}
+                    {t(opt.name)}
                   </SelectItem>
                 ))}
               </AppSelect>
 
               {/* 包含关键字 */}
               <Input
-                label="包含关键字"
-                placeholder="用 | 分隔，如：高速|IPLC|专线"
+                label={t('包含关键字')}
+                placeholder={t('用 | 分隔，如：高速|IPLC|专线')}
                 value={filterForm.include.join('|')}
                 onChange={(e) => setFilterForm({
                   ...filterForm,
@@ -821,8 +806,8 @@ export default function Subscriptions() {
 
               {/* 排除关键字 */}
               <Input
-                label="排除关键字"
-                placeholder="用 | 分隔，如：过期|维护|低速"
+                label={t('排除关键字')}
+                placeholder={t('用 | 分隔，如：过期|维护|低速')}
                 value={filterForm.exclude.join('|')}
                 onChange={(e) => setFilterForm({
                   ...filterForm,
@@ -834,15 +819,15 @@ export default function Subscriptions() {
 
               {/* 模式选择 */}
               <AppSelect
-                label="模式"
+                label={t('模式')}
                 selectedKeys={[filterForm.mode]}
                 onChange={(e) => setFilterForm({ ...filterForm, mode: e.target.value })}
               >
                 <SelectItem key="urltest" value="urltest">
-                  自动测速 (urltest)
+                  {t('自动测速 (urltest)')}
                 </SelectItem>
                 <SelectItem key="selector" value="selector">
-                  手动选择 (selector)
+                  {t('手动选择 (selector)')}
                 </SelectItem>
               </AppSelect>
 
@@ -850,9 +835,9 @@ export default function Subscriptions() {
               {filterForm.mode === 'urltest' && (
                 <Card className="bg-default-50">
                   <CardBody className="space-y-3">
-                    <h4 className="font-medium text-sm">测速配置</h4>
+                    <h4 className="font-medium text-sm">{t('测速配置')}</h4>
                     <Input
-                      label="测速 URL"
+                      label={t('测速 URL')}
                       placeholder="https://www.gstatic.com/generate_204"
                       value={filterForm.urltest_config?.url || ''}
                       onChange={(e) => setFilterForm({
@@ -863,7 +848,7 @@ export default function Subscriptions() {
                     />
                     <div className="grid grid-cols-2 gap-3">
                       <Input
-                        label="测速间隔"
+                        label={t('测速间隔')}
                         placeholder="5m"
                         value={filterForm.urltest_config?.interval || ''}
                         onChange={(e) => setFilterForm({
@@ -874,7 +859,7 @@ export default function Subscriptions() {
                       />
                       <Input
                         type="number"
-                        label="容差阈值 (ms)"
+                        label={t('容差阈值 (ms)')}
                         placeholder="50"
                         value={String(filterForm.urltest_config?.tolerance || 50)}
                         onChange={(e) => setFilterForm({
@@ -890,7 +875,7 @@ export default function Subscriptions() {
 
               {/* 启用开关 */}
               <div className="flex items-center justify-between">
-                <span>启用过滤器</span>
+                <span>{t('启用过滤器')}</span>
                 <Switch
                   isSelected={filterForm.enabled}
                   onValueChange={(checked) => setFilterForm({ ...filterForm, enabled: checked })}
@@ -900,16 +885,14 @@ export default function Subscriptions() {
             </div>
           </ModalBody>
           <ModalFooter>
-            <Button variant="flat" onPress={onFilterClose}>
-              取消
-            </Button>
+            <Button variant="flat" onPress={onFilterClose}>{t('取消')}</Button>
             <Button
               color="primary"
               onPress={handleSaveFilter}
               isLoading={isSubmitting}
               isDisabled={!filterForm.name}
             >
-              {editingFilter ? '保存' : '添加'}
+              {editingFilter ? t('保存') : t('添加')}
             </Button>
           </ModalFooter>
         </ModalContent>
@@ -970,7 +953,7 @@ function SubscriptionCard({ subscription: sub, onRefresh, onEdit, onDelete, onTo
             <div className="flex items-center gap-2">
               <h3 className="font-mono text-base font-bold text-white tracking-tight">{sub.name}</h3>
               <span className="font-mono text-[10px] px-1.5 py-0.5 rounded-[2px] bg-white/[0.05] border border-white/[0.08] text-zinc-400">
-                {sub.node_count} 节点
+                {t('{p1} 节点', { p1: sub.node_count })}
               </span>
             </div>
             <p className="font-mono text-xs text-slate-600 dark:text-zinc-400 mt-1">
@@ -986,25 +969,19 @@ function SubscriptionCard({ subscription: sub, onRefresh, onEdit, onDelete, onTo
             startContent={loading ? <Spinner size="sm" /> : <RefreshCw className="size-3 text-[#ff5722]" />}
             onPress={onRefresh}
             isDisabled={loading}
-          >
-            拉取
-          </Button>
+          >{t('拉取')}</Button>
           <Button
             size="sm"
             className="rounded-[2px] font-mono text-xs bg-white/[0.04] border border-white/[0.08] text-zinc-300 hover:text-white"
             startContent={<Pencil className="size-3 text-zinc-400" />}
             onPress={onEdit}
-          >
-            编辑
-          </Button>
+          >{t('编辑')}</Button>
           <Button
             size="sm"
             className="rounded-[2px] font-mono text-xs bg-rose-500/10 border border-rose-500/20 text-rose-700 dark:text-rose-400 hover:bg-rose-500/20"
             startContent={<Trash2 className="size-3" />}
             onPress={onDelete}
-          >
-            删除
-          </Button>
+          >{t('删除')}</Button>
           <Button
             isIconOnly
             size="sm"
@@ -1047,7 +1024,7 @@ function SubscriptionCard({ subscription: sub, onRefresh, onEdit, onDelete, onTo
                 <div className="flex items-center gap-2 font-mono text-xs text-zinc-400 border-b border-white/[0.04] pb-1">
                   <span>{data.emoji}</span>
                   <span className="font-semibold text-zinc-200">{country}</span>
-                  <span className="text-[11px] text-slate-600 dark:text-zinc-400">({data.nodes.length} 个节点)</span>
+                  <span className="text-[11px] text-slate-600 dark:text-zinc-400">{t('({p1} 个节点)', { p1: data.nodes.length })}</span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                   {data.nodes.map((node, idx) => (

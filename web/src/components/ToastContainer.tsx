@@ -1,5 +1,6 @@
 import { CheckCircle, XCircle, AlertCircle, X } from 'lucide-react';
 import { useToast, type Toast } from './Toast';
+import { t } from '../i18n';
 
 // Toast 单个项目组件
 const ToastItem = ({ toast, onClose }: { toast: Toast; onClose: () => void }) => {
@@ -43,7 +44,7 @@ const ToastItem = ({ toast, onClose }: { toast: Toast; onClose: () => void }) =>
       </span>
       <button
         onClick={onClose}
-        aria-label="关闭提示"
+        aria-label={t('关闭提示')}
         className="p-1 hover:bg-zinc-100 dark:hover:bg-white/[0.1] rounded-[2px] transition-colors cursor-pointer text-zinc-400 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-white shrink-0"
       >
         <X className="size-3" />

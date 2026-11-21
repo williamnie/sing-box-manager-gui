@@ -3,6 +3,7 @@ import { Button } from '@nextui-org/react';
 import { Download } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
 import { useUpdateStore } from '../store/update';
+import { t } from '../i18n';
 
 // 唯一的安装入口：必须经用户确认后才下载替换管理器。
 export default function UpdateInstallButton({ className = '' }: { className?: string }) {
@@ -21,13 +22,13 @@ export default function UpdateInstallButton({ className = '' }: { className?: st
         startContent={installing ? null : <Download className="size-3.5" />}
         onPress={() => setConfirm(true)}
       >
-        {installing ? '正在更新' : '立即更新'}
+        {installing ? t('正在更新') : t('立即更新')}
       </Button>
       <ConfirmModal
         isOpen={confirm}
         busy={installing}
-        title={`更新到 v${status.latest.version}`}
-        confirmLabel="下载并重启"
+        title={t('更新到 v{p1}', { p1: status.latest.version })}
+        confirmLabel={t('下载并重启')}
         onClose={() => setConfirm(false)}
         onConfirm={async () => {
           await install();
@@ -35,11 +36,9 @@ export default function UpdateInstallButton({ className = '' }: { className?: st
         }}
       >
         <p>
-          将从 GitHub Releases 下载 v{status.latest.version}，校验 SHA-256 后替换当前管理器（v{status.current_version}）并自动重启。
+          {t('将从 GitHub Releases 下载 v{p1}，校验 SHA-256 后替换当前管理器（v{p2}）并自动重启。', { p1: status.latest.version, p2: status.current_version })}
         </p>
-        <p className="mt-2 text-zinc-500">
-          重启期间管理界面会短暂断开，sing-box 代理保持运行。
-        </p>
+        <p className="mt-2 text-zinc-500">{t('重启期间管理界面会短暂断开，sing-box 代理保持运行。')}</p>
       </ConfirmModal>
     </>
   );
