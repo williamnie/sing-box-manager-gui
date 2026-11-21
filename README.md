@@ -98,6 +98,7 @@ A web-based management panel for [sing-box](https://github.com/SagerNet/sing-box
 
 - **Interface and Preferences**
   - Light, dark, and system themes; responsive navigation, shared confirmation dialogs, and project icons
+  - Simplified Chinese and English interfaces, following the browser locale, switchable under Settings → Panel preferences
   - Browser-local preferences for refresh interval, node sorting, latency test URL / timeout, connection columns / widths, and log buffer / follow behavior
 
 ### Deployment Modes
@@ -406,6 +407,7 @@ MIT License
 
 - **界面与偏好**
   - 浅色、深色、跟随系统主题，响应式导航、统一确认弹窗和项目图标
+  - 简体中文与英文界面，跟随浏览器语言，可在「设置 → 面板偏好」中切换
   - 刷新频率、节点排序、测速地址 / 超时、连接列 / 列宽、日志缓存 / 跟随等偏好保存在浏览器
 
 ### 部署模式

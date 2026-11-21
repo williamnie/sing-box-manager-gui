@@ -13,6 +13,7 @@ import { toast } from '../components/Toast';
 import RuntimeStatus from '../components/runtime/RuntimeStatus';
 import useRuntimePolling from '../components/runtime/useRuntimePolling';
 import { selectedChain } from '../utils/runtimeView';
+import { t } from '../i18n';
 
 const controlClass = 'rounded-[3px] border border-zinc-200 bg-white text-zinc-700 dark:border-white/10 dark:bg-[#12141d] dark:text-zinc-300';
 
@@ -69,10 +70,10 @@ export default function Proxies() {
       const next = await runtimeApi.select(group.tag, member, snapshot.instance);
       runtime.accept(next);
       const actual = next.proxies.find(proxy => proxy.tag === group.tag)?.selected;
-      if (actual === member) toast.success(`「${group.tag}」已切换到「${member}」`);
-      else toast.info(`内核返回的当前选择为「${actual || '未选择'}」，请核对运行状态`);
+      if (actual === member) toast.success(t('「{p1}」已切换到「{member}」', { p1: group.tag, member: member }));
+      else toast.info(t('内核返回的当前选择为「{p1}」，请核对运行状态', { p1: actual || t('未选择') }));
     } catch (error) {
-      toast.error(errorMessage(error, '切换失败，正在重新读取当前选择'));
+      toast.error(errorMessage(error, t('切换失败，正在重新读取当前选择')));
       await runtime.refresh();
     } finally { setSwitching(''); }
   };
@@ -89,9 +90,9 @@ export default function Proxies() {
       setTested(previous => ({ instance: snapshot.instance, results: new Map([...(previous.instance === snapshot.instance ? previous.results : []), ...result.results.map(item => [item.tag, item] as const)]) }));
       const failed = result.results.filter(item => item.error || item.delay === null).length;
       const reason = result.results.find(item => item.error)?.error;
-      toast.info(`延迟测试完成：${result.results.length - failed} 个成功${failed ? `，${failed} 个未完成` : ''}${reason ? `。${reason}` : ''}`);
+      toast.info(t('延迟测试完成：{ok} 个成功{failed}{reason}', { ok: result.results.length - failed, failed: failed ? t('，{p1} 个未完成', { p1: failed }) : '', reason: reason ? t('。{p1}', { p1: reason }) : '' }));
     } catch (error) {
-      if (!controller.signal.aborted) toast.error(errorMessage(error, '延迟测试失败'));
+      if (!controller.signal.aborted) toast.error(errorMessage(error, t('延迟测试失败')));
     } finally { if (!controller.signal.aborted) setTesting([]); }
   };
   const prepareClose = async (group: string) => {
@@ -99,9 +100,9 @@ export default function Proxies() {
     setPreparingClose(group);
     try {
       const connections = await runtimeApi.connections();
-      if (connections.instance !== snapshot.instance) { toast.info('内核实例已变化，请刷新后重试'); await runtime.refresh(); return; }
+      if (connections.instance !== snapshot.instance) { toast.info(t('内核实例已变化，请刷新后重试')); await runtime.refresh(); return; }
       setCloseTarget({ group, ids: connections.connections.filter(connection => connection.chains.includes(group)).map(connection => connection.id), instance: connections.instance });
-    } catch (error) { toast.error(errorMessage(error, '无法读取相关连接')); }
+    } catch (error) { toast.error(errorMessage(error, t('无法读取相关连接'))); }
     finally { setPreparingClose(''); }
   };
   const closeCaptured = async () => {
@@ -110,34 +111,34 @@ export default function Proxies() {
     setClosing(true);
     try {
       const result = await runtimeApi.close(closeTarget.ids, closeTarget.instance);
-      if (result.failed.length) toast.error(`已关闭 ${result.closed.length} 条，${result.missing.length} 条已结束，${result.failed.length} 条失败`);
-      else toast.success(`已关闭 ${result.closed.length} 条连接${result.missing.length ? `，${result.missing.length} 条已结束` : ''}`);
+      if (result.failed.length) toast.error(t('已关闭 {p1} 条，{p2} 条已结束，{p3} 条失败', { p1: result.closed.length, p2: result.missing.length, p3: result.failed.length }));
+      else toast.success(t('已关闭 {closed} 条连接{missing}', { closed: result.closed.length, missing: result.missing.length ? t('，{p1} 条已结束', { p1: result.missing.length }) : '' }));
       setCloseTarget(null);
-    } catch (error) { toast.error(errorMessage(error, '关闭连接失败')); }
+    } catch (error) { toast.error(errorMessage(error, t('关闭连接失败'))); }
     finally { await runtime.refresh(); setClosing(false); }
   };
 
   return <div className="space-y-5">
     <header className="flex flex-wrap items-end justify-between gap-4 border-b border-zinc-200 pb-5 dark:border-white/10">
-      <div><p className="mb-1.5 font-mono text-[11px] tracking-wider text-[#ff5722]">[ RUNTIME // PROXIES ]</p><h1 className="text-2xl font-bold text-zinc-900 dark:text-white">代理</h1><p className="mt-2 text-xs text-zinc-500">先找到业务使用的代理组，再查看它当前选中的出口</p></div>
-      <div className="flex gap-2">{!settings?.proxy_plan?.managed_only && <Button size="sm" className={controlClass} isDisabled={!settings || actionBusy} onPress={() => setShowPlan(true)}>统一节点来源</Button>}<Button size="sm" className={controlClass} isDisabled={Boolean(switching)} onPress={() => void runtime.refresh()} startContent={<RefreshCw className={`size-3.5 ${runtime.loading ? 'animate-spin' : ''}`} />}>刷新</Button></div>
+      <div><p className="mb-1.5 font-mono text-[11px] tracking-wider text-[#ff5722]">[ RUNTIME // PROXIES ]</p><h1 className="text-2xl font-bold text-zinc-900 dark:text-white">{t('代理')}</h1><p className="mt-2 text-xs text-zinc-500">{t('先找到业务使用的代理组，再查看它当前选中的出口')}</p></div>
+      <div className="flex gap-2">{!settings?.proxy_plan?.managed_only && <Button size="sm" className={controlClass} isDisabled={!settings || actionBusy} onPress={() => setShowPlan(true)}>{t('统一节点来源')}</Button>}<Button size="sm" className={controlClass} isDisabled={Boolean(switching)} onPress={() => void runtime.refresh()} startContent={<RefreshCw className={`size-3.5 ${runtime.loading ? 'animate-spin' : ''}`} />}>{t('刷新')}</Button></div>
     </header>
     <section className="rounded border border-zinc-200 bg-white p-4 text-xs leading-relaxed text-zinc-600 dark:border-white/10 dark:bg-[#0d0e12] dark:text-zinc-400">
-      <p className="font-medium text-zinc-900 dark:text-white">当前默认出口</p>
-      <p className="mt-2 break-words text-sm text-zinc-900 dark:text-zinc-100">{snapshot?.route_final ? selectedChain(snapshot.route_final, proxies).map(tag => proxies.has(tag) ? describe(proxies.get(tag)!).name : tag).join(' → ') : '暂时无法读取默认出口'}</p>
-      <Link to="/connections" className="mt-2 inline-block text-[#ff5722]">查看实际连接 →</Link>
+      <p className="font-medium text-zinc-900 dark:text-white">{t('当前默认出口')}</p>
+      <p className="mt-2 break-words text-sm text-zinc-900 dark:text-zinc-100">{snapshot?.route_final ? selectedChain(snapshot.route_final, proxies).map(tag => proxies.has(tag) ? describe(proxies.get(tag)!).name : tag).join(' → ') : t('暂时无法读取默认出口')}</p>
+      <Link to="/connections" className="mt-2 inline-block text-[#ff5722]">{t('查看实际连接 →')}</Link>
 
     </section>
     <div className="flex flex-wrap gap-3">
-      <label className={`flex min-w-0 flex-1 items-center gap-2 px-3 ${controlClass}`}><Search className="size-4 shrink-0 text-zinc-400" /><input aria-label="搜索代理组或节点" className="h-9 min-w-0 flex-1 bg-transparent text-sm outline-none" placeholder="搜索代理组或节点…" value={search} onChange={event => setSearch(event.target.value)} /></label>
-      <label className="flex items-center gap-2 text-xs text-zinc-500">节点排序<select aria-label="节点排序" value={preferences.proxySort} onChange={event => updatePreferences({ proxySort: event.target.value as typeof preferences.proxySort })} className={`h-9 px-2 ${controlClass}`}><option value="default">配置顺序</option><option value="name">名称</option><option value="delay">延迟</option></select></label>
-      <select aria-label="代理组来源" value={source} onChange={event => setSource(event.target.value)} className={`h-9 max-w-full px-2 text-xs ${controlClass}`}><option value="">全部来源</option>{[...new Set(groups.map(group => describe(group).source))].map(value => <option key={value}>{value}</option>)}</select>
-      {auxiliaryCount > 0 && <label className="flex items-center gap-2 text-xs text-zinc-500"><input type="checkbox" checked={showAuxiliary} onChange={event => setShowAuxiliary(event.target.checked)} />显示辅助组 ({auxiliaryCount})</label>}
-      {preferences.hiddenGroups.length > 0 && <Button size="sm" className={controlClass} startContent={<Eye className="size-3.5" />} onPress={() => updatePreferences({ hiddenGroups: [] })}>恢复隐藏组 ({preferences.hiddenGroups.length})</Button>}
+      <label className={`flex min-w-0 flex-1 items-center gap-2 px-3 ${controlClass}`}><Search className="size-4 shrink-0 text-zinc-400" /><input aria-label={t('搜索代理组或节点')} className="h-9 min-w-0 flex-1 bg-transparent text-sm outline-none" placeholder={t('搜索代理组或节点…')} value={search} onChange={event => setSearch(event.target.value)} /></label>
+      <label className="flex items-center gap-2 text-xs text-zinc-500">{t('节点排序')}<select aria-label={t('节点排序')} value={preferences.proxySort} onChange={event => updatePreferences({ proxySort: event.target.value as typeof preferences.proxySort })} className={`h-9 px-2 ${controlClass}`}><option value="default">{t('配置顺序')}</option><option value="name">{t('名称')}</option><option value="delay">{t('延迟')}</option></select></label>
+      <select aria-label={t('代理组来源')} value={source} onChange={event => setSource(event.target.value)} className={`h-9 max-w-full px-2 text-xs ${controlClass}`}><option value="">{t('全部来源')}</option>{[...new Set(groups.map(group => describe(group).source))].map(value => <option key={value}>{value}</option>)}</select>
+      {auxiliaryCount > 0 && <label className="flex items-center gap-2 text-xs text-zinc-500"><input type="checkbox" checked={showAuxiliary} onChange={event => setShowAuxiliary(event.target.checked)} />{t('显示辅助组 ({p1})', { p1: auxiliaryCount })}</label>}
+      {preferences.hiddenGroups.length > 0 && <Button size="sm" className={controlClass} startContent={<Eye className="size-3.5" />} onPress={() => updatePreferences({ hiddenGroups: [] })}>{t('恢复隐藏组 ({p1})', { p1: preferences.hiddenGroups.length })}</Button>}
     </div>
     <RuntimeStatus error={runtime.error} loading={runtime.loading} hasData={Boolean(snapshot)} />
-    {snapshot && <div className="flex flex-wrap gap-x-5 gap-y-2 text-[11px] text-zinc-500"><span className="font-mono">{snapshot.version || '版本未知'}</span><span>{visibleGroups.length} / {groups.length} 个代理组</span><span>手动测速结果仅供参考，自动组选择由内核决定</span></div>}
-    {snapshot && !visibleGroups.length && !runtime.error && <div className="rounded border border-dashed border-zinc-300 p-10 text-center text-sm text-zinc-500 dark:border-zinc-700">{query || source ? '没有匹配的代理组或节点' : groups.length ? '没有可见代理组，可显示辅助组或恢复隐藏组' : '当前内核没有可展示的代理组'}</div>}
+    {snapshot && <div className="flex flex-wrap gap-x-5 gap-y-2 text-[11px] text-zinc-500"><span className="font-mono">{snapshot.version || t('版本未知')}</span><span>{t('{visible} / {total} 个代理组', { visible: visibleGroups.length, total: groups.length })}</span><span>{t('手动测速结果仅供参考，自动组选择由内核决定')}</span></div>}
+    {snapshot && !visibleGroups.length && !runtime.error && <div className="rounded border border-dashed border-zinc-300 p-10 text-center text-sm text-zinc-500 dark:border-zinc-700">{query || source ? t('没有匹配的代理组或节点') : groups.length ? t('没有可见代理组，可显示辅助组或恢复隐藏组') : t('当前内核没有可展示的代理组')}</div>}
     <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
       {visibleGroups.map(group => {
         const collapsed = preferences.collapsedGroups.includes(group.tag);
@@ -146,26 +147,26 @@ export default function Proxies() {
         if (preferences.proxySort !== 'default') members.sort((a, b) => preferences.proxySort === 'name' ? a.localeCompare(b, 'zh-CN', { numeric: true }) : (delayFor(a) ?? Infinity) - (delayFor(b) ?? Infinity) || a.localeCompare(b));
         return <section key={group.tag} className="min-w-0 overflow-hidden rounded-[4px] border border-zinc-200 bg-white dark:border-white/10 dark:bg-[#0d0e12]">
           <div className="flex items-start gap-2 p-4">
-            <button aria-label={`${collapsed ? '展开' : '折叠'} ${group.tag}`} aria-expanded={!collapsed} onClick={() => togglePreference('collapsedGroups', group.tag)} className="mt-0.5 rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-white/5">{collapsed ? <ChevronRight className="size-4" /> : <ChevronDown className="size-4" />}</button>
-            <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h2 className="break-all text-sm font-semibold text-zinc-900 dark:text-white">{info.name}</h2><span className="text-[10px] text-[#ff5722]">{info.source}</span><span className="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-[10px] text-zinc-500 dark:bg-white/5">{group.selectable ? '手动选择' : /urltest/i.test(group.type) ? '自动测速' : '只读'} · {group.members.length} 个成员</span>{switching === group.tag && <span role="status" className="text-xs text-[#ff5722]">正在切换…</span>}</div><p className="mt-1 text-[11px] text-zinc-500">{info.name !== group.tag && <span className="mr-2 font-mono">{group.tag}</span>}{info.description}</p>{context.filters.has(group.tag) && <Link to="/subscriptions?tab=filters" className="mt-1 inline-block text-xs text-[#ff5722]">编辑过滤器成员 →</Link>}<p className="mt-2 flex items-start gap-1.5 text-xs text-zinc-500"><Globe className="mt-0.5 size-3 shrink-0 text-[#ff5722]" /><span className="break-all">当前选择：{selectedChain(group.tag, proxies).slice(1).map(tag => proxies.has(tag) ? describe(proxies.get(tag)!).name : tag).join(' → ') || '当前未选择出口'}</span></p></div>
-            <button aria-label={`隐藏 ${group.tag}`} title="隐藏代理组" onClick={() => togglePreference('hiddenGroups', group.tag)} className="rounded p-1.5 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-white/5"><EyeOff className="size-3.5" /></button>
+            <button aria-label={t('{p1} {p2}', { p1: collapsed ? t('展开') : t('折叠'), p2: group.tag })} aria-expanded={!collapsed} onClick={() => togglePreference('collapsedGroups', group.tag)} className="mt-0.5 rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-white/5">{collapsed ? <ChevronRight className="size-4" /> : <ChevronDown className="size-4" />}</button>
+            <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h2 className="break-all text-sm font-semibold text-zinc-900 dark:text-white">{info.name}</h2><span className="text-[10px] text-[#ff5722]">{info.source}</span><span className="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-[10px] text-zinc-500 dark:bg-white/5">{group.selectable ? t('手动选择') : /urltest/i.test(group.type) ? t('自动测速') : t('只读')}{' '}{t('· {p1} 个成员', { p1: group.members.length })}</span>{switching === group.tag && <span role="status" className="text-xs text-[#ff5722]">{t('正在切换…')}</span>}</div><p className="mt-1 text-[11px] text-zinc-500">{info.name !== group.tag && <span className="mr-2 font-mono">{group.tag}</span>}{info.description}</p>{context.filters.has(group.tag) && <Link to="/subscriptions?tab=filters" className="mt-1 inline-block text-xs text-[#ff5722]">{t('编辑过滤器成员 →')}</Link>}<p className="mt-2 flex items-start gap-1.5 text-xs text-zinc-500"><Globe className="mt-0.5 size-3 shrink-0 text-[#ff5722]" /><span className="break-all">{t('当前选择：')}{selectedChain(group.tag, proxies).slice(1).map(tag => proxies.has(tag) ? describe(proxies.get(tag)!).name : tag).join(' → ') || t('当前未选择出口')}</span></p></div>
+            <button aria-label={t('隐藏 {p1}', { p1: group.tag })} title={t('隐藏代理组')} onClick={() => togglePreference('hiddenGroups', group.tag)} className="rounded p-1.5 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-white/5"><EyeOff className="size-3.5" /></button>
           </div>
-          {!collapsed && <><div className="flex flex-wrap items-center justify-between gap-2 border-y border-zinc-100 bg-zinc-50/80 px-4 py-2 dark:border-white/5 dark:bg-white/[0.02]"><span className="text-[11px] text-zinc-500">{group.selectable ? '选择节点即可热切换' : /urltest/i.test(group.type) ? '自动测速组 · 由内核选择' : '内核兼容视图 · 只读'}</span><div className="flex gap-2"><Button size="sm" variant="light" className="h-7 min-w-0 px-2 text-xs text-[#ff5722]" isDisabled={unavailable || Boolean(testing.length)} startContent={<Zap className="size-3" />} onPress={() => void test(group.members)}>整组测速</Button><Button size="sm" variant="light" className="h-7 min-w-0 px-2 text-xs text-zinc-500" isDisabled={unavailable || actionBusy || Boolean(preparingClose)} isLoading={preparingClose === group.tag} startContent={<Unplug className="size-3" />} onPress={() => void prepareClose(group.tag)}>关闭相关连接</Button></div></div>
+          {!collapsed && <><div className="flex flex-wrap items-center justify-between gap-2 border-y border-zinc-100 bg-zinc-50/80 px-4 py-2 dark:border-white/5 dark:bg-white/[0.02]"><span className="text-[11px] text-zinc-500">{group.selectable ? t('选择节点即可热切换') : /urltest/i.test(group.type) ? t('自动测速组 · 由内核选择') : t('内核兼容视图 · 只读')}</span><div className="flex gap-2"><Button size="sm" variant="light" className="h-7 min-w-0 px-2 text-xs text-[#ff5722]" isDisabled={unavailable || Boolean(testing.length)} startContent={<Zap className="size-3" />} onPress={() => void test(group.members)}>{t('整组测速')}</Button><Button size="sm" variant="light" className="h-7 min-w-0 px-2 text-xs text-zinc-500" isDisabled={unavailable || actionBusy || Boolean(preparingClose)} isLoading={preparingClose === group.tag} startContent={<Unplug className="size-3" />} onPress={() => void prepareClose(group.tag)}>{t('关闭相关连接')}</Button></div></div>
           <div className="grid grid-cols-1 gap-2 p-3 sm:grid-cols-2 2xl:grid-cols-3">{members.map(tag => {
             const member = proxies.get(tag);
             const selected = group.selected === tag;
             const delay = delayFor(tag);
             const testError = tested.instance === snapshot?.instance ? tested.results.get(tag)?.error : undefined;
             return <div key={tag} className={`flex min-w-0 items-stretch rounded-[3px] border ${selected ? 'border-[#ff5722]/60 bg-[#ff5722]/[0.08]' : 'border-zinc-200 bg-zinc-50 dark:border-white/5 dark:bg-white/[0.03]'}`}>
-              <button type="button" aria-label={`选择 ${group.tag} 的 ${tag}`} aria-pressed={selected} disabled={!group.selectable || unavailable || actionBusy || selected} onClick={() => void select(group, tag)} className="min-w-0 flex-1 p-2.5 text-left disabled:cursor-default enabled:hover:bg-[#ff5722]/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#ff5722]"><div className="flex items-start gap-1"><span className="break-all text-xs font-medium text-zinc-800 dark:text-zinc-200" title={tag}>{member ? describe(member).name : tag}</span>{selected && <Check className="mt-0.5 size-3 shrink-0 text-[#ff5722]" />}</div><div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[10px] text-zinc-500"><span>{member?.type || '未知类型'}</span><span title={testError} className={testError ? 'text-rose-600 dark:text-rose-400' : delay === null ? '' : delay < 500 ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-300'}>{testing.includes(tag) ? '测试中…' : testError ? '测试失败' : delay === null ? '未测速' : `${delay} ms`}</span></div></button>
-              <button aria-label={`测试 ${tag} 延迟`} title="测试延迟" disabled={unavailable || Boolean(testing.length)} onClick={() => void test([tag])} className="self-center rounded p-2 text-zinc-400 enabled:hover:text-[#ff5722] disabled:opacity-40"><Zap className="size-3.5" /></button>
+              <button type="button" aria-label={t('选择 {p1} 的 {tag}', { p1: group.tag, tag: tag })} aria-pressed={selected} disabled={!group.selectable || unavailable || actionBusy || selected} onClick={() => void select(group, tag)} className="min-w-0 flex-1 p-2.5 text-left disabled:cursor-default enabled:hover:bg-[#ff5722]/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#ff5722]"><div className="flex items-start gap-1"><span className="break-all text-xs font-medium text-zinc-800 dark:text-zinc-200" title={tag}>{member ? describe(member).name : tag}</span>{selected && <Check className="mt-0.5 size-3 shrink-0 text-[#ff5722]" />}</div><div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[10px] text-zinc-500"><span>{member?.type || t('未知类型')}</span><span title={testError} className={testError ? 'text-rose-600 dark:text-rose-400' : delay === null ? '' : delay < 500 ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-300'}>{testing.includes(tag) ? t('测试中…') : testError ? t('测试失败') : delay === null ? t('未测速') : `${delay} ms`}</span></div></button>
+              <button aria-label={t('测试 {tag} 延迟', { tag: tag })} title={t('测试延迟')} disabled={unavailable || Boolean(testing.length)} onClick={() => void test([tag])} className="self-center rounded p-2 text-zinc-400 enabled:hover:text-[#ff5722] disabled:opacity-40"><Zap className="size-3.5" /></button>
             </div>;
           })}</div></>}
         </section>;
       })}
     </div>
-    <p className="text-xs leading-relaxed text-zinc-500">切换立即影响新连接。已建立的连接是否中断由内核配置决定；需要主动重连时，可单独关闭该组的相关连接。</p>
+    <p className="text-xs leading-relaxed text-zinc-500">{t('切换立即影响新连接。已建立的连接是否中断由内核配置决定；需要主动重连时，可单独关闭该组的相关连接。')}</p>
     {showPlan && settings && <ProxyPlanPanel settings={settings} preferredNode={(snapshot?.route_final ? selectedChain(snapshot.route_final, proxies).at(-1) ?? '' : '').replace(/^SMbox\/(自建\s+)?/, '')} onClose={() => setShowPlan(false)} onSaved={async () => { await fetchSettings(); await runtime.refresh(); }} />}
-    <ConfirmModal title="关闭代理组相关连接" isOpen={Boolean(closeTarget)} busy={closing} onClose={() => setCloseTarget(null)} onConfirm={() => void closeCaptured()} confirmLabel={closeTarget?.ids.length ? `关闭 ${closeTarget.ids.length} 条` : '确认'}><p>将关闭「{closeTarget?.group}」在读取时匹配的 <strong>{closeTarget?.ids.length ?? 0}</strong> 条连接。应用可能自动重连；之后新建的连接不受此操作影响。</p></ConfirmModal>
+    <ConfirmModal title={t('关闭代理组相关连接')} isOpen={Boolean(closeTarget)} busy={closing} onClose={() => setCloseTarget(null)} onConfirm={() => void closeCaptured()} confirmLabel={closeTarget?.ids.length ? t('关闭 {p1} 条', { p1: closeTarget.ids.length }) : t('确认')}><p>{t('将关闭「{p1}」在读取时匹配的', { p1: closeTarget?.group ?? '' })} <strong>{closeTarget?.ids.length ?? 0}</strong>{' '}{t('条连接。应用可能自动重连；之后新建的连接不受此操作影响。')}</p></ConfirmModal>
   </div>;
 }

@@ -4,6 +4,7 @@ import { api, authApi, errorMessage } from '../api';
 import { toast } from '../components/Toast';
 import { usePanelPreferences } from '../store/panelPreferences';
 import { logLevel, type LogLevel } from '../utils/logPresentation';
+import { t } from '../i18n';
 
 type LogSource = 'singbox' | 'sbm';
 type LogLine = { id: number; text: string; level: LogLevel };
@@ -210,43 +211,43 @@ export default function Logs() {
       link.download = `${activeTab}-${new Date().toISOString().replace(/[:.]/g, '-')}.log`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (error) { toast.error(errorMessage(error, '日志导出失败')); } finally { setExporting(false); }
+    } catch (error) { toast.error(errorMessage(error, t('日志导出失败'))); } finally { setExporting(false); }
   };
   const state = paused ? 'paused' : connection.source === activeTab ? connection.state : 'connecting';
-  const statusLabel = { paused: '已暂停，恢复后接续', live: '增量连接正常', connecting: '正在连接', retrying: '连接中断，自动重连中', expired: '登录已失效' }[state];
+  const statusLabel = { paused: t('已暂停，恢复后接续'), live: t('增量连接正常'), connecting: t('正在连接'), retrying: t('连接中断，自动重连中'), expired: t('登录已失效') }[state];
 
   return (
     <div className="flex h-[calc(100dvh-6rem)] min-h-[30rem] flex-col gap-5 md:h-[calc(100dvh-7rem)]">
       <div className="flex shrink-0 flex-col justify-between gap-4 border-b border-white/[0.08] pb-4 md:flex-row md:items-end">
         <div>
           <div className="mb-1.5 font-mono text-[11px] uppercase tracking-wider text-[#ff5722]">[ CONSOLE // STREAM ]</div>
-          <h1 className="text-2xl font-bold tracking-tight text-white">实时日志</h1>
-          <p className="mt-1 text-xs text-zinc-500">从日志文件增量接续；显示过滤不改变内核输出级别。导出最近最多 1000 行 / 256 KiB 尾部。</p>
+          <h1 className="text-2xl font-bold tracking-tight text-white">{t('实时日志')}</h1>
+          <p className="mt-1 text-xs text-zinc-500">{t('从日志文件增量接续；显示过滤不改变内核输出级别。导出最近最多 1000 行 / 256 KiB 尾部。')}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button className={buttonStyle} onClick={() => setPaused((value) => !value)}>{paused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}{paused ? '恢复' : '暂停'}</button>
-          <button className={buttonStyle} disabled={paused} onClick={() => { setConnection({ source: activeTab, state: 'connecting' }); setReconnect((value) => value + 1); }}><RefreshCw className="size-3.5" />重连</button>
-          <button className={buttonStyle} disabled={!current.ready} onClick={clear} title="只清空显示，保留接续位置，不删除日志文件"><Trash2 className="size-3.5" />清屏</button>
-          <button className={buttonStyle} disabled={exporting} onClick={() => void download()} title="导出文件尾部最近 1000 行，最多读取 256 KiB，经过脱敏"><Download className="size-3.5" />{exporting ? '导出中' : '脱敏导出'}</button>
+          <button className={buttonStyle} onClick={() => setPaused((value) => !value)}>{paused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}{paused ? t('恢复') : t('暂停')}</button>
+          <button className={buttonStyle} disabled={paused} onClick={() => { setConnection({ source: activeTab, state: 'connecting' }); setReconnect((value) => value + 1); }}><RefreshCw className="size-3.5" />{t('重连')}</button>
+          <button className={buttonStyle} disabled={!current.ready} onClick={clear} title={t('只清空显示，保留接续位置，不删除日志文件')}><Trash2 className="size-3.5" />{t('清屏')}</button>
+          <button className={buttonStyle} disabled={exporting} onClick={() => void download()} title={t('导出文件尾部最近 1000 行，最多读取 256 KiB，经过脱敏')}><Download className="size-3.5" />{exporting ? t('导出中') : t('脱敏导出')}</button>
         </div>
       </div>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[4px] border border-white/[0.09] bg-[#07080b]">
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-white/[0.08] bg-[#0e1017] px-3 py-2">
-          <div className="flex gap-1" role="tablist" aria-label="日志来源">
+          <div className="flex gap-1" role="tablist" aria-label={t('日志来源')}>
             {(['singbox', 'sbm'] as const).map((source) => <button key={source} role="tab" aria-selected={activeTab === source} onClick={() => setActiveTab(source)} className={`flex items-center gap-2 rounded-[3px] px-3 py-2 text-xs ${activeTab === source ? 'bg-white/10 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}>
-              {source === 'singbox' ? <Terminal className="size-3.5 text-[#ff5722]" /> : <Server className="size-3.5 text-[#ff5722]" />}{source === 'singbox' ? '内核日志' : '管理器日志'}
+              {source === 'singbox' ? <Terminal className="size-3.5 text-[#ff5722]" /> : <Server className="size-3.5 text-[#ff5722]" />}{source === 'singbox' ? t('内核日志') : t('管理器日志')}
             </button>)}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <select aria-label="日志显示级别" value={level} onChange={(event) => setLevel(event.target.value as LogLevel | 'all')} className="h-8 rounded-[3px] border border-white/10 bg-[#12141d] px-2 text-xs text-zinc-300">
-              <option value="all">全部级别</option><option value="error">ERROR</option><option value="warn">WARN</option><option value="info">INFO</option><option value="debug">DEBUG</option><option value="trace">TRACE</option><option value="other">未标级别</option>
+            <select aria-label={t('日志显示级别')} value={level} onChange={(event) => setLevel(event.target.value as LogLevel | 'all')} className="h-8 rounded-[3px] border border-white/10 bg-[#12141d] px-2 text-xs text-zinc-300">
+              <option value="all">{t('全部级别')}</option><option value="error">ERROR</option><option value="warn">WARN</option><option value="info">INFO</option><option value="debug">DEBUG</option><option value="trace">TRACE</option><option value="other">{t('未标级别')}</option>
             </select>
-            <label className="relative"><Search className="pointer-events-none absolute left-2.5 top-2.5 size-3 text-zinc-500" /><input aria-label="过滤日志关键字" placeholder="过滤日志关键字" value={search} onChange={(event) => setSearch(event.target.value)} className="h-8 w-40 rounded-[3px] border border-white/10 bg-black/30 pl-7 pr-2 text-xs text-zinc-300 outline-none focus:border-[#ff5722] sm:w-52" /></label>
-            <label className="flex items-center gap-1.5 px-1 text-xs text-zinc-400"><input type="checkbox" checked={preferences.logFollow} onChange={(event) => updatePreferences({ logFollow: event.target.checked })} className="accent-[#ff5722]" />跟随</label>
-            <button aria-label="滚动到底部并开启跟随" className={`${buttonStyle} !px-2`} onClick={scrollToBottomAndFollow}><ArrowDown className="size-3.5" /></button>
+            <label className="relative"><Search className="pointer-events-none absolute left-2.5 top-2.5 size-3 text-zinc-500" /><input aria-label={t('过滤日志关键字')} placeholder={t('过滤日志关键字')} value={search} onChange={(event) => setSearch(event.target.value)} className="h-8 w-40 rounded-[3px] border border-white/10 bg-black/30 pl-7 pr-2 text-xs text-zinc-300 outline-none focus:border-[#ff5722] sm:w-52" /></label>
+            <label className="flex items-center gap-1.5 px-1 text-xs text-zinc-400"><input type="checkbox" checked={preferences.logFollow} onChange={(event) => updatePreferences({ logFollow: event.target.checked })} className="accent-[#ff5722]" />{t('跟随')}</label>
+            <button aria-label={t('滚动到底部并开启跟随')} className={`${buttonStyle} !px-2`} onClick={scrollToBottomAndFollow}><ArrowDown className="size-3.5" /></button>
           </div>
         </div>
-        {current.gap && <div role="status" className="shrink-0 border-b border-amber-500/20 bg-amber-500/10 px-4 py-2 text-xs text-amber-700 dark:text-amber-300">接续位置已超出日志保留范围，或文件已重建。已接入当前尾部，期间部分日志不可恢复。</div>}
+        {current.gap && <div role="status" className="shrink-0 border-b border-amber-500/20 bg-amber-500/10 px-4 py-2 text-xs text-amber-700 dark:text-amber-300">{t('接续位置已超出日志保留范围，或文件已重建。已接入当前尾部，期间部分日志不可恢复。')}</div>}
         <div className="relative min-h-0 flex-1 overflow-hidden">
           <div
             ref={logContainerRef}
@@ -257,7 +258,7 @@ export default function Logs() {
             {visibleLines.length === 0 ? (
               <div className="flex h-full min-h-24 flex-col items-center justify-center gap-2 text-zinc-500">
                 <Terminal className="size-7" />
-                <p>{search || level !== 'all' ? '没有符合过滤条件的日志' : current.ready ? '暂无新日志，或已清屏' : '正在读取日志尾部…'}</p>
+                <p>{search || level !== 'all' ? t('没有符合过滤条件的日志') : current.ready ? t('暂无新日志，或已清屏') : t('正在读取日志尾部…')}</p>
               </div>
             ) : (
               visibleLines.map((line) => (
@@ -273,15 +274,15 @@ export default function Logs() {
               type="button"
               onClick={scrollToBottomAndFollow}
               className="absolute bottom-4 right-4 flex items-center gap-1.5 rounded-full border border-white/20 bg-[#12141d]/90 px-3 py-1.5 text-xs text-zinc-200 shadow-xl backdrop-blur transition-all hover:border-[#ff5722] hover:bg-[#ff5722] hover:text-white"
-              title="回到底部并恢复跟随"
+              title={t('回到底部并恢复跟随')}
             >
               <ArrowDown className="size-3.5" />
-              <span>回到底部</span>
+              <span>{t('回到底部')}</span>
             </button>
           )}
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-white/[0.08] bg-[#0c0d13] px-4 py-2 text-[11px] text-zinc-500">
-          <span>显示 {visibleLines.length} / {current.lines.length} 行 · 缓冲上限 {bufferLimit} 行 / 4 MiB{current.discarded > 0 ? ` · 已淘汰 ${current.discarded} 行` : ''}</span>
+          <span>{t('显示 {visible} / {total} 行 · 缓冲上限 {buffer} 行 / 4 MiB', { visible: visibleLines.length, total: current.lines.length, buffer: bufferLimit })}{current.discarded > 0 ? t(' · 已淘汰 {p1} 行', { p1: current.discarded }) : ''}</span>
           <span className="flex items-center gap-2" role="status"><span className={`size-1.5 rounded-full ${state === 'live' ? 'bg-emerald-500' : state === 'retrying' || state === 'expired' ? 'bg-amber-500' : 'bg-zinc-500'}`} />{statusLabel}</span>
         </div>
       </div>

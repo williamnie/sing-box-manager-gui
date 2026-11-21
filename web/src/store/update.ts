@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { authApi, errorMessage, updateApi } from '../api';
 import { toast } from '../components/Toast';
+import { t } from '../i18n';
 
 export interface UpdateStatus {
   current_version: string;
@@ -44,7 +45,7 @@ async function waitForRestart() {
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
   }
-  toast.error('管理器未在预期时间内恢复，请检查服务状态后手动刷新');
+  toast.error(t('管理器未在预期时间内恢复，请检查服务状态后手动刷新'));
 }
 
 export const useUpdateStore = create<UpdateState>((set, get) => ({
@@ -68,10 +69,10 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
       const res = await updateApi.check();
       const status: UpdateStatus = res.data.data;
       set({ status });
-      if (status.available) toast.info(`发现新版本 v${status.latest?.version}`);
-      else toast.success('当前已是最新版本');
+      if (status.available) toast.info(t('发现新版本 v{p1}', { p1: status.latest?.version }));
+      else toast.success(t('当前已是最新版本'));
     } catch (error) {
-      toast.error(errorMessage(error, '检查更新失败'));
+      toast.error(errorMessage(error, t('检查更新失败')));
       void get().fetchStatus();
     } finally {
       set({ checking: false });
@@ -82,9 +83,9 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
     try {
       const res = await updateApi.setAutoCheck(autoCheck);
       set({ status: res.data.data });
-      toast.success(autoCheck ? '已开启自动检查更新' : '已关闭自动检查更新');
+      toast.success(autoCheck ? t('已开启自动检查更新') : t('已关闭自动检查更新'));
     } catch (error) {
-      toast.error(errorMessage(error, '保存失败'));
+      toast.error(errorMessage(error, t('保存失败')));
     }
   },
 
@@ -94,10 +95,10 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
     set({ installing: true });
     try {
       await updateApi.install(version);
-      toast.success(`v${version} 已安装，管理器正在重启…`);
+      toast.success(t('v{version} 已安装，管理器正在重启…', { version: version }));
       await waitForRestart();
     } catch (error) {
-      toast.error(errorMessage(error, '安装更新失败'));
+      toast.error(errorMessage(error, t('安装更新失败')));
       void get().fetchStatus();
     } finally {
       set({ installing: false });

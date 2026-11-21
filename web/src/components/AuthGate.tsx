@@ -4,6 +4,7 @@ import { Button, Input, Spinner } from '@nextui-org/react';
 import { LockKeyhole } from 'lucide-react';
 import { authApi, errorMessage } from '../api';
 import { useStore } from '../store';
+import { t } from '../i18n';
 
 interface AuthStatus { authenticated: boolean; setup_required: boolean }
 
@@ -18,7 +19,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       setStatus(response.data.data);
       setError('');
     } catch (cause) {
-      setError(errorMessage(cause, '无法连接管理服务，请检查服务是否启动'));
+      setError(errorMessage(cause, t('无法连接管理服务，请检查服务是否启动')));
     }
   }, []);
 
@@ -43,10 +44,10 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     const rememberMe = data.get('remember_me') === 'on';
     const passwordBytes = new TextEncoder().encode(password).length;
     if (status?.setup_required && (passwordBytes < 12 || passwordBytes > 72)) {
-      setError('密码需为 12–72 字节（中文等字符可能占多个字节）'); return;
+      setError(t('密码需为 12–72 字节（中文等字符可能占多个字节）')); return;
     }
     if (status?.setup_required && password !== data.get('confirm_password')) {
-      setError('两次输入的密码不一致'); return;
+      setError(t('两次输入的密码不一致')); return;
     }
     setBusy(true);
     setError('');
@@ -55,7 +56,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       else await authApi.login(password, rememberMe);
       await refresh();
     } catch (cause) {
-      setError(errorMessage(cause, '认证失败'));
+      setError(errorMessage(cause, t('认证失败')));
     } finally {
       setBusy(false);
     }
@@ -108,22 +109,20 @@ export default function AuthGate({ children }: { children: ReactNode }) {
               <div className="space-y-1">
                 <h2 className="text-lg font-bold font-sans tracking-tight text-white flex items-center gap-2">
                   <LockKeyhole className="size-4 text-[#ff5722]" />
-                  {status.setup_required ? '设置管理密码' : '登录管理页面'}
+                  {status.setup_required ? t('设置管理密码') : t('登录管理页面')}
                 </h2>
                 <p className="text-xs text-zinc-400 font-mono">
                   {status.setup_required
-                    ? '首次启动：请从数据目录 setup-token 文件读取初始令牌'
-                    : '使用自己设置的管理密码，可由浏览器保存和自动填充'}
+                    ? t('首次启动：请从数据目录 setup-token 文件读取初始令牌')
+                    : t('使用自己设置的管理密码，可由浏览器保存和自动填充')}
                 </p>
               </div>
 
               {status.setup_required && (
                 <div className="space-y-3 pt-2">
-                  <div className="p-2.5 rounded-[3px] bg-amber-500/10 border border-amber-500/20 text-[11px] font-mono text-amber-800 dark:text-amber-300/90 leading-relaxed">
-                    初始化令牌仅使用一次。请另设自己好记的管理密码或短语，长度为 12–72 字节。
-                  </div>
+                  <div className="p-2.5 rounded-[3px] bg-amber-500/10 border border-amber-500/20 text-[11px] font-mono text-amber-800 dark:text-amber-300/90 leading-relaxed">{t('初始化令牌仅使用一次。请另设自己好记的管理密码或短语，长度为 12–72 字节。')}</div>
                   <Input
-                    label="本机初始化令牌 (Setup Token)"
+                    label={t('本机初始化令牌 (Setup Token)')}
                     name="setup_token"
                     type="password"
                     autoComplete="one-time-code"
@@ -139,7 +138,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
               )}
 
               <Input
-                label={status.setup_required ? '自定义管理密码' : '管理密码'}
+                label={status.setup_required ? t('自定义管理密码') : t('管理密码')}
                 name="password"
                 type="password"
                 autoComplete={status.setup_required ? 'new-password' : 'current-password'}
@@ -154,7 +153,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
 
               {status.setup_required && (
                 <Input
-                  label="确认管理密码"
+                  label={t('确认管理密码')}
                   name="confirm_password"
                   type="password"
                   autoComplete="new-password"
@@ -170,7 +169,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
 
               <label className="flex items-start gap-2.5 text-xs text-zinc-400 cursor-pointer">
                 <input type="checkbox" name="remember_me" className="mt-0.5 accent-[#ff5722]" />
-                <span>记住登录 30 天<span className="block mt-1 text-[11px] text-zinc-500">仅在自己的设备上勾选，重启管理器后仍可保持登录。</span></span>
+                <span>{t('记住登录 30 天')}<span className="block mt-1 text-[11px] text-zinc-500">{t('仅在自己的设备上勾选，重启管理器后仍可保持登录。')}</span></span>
               </label>
 
               {error && (
@@ -184,20 +183,18 @@ export default function AuthGate({ children }: { children: ReactNode }) {
                 className="w-full h-10 font-mono text-xs uppercase tracking-wider rounded-[3px] bg-[#ff5722] hover:bg-[#ff6e40] text-black font-bold shadow-geek-glow transition-all"
                 isLoading={busy}
               >
-                {status.setup_required ? '设置密码并登录' : '登录'}
+                {status.setup_required ? t('设置密码并登录') : t('登录')}
               </Button>
             </form>
           )}
 
           {window.location.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname) && (
             <div className="p-2.5 rounded-[2px] bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 font-mono text-[11px]">
-              [WARN] 当前为远端明文 HTTP 连接。建议使用 SSH 隧道或配置内置 HTTPS 避免密钥泄露。
+              {t('[WARN] 当前为远端明文 HTTP 连接。建议使用 SSH 隧道或配置内置 HTTPS 避免密钥泄露。')}
             </div>
           )}
 
-          <div className="pt-2 border-t border-white/[0.06] text-[11px] font-mono text-zinc-500 leading-normal">
-            登录后可在「设置 → 管理密码」中修改密码
-          </div>
+          <div className="pt-2 border-t border-white/[0.06] text-[11px] font-mono text-zinc-500 leading-normal">{t('登录后可在「设置 → 管理密码」中修改密码')}</div>
         </div>
       </div>
     </main>

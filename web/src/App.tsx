@@ -4,6 +4,7 @@ import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import { ToastContainer } from './components/ToastContainer';
 import AuthGate from './components/AuthGate';
+import { t, useLocale } from './i18n';
 // 除首页外均按路由拆分，首屏只下载仪表盘所需代码。
 const Subscriptions = lazy(() => import('./pages/Subscriptions'));
 const Rules = lazy(() => import('./pages/Rules'));
@@ -18,11 +19,15 @@ const DNSQueries = lazy(() => import('./pages/DNSQueries'));
 const Agent = lazy(() => import('./pages/Agent'));
 
 function App() {
+  // Subscribing here re-renders the whole tree on a language change, so
+  // module-level t() calls pick the new locale without remounting pages.
+  const locale = useLocale();
   return (
-    <BrowserRouter>
+    <div data-locale={locale} className="contents">
+      <BrowserRouter>
       <ToastContainer />
       <AuthGate><Layout>
-        <Suspense fallback={<p className="text-default-500">正在加载管理页面…</p>}><Routes>
+        <Suspense fallback={<p className="text-default-500">{t('正在加载管理页面…')}</p>}><Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/subscriptions" element={<Subscriptions />} />
           <Route path="/proxies" element={<Proxies />} />
@@ -38,7 +43,8 @@ function App() {
           <Route path="/configuration" element={<Configuration />} />
         </Routes></Suspense>
       </Layout></AuthGate>
-    </BrowserRouter>
+      </BrowserRouter>
+    </div>
   );
 }
 

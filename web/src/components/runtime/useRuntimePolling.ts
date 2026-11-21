@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { errorMessage } from '../../api';
 import useDocumentHidden from '../../hooks/useDocumentHidden';
+import { t } from '../../i18n';
 
 export default function useRuntimePolling<T>(load: (signal?: AbortSignal) => Promise<T>, interval: number, pausedByCaller = false) {
   // 后台标签页不轮询；回到前台时 effect 重新执行并立即刷新。
@@ -25,7 +26,7 @@ export default function useRuntimePolling<T>(load: (signal?: AbortSignal) => Pro
       if (mounted.current && requestEpoch === epoch.current) setState(previous => ({ data, previous: previous.data, error: '', loading: false }));
     } catch (error) {
       if (mounted.current && !request.signal.aborted && requestEpoch === epoch.current) {
-        setState(previous => ({ ...previous, error: errorMessage(error, '运行接口不可用，请检查内核状态'), loading: false }));
+        setState(previous => ({ ...previous, error: errorMessage(error, t('运行接口不可用，请检查内核状态')), loading: false }));
       }
     }
   }, [cancel, load]);

@@ -1,7 +1,8 @@
 import { Button, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader } from '@nextui-org/react';
 import type { ReactNode } from 'react';
+import { t } from '../i18n';
 
-export default function ConfirmModal({ title, children, isOpen, busy = false, onClose, onConfirm, confirmLabel = '确认' }: {
+export default function ConfirmModal({ title, children, isOpen, busy = false, onClose, onConfirm, confirmLabel = t('确认') }: {
   title: string; children: ReactNode; isOpen: boolean; busy?: boolean; onClose: () => void; onConfirm: () => void; confirmLabel?: string;
 }) {
   return (
@@ -32,7 +33,7 @@ export default function ConfirmModal({ title, children, isOpen, busy = false, on
             onPress={onClose}
             className="rounded-[2px] font-mono text-xs border border-white/[0.1] bg-white/[0.05] text-zinc-300 hover:text-white"
           >
-            取消 (ESC)
+            {t('取消 (ESC)')}
           </Button>
           <Button
             size="sm"

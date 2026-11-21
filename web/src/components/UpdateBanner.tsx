@@ -4,6 +4,7 @@ import { Button } from '@nextui-org/react';
 import { ArrowUpCircle, X } from 'lucide-react';
 import { useUpdateStore } from '../store/update';
 import UpdateInstallButton from './UpdateInstallButton';
+import { t } from '../i18n';
 
 const POLL_MS = 30 * 60 * 1000;
 
@@ -26,17 +27,17 @@ export default function UpdateBanner() {
         <ArrowUpCircle className="size-4 shrink-0 text-primary" />
         <div className="min-w-0 flex-1">
           <p className="font-semibold text-zinc-900 dark:text-zinc-100">
-            发现新版本 v{latest.version}
-            <span className="ml-2 font-mono font-normal text-zinc-500">当前 v{status.current_version}</span>
+            {t('发现新版本 v{p1}', { p1: latest.version })}
+            <span className="ml-2 font-mono font-normal text-zinc-500">{t('当前 v{p1}', { p1: status.current_version })}</span>
           </p>
           <p className="mt-0.5 text-zinc-600 dark:text-zinc-400">
-            {status.install_blocked || '不会自动下载，点击“立即更新”后才会安装。'}
+            {status.install_blocked || t('不会自动下载，点击“立即更新”后才会安装。')}
           </p>
         </div>
         <div className="flex gap-2">
-          <Button as={Link} to="/settings#section-update" size="sm" variant="flat">查看更新</Button>
+          <Button as={Link} to="/settings#section-update" size="sm" variant="flat">{t('查看更新')}</Button>
           <UpdateInstallButton />
-          <Button isIconOnly size="sm" variant="light" aria-label="忽略此版本" title="忽略此版本" onPress={() => dismiss(latest.version)}>
+          <Button isIconOnly size="sm" variant="light" aria-label={t('忽略此版本')} title={t('忽略此版本')} onPress={() => dismiss(latest.version)}>
             <X className="size-4" />
           </Button>
         </div>

@@ -44,6 +44,7 @@ import PanelPreferences from '../components/PanelPreferences';
 import PasswordSettings from '../components/PasswordSettings';
 import UpdatePanel from '../components/UpdatePanel';
 import { Link } from 'react-router-dom';
+import { t } from '../i18n';
 
 function randomSecret() {
   return Array.from(crypto.getRandomValues(new Uint8Array(24)), (byte) =>
@@ -124,7 +125,7 @@ export default function Settings() {
       const res = await kernelApi.getInfo();
       setKernelInfo(res.data.data);
     } catch (error) {
-      toast.error(errorMessage(error, '请求失败，请检查管理服务'));
+      toast.error(errorMessage(error, t('请求失败，请检查管理服务')));
     }
   };
 
@@ -133,7 +134,7 @@ export default function Settings() {
       const res = await settingsApi.getSystemHosts();
       setSystemHosts(res.data.data || []);
     } catch (error) {
-      toast.error(errorMessage(error, '请求失败，请检查管理服务'));
+      toast.error(errorMessage(error, t('请求失败，请检查管理服务')));
     }
   };
 
@@ -177,18 +178,18 @@ export default function Settings() {
     const ipv6Regex = /^([a-fA-F0-9:]+)$/;
     const invalidIps = ips.filter((ip) => !ipv4Regex.test(ip) && !ipv6Regex.test(ip));
     if (invalidIps.length > 0) {
-      toast.error(`无效的 IP 地址: ${invalidIps.join(', ')}`);
+      toast.error(t('无效的 IP 地址: {p1}', { p1: invalidIps.join(', ') }));
       return;
     }
 
     const domainRegex = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$/;
     if (!domainRegex.test(hostFormData.domain)) {
-      toast.error('无效的域名格式');
+      toast.error(t('无效的域名格式'));
       return;
     }
 
     if (ips.length === 0) {
-      toast.error('请输入至少一个 IP 地址');
+      toast.error(t('请输入至少一个 IP 地址'));
       return;
     }
 
@@ -224,7 +225,7 @@ export default function Settings() {
       const res = await daemonApi.status();
       setDaemonStatus(res.data.data);
     } catch (error) {
-      toast.error(errorMessage(error, '请求失败，请检查管理服务'));
+      toast.error(errorMessage(error, t('请求失败，请检查管理服务')));
     }
   };
 
@@ -236,7 +237,7 @@ export default function Settings() {
         setSelectedVersion(res.data.data[0].tag_name);
       }
     } catch (error) {
-      toast.error(errorMessage(error, '请求失败，请检查管理服务'));
+      toast.error(errorMessage(error, t('请求失败，请检查管理服务')));
     }
   };
 
@@ -247,7 +248,7 @@ export default function Settings() {
     if (navigator.clipboard && window.isSecureContext) {
       navigator.clipboard
         .writeText(text)
-        .then(() => toast.success('API 密钥已复制到剪贴板'))
+        .then(() => toast.success(t('API 密钥已复制到剪贴板')))
         .catch(() => fallbackCopy(text));
     } else {
       fallbackCopy(text);
@@ -267,12 +268,12 @@ export default function Settings() {
     try {
       const success = document.execCommand('copy');
       if (success) {
-        toast.success('API 密钥已复制到剪贴板');
+        toast.success(t('API 密钥已复制到剪贴板'));
       } else {
-        toast.error('复制失败');
+        toast.error(t('复制失败'));
       }
     } catch {
-      toast.error('复制失败');
+      toast.error(t('复制失败'));
     } finally {
       document.body.removeChild(textarea);
     }
@@ -280,7 +281,7 @@ export default function Settings() {
 
   const handleGenerateSecret = () => {
     setFormData({ ...formData!, clash_api_secret: randomSecret() });
-    toast.success('已生成新密钥，请保存设置');
+    toast.success(t('已生成新密钥，请保存设置'));
   };
 
   const handleSave = async () => {
@@ -288,9 +289,9 @@ export default function Settings() {
       setSaving(true);
       try {
         await updateSettings(formData);
-        toast.success('设置已持久化保存');
+        toast.success(t('设置已持久化保存'));
       } catch (error) {
-        toast.error(errorMessage(error, '保存设置失败'));
+        toast.error(errorMessage(error, t('保存设置失败')));
       } finally {
         setSaving(false);
       }
@@ -306,32 +307,32 @@ export default function Settings() {
       } else if (data.action === 'manual') {
         toast.info(data.message);
       } else {
-        toast.success(data.message || '系统守护进程已成功安装');
+        toast.success(data.message || t('系统守护进程已成功安装'));
       }
       await fetchDaemonStatus();
     } catch (error) {
-      toast.error(errorMessage(error, '安装服务失败'));
+      toast.error(errorMessage(error, t('安装服务失败')));
     }
   };
 
   const handleUninstallDaemon = async () => {
     try {
       await daemonApi.uninstall();
-      toast.success('系统守护进程已卸载');
+      toast.success(t('系统守护进程已卸载'));
       await fetchDaemonStatus();
       setUninstallConfirm(false);
     } catch (error) {
-      toast.error(errorMessage(error, '卸载服务失败'));
+      toast.error(errorMessage(error, t('卸载服务失败')));
     }
   };
 
   const handleRestartDaemon = async () => {
     try {
       await daemonApi.restart();
-      toast.success('后台服务正在重启...');
+      toast.success(t('后台服务正在重启...'));
       await fetchDaemonStatus();
     } catch (error) {
-      toast.error(errorMessage(error, '重启服务失败'));
+      toast.error(errorMessage(error, t('重启服务失败')));
     }
   };
 
@@ -344,7 +345,7 @@ export default function Settings() {
   const startDownload = async () => {
     if (!selectedVersion) return;
     setDownloading(true);
-    setDownloadProgress({ status: 'preparing', progress: 0, message: '正在连接 GitHub Releases 校验二进制签名...' });
+    setDownloadProgress({ status: 'preparing', progress: 0, message: t('正在连接 GitHub Releases 校验二进制签名...') });
 
     try {
       await kernelApi.download(selectedVersion);
@@ -367,7 +368,7 @@ export default function Settings() {
             }
           }
         } catch (error) {
-          toast.error(errorMessage(error, '进度请求中断，请检查服务'));
+          toast.error(errorMessage(error, t('进度请求中断，请检查服务')));
         }
       }, 500);
     } catch (error) {
@@ -375,7 +376,7 @@ export default function Settings() {
       setDownloadProgress({
         status: 'error',
         progress: 0,
-        message: errorMessage(error, '下载初始化失败'),
+        message: errorMessage(error, t('下载初始化失败')),
       });
     }
   };
@@ -405,23 +406,19 @@ export default function Settings() {
               <span className="text-zinc-700 dark:text-zinc-300 font-semibold">{kernelInfo?.arch || 'unknown'}</span>
             </span>
           </div>
-          <h1 className="text-xl md:text-2xl font-semibold text-zinc-900 dark:text-white tracking-tight font-sans">
-            全局运行环境与系统设置
-          </h1>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 max-w-2xl leading-relaxed">
-            当前部署角色：
-            <span className="font-mono text-zinc-800 dark:text-zinc-200 font-medium ml-1">
+          <h1 className="text-xl md:text-2xl font-semibold text-zinc-900 dark:text-white tracking-tight font-sans">{t('全局运行环境与系统设置')}</h1>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 max-w-2xl leading-relaxed">{t('当前部署角色：')}<span className="font-mono text-zinc-800 dark:text-zinc-200 font-medium ml-1">
               {formData.deployment_role === 'gateway'
                 ? formData.gateway?.access_mode === 'dns'
-                  ? 'DNS 分流旁路 (FakeIP TProxy)'
-                  : '完整网关接管 (Gateway TUN)'
-                : '单机代理 (Standalone)'}
+                  ? t('DNS 分流旁路 (FakeIP TProxy)')
+                  : t('完整网关接管 (Gateway TUN)')
+                : t('单机代理 (Standalone)')}
             </span>
-            。接入模式与设备策略请在{' '}
+            {t('。接入模式与设备策略请在')}{' '}
             <Link to="/gateway" className="text-interface-orange hover:underline font-mono">
-              [部署与设备]
+              {t('[部署与设备]')}
             </Link>{' '}
-            管理。
+            {t('中管理。')}
           </p>
         </div>
 
@@ -432,9 +429,7 @@ export default function Settings() {
           startContent={<Save className="w-3.5 h-3.5" />}
           isLoading={saving}
           onPress={handleSave}
-        >
-          保存所有设置
-        </Button>
+        >{t('保存所有设置')}</Button>
       </div>
 
       <PanelPreferences />
@@ -443,43 +438,33 @@ export default function Settings() {
 
       {/* 快捷导航定位 */}
       <div className="flex flex-wrap items-center gap-2 p-2 rounded-[3px] border border-white/[0.06] bg-default-100/40 dark:bg-black/30 text-xs font-mono">
-        <span className="text-[11px] text-zinc-500">// 快速跳转:</span>
+        <span className="text-[11px] text-zinc-500">{t('// 快速跳转:')}</span>
         <button
           type="button"
           onClick={() => document.getElementById('section-update')?.scrollIntoView({ behavior: 'smooth' })}
           className="px-2.5 py-1 rounded-[2px] bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 hover:text-white transition-colors cursor-pointer"
-        >
-          版本更新
-        </button>
+        >{t('版本更新')}</button>
         <button
           type="button"
           onClick={() => document.getElementById('section-kernel')?.scrollIntoView({ behavior: 'smooth' })}
           className="px-2.5 py-1 rounded-[2px] bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 hover:text-white transition-colors cursor-pointer"
-        >
-          核心引擎
-        </button>
+        >{t('核心引擎')}</button>
         <button
           type="button"
           onClick={() => document.getElementById('section-network')?.scrollIntoView({ behavior: 'smooth' })}
           className="px-2.5 py-1 rounded-[2px] bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 hover:text-white transition-colors cursor-pointer"
-        >
-          端口与入站
-        </button>
+        >{t('端口与入站')}</button>
         <button
           type="button"
           onClick={() => document.getElementById('section-hosts')?.scrollIntoView({ behavior: 'smooth' })}
           className="px-2.5 py-1 rounded-[2px] bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 hover:text-white transition-colors cursor-pointer"
-        >
-          DNS 与 Hosts
-        </button>
+        >{t('DNS 与 Hosts')}</button>
         {daemonStatus?.supported && (
           <button
             type="button"
             onClick={() => document.getElementById('section-daemon')?.scrollIntoView({ behavior: 'smooth' })}
             className="px-2.5 py-1 rounded-[2px] bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 hover:text-white transition-colors cursor-pointer"
-          >
-            后台常驻服务
-          </button>
+          >{t('后台常驻服务')}</button>
         )}
       </div>
 
@@ -491,7 +476,7 @@ export default function Settings() {
           <div className="flex items-center gap-2">
             <Terminal className="w-4 h-4 text-interface-orange" />
             <h2 className="font-mono text-xs font-semibold text-white tracking-wide uppercase">
-              SING_BOX_RUNTIME // 核心引擎
+              {t('SING_BOX_RUNTIME // 核心引擎')}
             </h2>
           </div>
           <span className="font-mono text-[10px] text-zinc-500">
@@ -509,13 +494,13 @@ export default function Settings() {
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-semibold text-white">sing-box 二进制就绪</span>
+                      <span className="font-mono text-xs font-semibold text-white">{t('sing-box 二进制就绪')}</span>
                       <span className="font-mono text-[10px] px-1.5 py-0.5 rounded-[2px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                         {kernelInfo.version || 'v1.11.x'}
                       </span>
                     </div>
                     <p className="font-mono text-[11px] text-zinc-500 mt-0.5">
-                      架构: {kernelInfo.os}/{kernelInfo.arch} · 位于: {kernelInfo.path || '默认搜索路径'}
+                      {t('架构: {p1}/{p2} · 位于: {p3}', { p1: kernelInfo.os, p2: kernelInfo.arch, p3: kernelInfo.path || t('默认搜索路径') })}
                     </p>
                   </div>
                 </>
@@ -526,14 +511,12 @@ export default function Settings() {
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-semibold text-amber-800 dark:text-amber-400">内核二进制缺失</span>
+                      <span className="font-mono text-xs font-semibold text-amber-800 dark:text-amber-400">{t('内核二进制缺失')}</span>
                       <span className="font-mono text-[10px] px-1.5 py-0.5 rounded-[2px] bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/30">
                         NOT_FOUND
                       </span>
                     </div>
-                    <p className="font-mono text-[11px] text-zinc-500 mt-0.5">
-                      需要下载 sing-box 官方内核方可启动代理与网关功能
-                    </p>
+                    <p className="font-mono text-[11px] text-zinc-500 mt-0.5">{t('需要下载 sing-box 官方内核方可启动代理与网关功能')}</p>
                   </div>
                 </>
               )}
@@ -551,13 +534,13 @@ export default function Settings() {
               startContent={<Download className="w-3.5 h-3.5" />}
               onPress={openDownloadModal}
             >
-              {kernelInfo?.installed ? '更新 / 切换内核版本' : '下载官方内核'}
+              {kernelInfo?.installed ? t('更新 / 切换内核版本') : t('下载官方内核')}
             </Button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <Input
-              label="配置文件生成路径 (CONFIG_PATH)"
+              label={t('配置文件生成路径 (CONFIG_PATH)')}
               placeholder="generated/config.json"
               value={formData.config_path}
               onChange={(e) => setFormData({ ...formData, config_path: e.target.value })}
@@ -568,9 +551,9 @@ export default function Settings() {
               }}
             />
             <Input
-              label="GitHub 下载加速镜像 (GH_PROXY)"
-              placeholder="例如 https://ghproxy.net/"
-              description="用于国内网络加速从 GitHub 抓取内核二进制与规则包，留空直连"
+              label={t('GitHub 下载加速镜像 (GH_PROXY)')}
+              placeholder={t('例如 https://ghproxy.net/')}
+              description={t('用于国内网络加速从 GitHub 抓取内核二进制与规则包，留空直连')}
               value={formData.github_proxy || ''}
               onChange={(e) => setFormData({ ...formData, github_proxy: e.target.value })}
               classNames={{
@@ -590,7 +573,7 @@ export default function Settings() {
           <div className="flex items-center gap-2">
             <Radio className="w-4 h-4 text-interface-orange" />
             <h2 className="font-mono text-xs font-semibold text-white tracking-wide uppercase">
-              INBOUND_NETWORK // 端口与入站
+              {t('INBOUND_NETWORK // 端口与入站')}
             </h2>
           </div>
           <span className="font-mono text-[10px] text-zinc-500">
@@ -602,9 +585,9 @@ export default function Settings() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Input
               type="number"
-              label="本地混合代理端口 (MIXED_PORT)"
+              label={t('本地混合代理端口 (MIXED_PORT)')}
               placeholder="2080"
-              description="同时支持 HTTP/HTTPS 与 SOCKS5 代理协议"
+              description={t('同时支持 HTTP/HTTPS 与 SOCKS5 代理协议')}
               value={String(formData.mixed_port)}
               onChange={(e) => setFormData({ ...formData, mixed_port: parseInt(e.target.value) || 2080 })}
               classNames={{
@@ -617,13 +600,13 @@ export default function Settings() {
 
             <div className="p-3 bg-[#0d0e12] border border-white/[0.08] rounded-[3px] flex items-center justify-between">
               <div>
-                <p className="font-mono text-xs font-semibold text-zinc-200">TUN 虚拟网卡模式</p>
+                <p className="font-mono text-xs font-semibold text-zinc-200">{t('TUN 虚拟网卡模式')}</p>
                 <p className="font-mono text-[10px] text-zinc-500 mt-0.5 leading-relaxed">
                   {formData.deployment_role === 'gateway'
                     ? formData.gateway?.access_mode === 'dns'
-                      ? 'DNS 旁路模式使用限定 FakeIP 的 TProxy，不在此处激活单机 TUN'
-                      : '完整网关接管已激活，由系统网络接管流水线统一调度'
-                    : '创建 tun0 虚拟网卡接管操作系统全局 IP 流量'}
+                      ? t('DNS 旁路模式使用限定 FakeIP 的 TProxy，不在此处激活单机 TUN')
+                      : t('完整网关接管已激活，由系统网络接管流水线统一调度')
+                    : t('创建 tun0 虚拟网卡接管操作系统全局 IP 流量')}
                 </p>
               </div>
               <Switch
@@ -644,10 +627,8 @@ export default function Settings() {
                 <Wifi className="w-4 h-4" />
               </div>
               <div>
-                <p className="font-mono text-xs font-semibold text-zinc-200">允许局域网外部设备访问 (ALLOW_LAN)</p>
-                <p className="font-mono text-[10px] text-zinc-500 mt-0.5">
-                  开启后 mixed 端口将绑定 0.0.0.0，同一局域网设备可将本机设为 HTTP/SOCKS 代理上网
-                </p>
+                <p className="font-mono text-xs font-semibold text-zinc-200">{t('允许局域网外部设备访问 (ALLOW_LAN)')}</p>
+                <p className="font-mono text-[10px] text-zinc-500 mt-0.5">{t('开启后 mixed 端口将绑定 0.0.0.0，同一局域网设备可将本机设为 HTTP/SOCKS 代理上网')}</p>
               </div>
             </div>
             <Switch
@@ -672,23 +653,19 @@ export default function Settings() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Shield className="w-3.5 h-3.5 text-amber-800 dark:text-amber-400" />
-                  <span className="font-mono text-xs font-semibold text-amber-800 dark:text-amber-400">
-                    内核控制接口密钥
-                  </span>
+                  <span className="font-mono text-xs font-semibold text-amber-800 dark:text-amber-400">{t('内核控制接口密钥')}</span>
                 </div>
                 <span className="font-mono text-[10px] px-1.5 py-0.2 rounded-[2px] bg-amber-500/10 text-amber-800 dark:text-amber-400 border border-amber-500/20">
                   CRITICAL_TOKEN
                 </span>
               </div>
-              <p className="font-mono text-[11px] text-zinc-400 leading-relaxed">
-                内置面板由管理后端连接本机内核，无需在代理页填写密钥。应用新配置后控制接口仅监听本机，与 mixed 的局域网访问开关独立。
-              </p>
+              <p className="font-mono text-[11px] text-zinc-400 leading-relaxed">{t('内置面板由管理后端连接本机内核，无需在代理页填写密钥。应用新配置后控制接口仅监听本机，与 mixed 的局域网访问开关独立。')}</p>
               <div className="flex items-center gap-2 pt-1">
                 <Input
                   type={showSecret ? 'text' : 'password'}
                   value={formData.clash_api_secret || ''}
                   onChange={(e) => setFormData({ ...formData, clash_api_secret: e.target.value })}
-                  placeholder="保存设置后将自动生成"
+                  placeholder={t('保存设置后将自动生成')}
                   size="sm"
                   className="flex-1"
                   classNames={{
@@ -712,7 +689,7 @@ export default function Settings() {
                   className="bg-white/[0.06] border border-white/[0.08] text-zinc-300 hover:text-white rounded-[2px]"
                   onPress={handleCopySecret}
                   isDisabled={!formData.clash_api_secret}
-                  title="复制密钥"
+                  title={t('复制密钥')}
                 >
                   <Copy className="w-3.5 h-3.5" />
                 </Button>
@@ -722,7 +699,7 @@ export default function Settings() {
                   variant="flat"
                   className="bg-white/[0.06] border border-white/[0.08] text-zinc-300 hover:text-white rounded-[2px]"
                   onPress={handleGenerateSecret}
-                  title="重新随机生成"
+                  title={t('重新随机生成')}
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
                 </Button>
@@ -738,7 +715,7 @@ export default function Settings() {
           <div className="flex items-center gap-2">
             <Globe className="w-4 h-4 text-interface-orange" />
             <h2 className="font-mono text-xs font-semibold text-white tracking-wide uppercase">
-              DNS_ROUTER & HOSTS // 域名解析拓扑
+              {t('DNS_ROUTER & HOSTS // 域名解析拓扑')}
             </h2>
           </div>
           <span className="font-mono text-[10px] text-zinc-500">
@@ -749,7 +726,7 @@ export default function Settings() {
         <div className="p-4 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <Input
-              label="远程代理 DNS 上游 (DoH)"
+              label={t('远程代理 DNS 上游 (DoH)')}
               placeholder="https://1.1.1.1/dns-query"
               value={formData.proxy_dns}
               onChange={(e) => setFormData({ ...formData, proxy_dns: e.target.value })}
@@ -760,7 +737,7 @@ export default function Settings() {
               }}
             />
             <Input
-              label="国内直连 DNS 上游 (DoH / UDP)"
+              label={t('国内直连 DNS 上游 (DoH / UDP)')}
               placeholder="https://dns.alidns.com/dns-query"
               value={formData.direct_dns}
               onChange={(e) => setFormData({ ...formData, direct_dns: e.target.value })}
@@ -777,11 +754,9 @@ export default function Settings() {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="font-mono text-xs font-semibold text-zinc-200">
-                  HOSTS_OVERRIDE // 静态域名映射
+                  {t('HOSTS_OVERRIDE // 静态域名映射')}
                 </h3>
-                <p className="font-mono text-[10px] text-zinc-500 mt-0.5">
-                  优先级最高，仅直接作用于 sing-box 内核内联 DNS
-                </p>
+                <p className="font-mono text-[10px] text-zinc-500 mt-0.5">{t('优先级最高，仅直接作用于 sing-box 内核内联 DNS')}</p>
               </div>
               <Button
                 size="sm"
@@ -789,9 +764,7 @@ export default function Settings() {
                 className="font-mono text-xs rounded-[2px] bg-interface-orange text-white shadow-geek-glow"
                 startContent={<Plus className="w-3.5 h-3.5" />}
                 onPress={handleAddHost}
-              >
-                添加自定义映射
-              </Button>
+              >{t('添加自定义映射')}</Button>
             </div>
 
             {/* 用户自定义 Hosts */}
@@ -922,18 +895,16 @@ export default function Settings() {
             <div className="flex items-center gap-2">
               <Layers className="w-4 h-4 text-interface-orange" />
               <h2 className="font-mono text-xs font-semibold text-white tracking-wide uppercase">
-                CONTROL_API // 管理端口
+                {t('CONTROL_API // 管理端口')}
               </h2>
             </div>
           </div>
           <div className="p-4 space-y-3">
-            <p className="font-mono text-[10px] text-zinc-500 leading-relaxed">
-              管理 API 默认仅监听 127.0.0.1 本地回环。远程访问推荐使用 SSH 隧道或内置 TLS 反向代理。
-            </p>
+            <p className="font-mono text-[10px] text-zinc-500 leading-relaxed">{t('管理 API 默认仅监听 127.0.0.1 本地回环。远程访问推荐使用 SSH 隧道或内置 TLS 反向代理。')}</p>
             <div className="grid grid-cols-2 gap-3">
               <Input
                 type="number"
-                label="Web 管理端口"
+                label={t('Web 管理端口')}
                 placeholder="9090"
                 disabled
                 value={String(formData.web_port)}
@@ -945,7 +916,7 @@ export default function Settings() {
               />
               <Input
                 type="number"
-                label="内核控制 API 端口"
+                label={t('内核控制 API 端口')}
                 placeholder="9091"
                 value={String(formData.clash_api_port)}
                 onChange={(e) => setFormData({ ...formData, clash_api_port: Number(e.target.value) })}
@@ -957,7 +928,7 @@ export default function Settings() {
               />
             </div>
             <Input
-              label="未命中分流默认出站 (FINAL_OUTBOUND)"
+              label={t('未命中分流默认出站 (FINAL_OUTBOUND)')}
               placeholder="Proxy"
               value={formData.final_outbound}
               onChange={(e) => setFormData({ ...formData, final_outbound: e.target.value })}
@@ -968,12 +939,12 @@ export default function Settings() {
               }}
             />
             <label className="block space-y-2 text-xs text-zinc-600 dark:text-zinc-400">
-              <span>内核日志输出级别</span>
+              <span>{t('内核日志输出级别')}</span>
               <select value={formData.log_level || 'info'} onChange={e => setFormData({ ...formData, log_level: e.target.value as SettingsType['log_level'] })} className="w-full rounded border border-zinc-200 bg-white px-3 py-2 text-zinc-900 dark:border-white/10 dark:bg-zinc-950 dark:text-zinc-100">
                 {['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'panic'].map(level => <option key={level} value={level}>{level}</option>)}
               </select>
-              <span className="block leading-relaxed">随配置保存并按自动应用设置生效；对运行中的内核应用会重启服务。日志页的级别过滤只改变显示。端口设为 0 会停用代理和连接控制。</span>
-              {formData.dns_query_log_enabled && <span className="block text-amber-700 dark:text-amber-300">DNS 查询记录已开启，实际输出至少为 debug；关闭采集后恢复这里选择的级别。</span>}
+              <span className="block leading-relaxed">{t('随配置保存并按自动应用设置生效；对运行中的内核应用会重启服务。日志页的级别过滤只改变显示。端口设为 0 会停用代理和连接控制。')}</span>
+              {formData.dns_query_log_enabled && <span className="block text-amber-700 dark:text-amber-300">{t('DNS 查询记录已开启，实际输出至少为 debug；关闭采集后恢复这里选择的级别。')}</span>}
             </label>
           </div>
         </div>
@@ -984,19 +955,15 @@ export default function Settings() {
             <div className="flex items-center gap-2">
               <Cpu className="w-4 h-4 text-interface-orange" />
               <h2 className="font-mono text-xs font-semibold text-white tracking-wide uppercase">
-                AUTOMATION // 守护流水线
+                {t('AUTOMATION // 守护流水线')}
               </h2>
             </div>
           </div>
           <div className="p-4 space-y-4">
             <div className="p-3 bg-[#0d0e12] border border-white/[0.08] rounded-[3px] flex items-center justify-between">
               <div>
-                <p className="font-mono text-xs font-semibold text-zinc-200">
-                  配置变更后自动原子应用
-                </p>
-                <p className="font-mono text-[10px] text-zinc-500 mt-0.5 leading-relaxed">
-                  策略经候选校验、备份和健康检查后应用，失败时自动秒级回滚
-                </p>
+                <p className="font-mono text-xs font-semibold text-zinc-200">{t('配置变更后自动原子应用')}</p>
+                <p className="font-mono text-[10px] text-zinc-500 mt-0.5 leading-relaxed">{t('策略经候选校验、备份和健康检查后应用，失败时自动秒级回滚')}</p>
               </div>
               <Switch
                 size="sm"
@@ -1010,9 +977,9 @@ export default function Settings() {
 
             <Input
               type="number"
-              label="远程订阅自动更新周期 (分钟)"
+              label={t('远程订阅自动更新周期 (分钟)')}
               placeholder="60"
-              description="设置为 0 表示禁用自动轮询后台更新"
+              description={t('设置为 0 表示禁用自动轮询后台更新')}
               value={String(formData.subscription_interval)}
               onChange={(e) => setFormData({ ...formData, subscription_interval: parseInt(e.target.value) || 0 })}
               classNames={{
@@ -1033,7 +1000,7 @@ export default function Settings() {
             <div className="flex items-center gap-2">
               <Server className="w-4 h-4 text-interface-orange" />
               <h2 className="font-mono text-xs font-semibold text-white tracking-wide uppercase">
-                SYSTEM_DAEMON // 开机自启与后台守护
+                {t('SYSTEM_DAEMON // 开机自启与后台守护')}
               </h2>
             </div>
             {daemonStatus && (
@@ -1049,9 +1016,7 @@ export default function Settings() {
             )}
           </div>
           <div className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <p className="font-mono text-xs text-zinc-400 max-w-xl leading-relaxed">
-              安装系统级服务（systemd / launchd）可使 sbm 进程常驻系统后台，终端会话关闭后依然维持网关与 Web 控制台工作，并在异常退出时自动自愈拉起。
-            </p>
+            <p className="font-mono text-xs text-zinc-400 max-w-xl leading-relaxed">{t('安装系统级服务（systemd / launchd）可使 sbm 进程常驻系统后台，终端会话关闭后依然维持网关与 Web 控制台工作，并在异常退出时自动自愈拉起。')}</p>
             <div className="flex items-center gap-2 shrink-0">
               {daemonStatus?.installed ? (
                 <>
@@ -1060,17 +1025,13 @@ export default function Settings() {
                     variant="flat"
                     className="font-mono text-xs bg-white/[0.05] border border-white/[0.08] text-zinc-200 hover:text-white rounded-[2px]"
                     onPress={handleRestartDaemon}
-                  >
-                    重启守护进程
-                  </Button>
+                  >{t('重启守护进程')}</Button>
                   <Button
                     size="sm"
                     variant="flat"
                     className="font-mono text-xs bg-red-950/20 border border-red-500/30 text-red-400 hover:bg-red-950/40 rounded-[2px]"
                     onPress={() => setUninstallConfirm(true)}
-                  >
-                    卸载服务
-                  </Button>
+                  >{t('卸载服务')}</Button>
                 </>
               ) : (
                 <Button
@@ -1078,9 +1039,7 @@ export default function Settings() {
                   color="primary"
                   className="font-mono text-xs rounded-[2px] bg-interface-orange text-white shadow-geek-glow px-4"
                   onPress={handleInstallDaemon}
-                >
-                  一键安装后台服务
-                </Button>
+                >{t('一键安装后台服务')}</Button>
               )}
             </div>
           </div>
@@ -1091,7 +1050,7 @@ export default function Settings() {
       <div className="sticky bottom-4 z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-[4px] border border-default-200 dark:border-white/[0.1] bg-content1/95 backdrop-blur-md shadow-2xl">
         <div className="flex items-center gap-2.5 font-mono text-xs text-default-500">
           <Terminal className="w-4 h-4 text-interface-orange shrink-0" />
-          <span>修改设置后请点击保存，配置将写入后端持久化存储。</span>
+          <span>{t('修改设置后请点击保存，配置将写入后端持久化存储。')}</span>
         </div>
         <Button
           color="primary"
@@ -1100,9 +1059,7 @@ export default function Settings() {
           startContent={<Save className="w-3.5 h-3.5" />}
           isLoading={saving}
           onPress={handleSave}
-        >
-          保存所有设置
-        </Button>
+        >{t('保存所有设置')}</Button>
       </div>
 
       {/* 内核下载模态框 */}
@@ -1119,13 +1076,13 @@ export default function Settings() {
         <ModalContent>
           <ModalHeader className="flex items-center gap-2">
             <Download className="w-4 h-4 text-interface-orange" />
-            DOWNLOAD_KERNEL // 下载 sing-box 内核
+            {t('DOWNLOAD_KERNEL // 下载 sing-box 内核')}
           </ModalHeader>
           <ModalBody>
             <div className="space-y-3">
               <AppSelect
-                label="选择发布的 Release 版本"
-                placeholder="选择要部署的 tag"
+                label={t('选择发布的 Release 版本')}
+                placeholder={t('选择要部署的 tag')}
                 selectedKeys={selectedVersion ? [selectedVersion] : []}
                 onSelectionChange={(keys) => {
                   const selected = Array.from(keys)[0] as string;
@@ -1142,7 +1099,7 @@ export default function Settings() {
 
               {kernelInfo && (
                 <p className="font-mono text-[11px] text-zinc-400">
-                  目标平台检测为: <span className="text-interface-orange">{kernelInfo.os}/{kernelInfo.arch}</span>
+                  {t('目标平台检测为:')} <span className="text-interface-orange">{kernelInfo.os}/{kernelInfo.arch}</span>
                 </p>
               )}
 
@@ -1193,9 +1150,7 @@ export default function Settings() {
               className="font-mono text-xs bg-white/[0.05] border border-white/[0.08] text-zinc-300 rounded-[2px]"
               onPress={() => setShowDownloadModal(false)}
               isDisabled={downloading}
-            >
-              取消
-            </Button>
+            >{t('取消')}</Button>
             <Button
               size="sm"
               color="primary"
@@ -1203,9 +1158,7 @@ export default function Settings() {
               onPress={startDownload}
               isLoading={downloading}
               isDisabled={!selectedVersion || downloading}
-            >
-              启动下载与安装
-            </Button>
+            >{t('启动下载与安装')}</Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
@@ -1224,12 +1177,12 @@ export default function Settings() {
         <ModalContent>
           <ModalHeader className="flex items-center gap-2">
             <Server className="w-4 h-4 text-interface-orange" />
-            {editingHost ? 'EDIT_HOST // 编辑域名解析' : 'NEW_HOST // 添加域名映射'}
+            {editingHost ? t('EDIT_HOST // 编辑域名解析') : t('NEW_HOST // 添加域名映射')}
           </ModalHeader>
           <ModalBody className="space-y-3">
             <Input
-              label="目标域名 (DOMAIN)"
-              placeholder="例如：api.openai.com 或 router.local"
+              label={t('目标域名 (DOMAIN)')}
+              placeholder={t('例如：api.openai.com 或 router.local')}
               value={hostFormData.domain}
               onChange={(e) => setHostFormData({ ...hostFormData, domain: e.target.value })}
               classNames={{
@@ -1239,8 +1192,8 @@ export default function Settings() {
               }}
             />
             <Textarea
-              label="解析目标 IP 列表 (IPv4 / IPv6)"
-              placeholder={'每行一条 IP 地址：\n192.168.1.1\n10.0.0.1\n2606:4700::6810:85e5'}
+              label={t('解析目标 IP 列表 (IPv4 / IPv6)')}
+              placeholder={t('每行一条 IP 地址：\\n192.168.1.1\\n10.0.0.1\\n2606:4700::6810:85e5')}
               value={ipsText}
               onChange={(e) => setIpsText(e.target.value)}
               minRows={3}
@@ -1251,7 +1204,7 @@ export default function Settings() {
               }}
             />
             <div className="flex items-center justify-between p-3 bg-[#060608] border border-white/[0.06] rounded-[2px]">
-              <span className="font-mono text-xs text-zinc-300">是否立即激活该映射</span>
+              <span className="font-mono text-xs text-zinc-300">{t('是否立即激活该映射')}</span>
               <Switch
                 size="sm"
                 isSelected={hostFormData.enabled}
@@ -1268,9 +1221,7 @@ export default function Settings() {
               variant="flat"
               className="font-mono text-xs bg-white/[0.05] border border-white/[0.08] text-zinc-300 rounded-[2px]"
               onPress={onHostModalClose}
-            >
-              取消
-            </Button>
+            >{t('取消')}</Button>
             <Button
               size="sm"
               color="primary"
@@ -1278,7 +1229,7 @@ export default function Settings() {
               onPress={handleSubmitHost}
               isDisabled={!hostFormData.domain || !ipsText.trim()}
             >
-              {editingHost ? '保存变更' : '创建映射'}
+              {editingHost ? t('保存变更') : t('创建映射')}
             </Button>
           </ModalFooter>
         </ModalContent>
@@ -1287,14 +1238,12 @@ export default function Settings() {
       {/* 卸载后台服务二次确认 */}
       <ConfirmModal
         isOpen={uninstallConfirm}
-        title="卸载后台服务 (DAEMON_UNINSTALL)"
+        title={t('卸载后台服务 (DAEMON_UNINSTALL)')}
         onClose={() => setUninstallConfirm(false)}
         onConfirm={handleUninstallDaemon}
-        confirmLabel="确认卸载系统服务"
+        confirmLabel={t('确认卸载系统服务')}
       >
-        <p className="font-mono text-xs text-zinc-300 leading-relaxed">
-          卸载后，sbm 管理服务将不再于系统启动时自启，当前的后台守护进程将停止运行。当前活动的 Web 管理连接与终端代理可能立即中断。
-        </p>
+        <p className="font-mono text-xs text-zinc-300 leading-relaxed">{t('卸载后，sbm 管理服务将不再于系统启动时自启，当前的后台守护进程将停止运行。当前活动的 Web 管理连接与终端代理可能立即中断。')}</p>
       </ConfirmModal>
     </div>
   );

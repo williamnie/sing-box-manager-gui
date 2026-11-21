@@ -24,6 +24,7 @@ import ThemeToggle from './ThemeToggle';
 import AgentBanner from './AgentBanner';
 import UpdateBanner from './UpdateBanner';
 import { useUpdateStore } from '../store/update';
+import { t } from '../i18n';
 
 const menuItems = [
   { path: '/', icon: LayoutDashboard, label: '仪表盘', code: '01' },
@@ -63,7 +64,7 @@ export default function Layout({ children }: LayoutProps) {
   return (
     <div className="flex min-h-screen bg-[#f6f7fb] dark:bg-[#070709] text-zinc-900 dark:text-[#ededed] transition-colors duration-150">
       {/* 侧边栏 */}
-      {navigationOpen && <button aria-label="关闭导航" className="fixed inset-0 z-20 bg-black/40 md:hidden" onClick={() => setNavigationOpen(false)} />}
+      {navigationOpen && <button aria-label={t('关闭导航')} className="fixed inset-0 z-20 bg-black/40 md:hidden" onClick={() => setNavigationOpen(false)} />}
       <aside className={`w-64 bg-white dark:bg-[#090a0f] border-r border-zinc-200/80 dark:border-white/[0.08] fixed h-full flex flex-col z-30 select-none transition-transform duration-150 shadow-sm dark:shadow-none ${navigationOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}>
         {/* 顶部 Logo 终端区块 */}
         <div className="p-5 border-b border-zinc-200/80 dark:border-white/[0.08] bg-white/90 dark:bg-[#090a0f]/80 backdrop-blur-md">
@@ -82,7 +83,7 @@ export default function Layout({ children }: LayoutProps) {
             {/* 极客状态指示器 */}
             <Link
               to="/"
-              title={isRunning ? '服务运行中 (点击查看)' : '服务未启动 (点击启动)'}
+              title={isRunning ? t('服务运行中 (点击查看)') : t('服务未启动 (点击启动)')}
               className="flex items-center gap-1.5 px-2 py-0.5 rounded-[2px] border border-zinc-200 dark:border-white/[0.08] bg-zinc-100 dark:bg-black/40 hover:border-[#ff5722]/50 transition-colors"
             >
               <span className="relative flex size-2">
@@ -132,7 +133,7 @@ export default function Layout({ children }: LayoutProps) {
                         : 'text-zinc-400 group-hover:text-zinc-600 dark:text-zinc-500 dark:group-hover:text-zinc-300'
                     }`}
                   />
-                  <span className="font-sans font-medium text-sm">{item.label}</span>
+                  <span className="font-sans font-medium text-sm">{t(item.label)}</span>
                 </div>
                 <span
                   className={`text-[10px] font-mono tracking-wider ${
@@ -158,7 +159,7 @@ export default function Layout({ children }: LayoutProps) {
                   await authApi.logout();
                   window.dispatchEvent(new Event('sbm:unauthorized'));
                 } catch (error) {
-                  toast.error(errorMessage(error, '退出失败'));
+                  toast.error(errorMessage(error, t('退出失败')));
                 }
               }}
               className="flex items-center gap-1.5 text-[11px] font-mono text-zinc-500 hover:text-rose-600 dark:hover:text-rose-400 transition-colors cursor-pointer py-1"
@@ -170,7 +171,7 @@ export default function Layout({ children }: LayoutProps) {
               <Link
                 to="/settings#section-update"
                 onClick={() => setNavigationOpen(false)}
-                title={update?.available ? `发现新版本 v${update.latest?.version}` : '版本更新'}
+                title={update?.available ? t('发现新版本 v{p1}', { p1: update.latest?.version }) : t('版本更新')}
                 className="relative font-mono text-[10px] text-zinc-500 dark:text-zinc-500 bg-zinc-200/60 dark:bg-white/[0.03] px-1.5 py-0.5 rounded-[2px] border border-zinc-200 dark:border-white/[0.05] hover:border-[#ff5722]/50"
               >
                 v{serviceStatus.sbm_version}
@@ -186,7 +187,7 @@ export default function Layout({ children }: LayoutProps) {
         {/* 顶部极客状态条 */}
         <header className="h-12 border-b border-zinc-200/80 dark:border-white/[0.08] bg-white/90 dark:bg-[#070709]/80 backdrop-blur-md px-3 md:px-6 flex items-center justify-between sticky top-0 z-10 select-none transition-colors duration-150">
           <div className="flex items-center gap-2 text-xs font-mono text-zinc-500 dark:text-zinc-400">
-            <button aria-label={navigationOpen ? '关闭导航菜单' : '打开导航菜单'} aria-expanded={navigationOpen} className="p-1.5 md:hidden" onClick={() => setNavigationOpen(!navigationOpen)}>{navigationOpen ? <X className="size-4" /> : <Menu className="size-4" />}</button>
+            <button aria-label={navigationOpen ? t('关闭导航菜单') : t('打开导航菜单')} aria-expanded={navigationOpen} className="p-1.5 md:hidden" onClick={() => setNavigationOpen(!navigationOpen)}>{navigationOpen ? <X className="size-4" /> : <Menu className="size-4" />}</button>
             <span className="text-zinc-400 dark:text-zinc-600">SBM</span>
             <span className="text-zinc-300 dark:text-zinc-700">/</span>
             <span className="text-[#ff5722] font-semibold">{location.pathname === '/' ? 'dashboard' : location.pathname.slice(1)}</span>

@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { toast } from '../components/Toast';
 import type { Settings } from '../store';
+import { t } from '../i18n';
 
 export const api = axios.create({
   baseURL: '/api',
@@ -8,7 +9,7 @@ export const api = axios.create({
   withCredentials: true,
 });
 
-export function errorMessage(error: unknown, fallback = '操作失败'): string {
+export function errorMessage(error: unknown, fallback = t('操作失败')): string {
   if (axios.isAxiosError(error)) return error.response?.data?.error || fallback;
   return error instanceof Error ? error.message : fallback;
 }

@@ -1,4 +1,5 @@
 import type { Filter, ManualNode, Node, Subscription } from '../store';
+import { t } from '../i18n';
 
 export interface FilterCandidate { node: Node; source: string; subscriptionID: string }
 
@@ -6,7 +7,7 @@ export function filterCandidates(subscriptions: Subscription[], manualNodes: Man
   const scoped = !filter.all_nodes && (filter.subscriptions ?? []).length > 0;
   const candidates = subscriptions.filter(sub => sub.enabled && (!scoped || (filter.subscriptions ?? []).includes(sub.id)))
     .flatMap(sub => (sub.nodes ?? []).map(node => ({ node, source: sub.name, subscriptionID: sub.id })));
-  if (!scoped) candidates.push(...manualNodes.filter(item => item.enabled).map(item => ({ node: item.node, source: '手动节点', subscriptionID: '' })));
+  if (!scoped) candidates.push(...manualNodes.filter(item => item.enabled).map(item => ({ node: item.node, source: t('手动节点'), subscriptionID: '' })));
   return candidates;
 }
 
