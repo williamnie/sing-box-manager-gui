@@ -84,7 +84,7 @@ let compiledTemplates: Array<{ re: RegExp; replacement: string }> | null = null;
 function getCompiledTemplates() {
   if (compiledTemplates) return compiledTemplates;
   compiledTemplates = backendTemplates.map(([template, replacement]) => {
-    const parts = template.split(/%[svd]/);
+    const parts = template.split(/%[svdwq]/);
     const pattern = parts.map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('(.*)');
     return { re: new RegExp(`^${pattern}`), replacement };
   });
